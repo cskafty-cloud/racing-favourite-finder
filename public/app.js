@@ -82,12 +82,56 @@ function raceCard(r, live=false) {
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
 }
+
+function possibleRaceGaps(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const n = Number(r.race_number ?? r.race_no ?? r.raceNumber ?? r.number);
+    if (!Number.isInteger(n) || n < 1) continue;
+    const key = [categoryOf(r), normalizeText(r.venue || r.track_name || r.venue_canonical || "Unknown track"), fmtDate(r.start_time)].join("|");
+    if (!groups.has(key)) groups.set(key,{category:categoryOf(r),venue:r.venue || r.track_name || r.venue_canonical || "Unknown track",date:fmtDate(r.start_time),numbers:new Set()});
+    groups.get(key).numbers.add(n);
+  }
+  const gaps=[];
+  for (const g of groups.values()) {
+    const ns=[...g.numbers].sort((a,b)=>a-b);
+    for(let n=ns[0];n<ns[ns.length-1];n++) if(!g.numbers.has(n)) gaps.push({...g,missing:n});
+  }
+  return gaps;
+}
+function normalizeText(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+function renderCoverage(rows) {
+  const missing=[];
+  let sportsbetMissing=0,bet365Missing=0,bothMissing=0;
+  for(const r of rows){
+    const sb=bookmakerFavourite(r,"sportsbet"), b365=bookmakerFavourite(r,"bet365");
+    if(!sb || !b365) {
+      if(!sb)sportsbetMissing++;
+      if(!b365)bet365Missing++;
+      if(!sb&&!b365)bothMissing++;
+      missing.push({race:r,sb,b365});
+    }
+  }
+  const gaps=possibleRaceGaps(rows);
+  $("coverageStats").innerHTML = `<div><b>${sportsbetMissing}</b><span>Missing Sportsbet</span></div><div><b>${bet365Missing}</b><span>Missing bet365</span></div><div><b>${bothMissing}</b><span>Missing both</span></div><div><b>${gaps.length}</b><span>Possible race-number gaps</span></div>`;
+  const quoteRows=missing.map(x=>{
+    const r=x.race, venue=r.venue||r.track_name||r.venue_canonical||"Unknown track";
+    const no=r.race_number ? "R"+r.race_number : "Race";
+    const absent=[!x.sb?"Sportsbet":"",!x.b365?"bet365":""].filter(Boolean).join(" + ");
+    return `<div class="coverage-row"><span><b>${esc(venue)} ${esc(no)}</b><small>${esc(categoryOf(r))} · ${esc(fmtDate(r.start_time))} · ${esc(fmtTime(r.start_time))}</small></span><strong>${esc(absent)} missing</strong></div>`;
+  }).join("");
+  const gapRows=gaps.map(g=>`<div class="coverage-row"><span><b>${esc(g.venue)} R${g.missing}</b><small>${esc(g.category)} · ${esc(g.date)}</small></span><strong>Not returned by feed</strong></div>`).join("");
+  $("coverageList").innerHTML=(quoteRows||'<div class="coverage-empty">All listed races currently have Sportsbet and bet365 quotes.</div>')+
+    (gapRows ? '<div class="coverage-subheading">Possible missing race numbers</div>'+gapRows : '<div class="coverage-empty">No race-number gaps detected among returned races.</div>');
+}
+
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
   $("raceCount").textContent = state.races.length;
   $("horseCount").textContent = horses;
   $("dogCount").textContent = state.races.length-horses;
   const rows = filteredRaces();
+  renderCoverage(rows);
   const now = Date.now(), cutoff = now + 30*60*1000;
   const live = rows.filter(r => {
     const t = new Date(r.start_time).getTime();
