@@ -29,3 +29,15 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 .soon-tag{background:#27523d;color:#8af0b7}
 .compact-empty{padding:25px 16px}
 .all-races-heading{margin:24px 0 12px;color:#dce5ec}
+
+.race-card{grid-template-columns:minmax(160px,1fr) minmax(210px,1.2fr) minmax(125px,.65fr) auto}
+.all-bookmaker-odds{grid-column:1/-1;border-top:1px solid #293a47;padding-top:12px;margin-top:2px}
+.odds-heading{display:flex;justify-content:space-between;gap:12px;color:#a8bac8;font-size:9px;font-weight:700;letter-spacing:1.25px;margin-bottom:9px}
+.odds-heading span{color:#728597;font-weight:500;letter-spacing:0;text-transform:none}
+.odds-runner{display:grid;grid-template-columns:minmax(125px,180px) 1fr;gap:10px;align-items:start;padding:7px 0;border-top:1px solid #202e39}
+.odds-runner-name{font-size:11px;color:#dce6ed;font-weight:600;padding-top:5px}
+.bookmaker-prices{display:flex;flex-wrap:wrap;gap:6px}
+.bookmaker-quote{display:inline-flex;align-items:center;gap:7px;border:1px solid #304252;background:#101a23;border-radius:6px;padding:5px 8px;font-size:10px;color:#9eafbd}
+.bookmaker-quote strong{color:#f0c978;font-size:11px}
+.no-odds{font-size:11px;color:#8192a1;padding:6px 0}
+@media(max-width:800px){.race-card{grid-template-columns:1fr 1fr}.all-bookmaker-odds{grid-column:1/-1}.odds-runner{grid-template-columns:1fr;gap:5px}}
