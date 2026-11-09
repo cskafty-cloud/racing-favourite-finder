@@ -50,3 +50,20 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 .book-fav-age{font-size:10px;color:#8294a3}
 .book-fav-missing{grid-column:1/-1;font-size:11px;color:#8294a3;padding:5px 0}
 @media(max-width:600px){.bookmaker-favourites{grid-template-columns:1fr}.book-fav-price{grid-column:2}}
+
+.coverage-panel{margin:24px 0;padding:20px;border:1px solid #665239;background:linear-gradient(145deg,#282319,#171c22);border-radius:14px}
+.coverage-heading h2{font:600 21px "Space Grotesk";margin:0}
+.coverage-heading .eyebrow{margin-bottom:8px}
+.coverage-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:17px 0}
+.coverage-stats>div{display:flex;flex-direction:column;gap:5px;padding:12px;background:#151b21;border:1px solid #3b3c35;border-radius:8px}
+.coverage-stats b{font:700 23px "Space Grotesk";color:#f0c978}
+.coverage-stats span{font-size:10px;color:#aab4bd}
+.coverage-list{display:grid;gap:6px}
+.coverage-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;background:#151b21;border:1px solid #303943;border-radius:7px;font-size:11px}
+.coverage-row span{display:flex;flex-direction:column;gap:4px}
+.coverage-row small{font-size:10px;color:#8493a1;text-transform:capitalize}
+.coverage-row strong{color:#edb77b;text-align:right}
+.coverage-empty{font-size:11px;color:#9aa8b5;padding:10px 2px}
+.coverage-subheading{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#e4c17d;font-weight:700;margin:13px 0 2px}
+.coverage-note{font-size:10px;line-height:1.5;color:#8795a2;margin:13px 0 0}
+@media(max-width:600px){.coverage-stats{grid-template-columns:repeat(2,1fr)}.coverage-panel{padding:14px}.coverage-row{align-items:flex-start;flex-direction:column}.coverage-row strong{text-align:left}}
