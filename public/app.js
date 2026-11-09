@@ -66,11 +66,11 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).map(runner => {
     const quotes = runnerPrices(runner).map(q => ({
       name: q.name || q.bookmaker || q.key || "Bookmaker",
-      price: Number(q.win_price ?? q.win ?? q.price)
+      price: Number(q.win_price ?? q.win ?? q.price), url: q.source_link || q.source_url || null
     })).filter(q => Number.isFinite(q.price) && q.price > 1)
       .sort((a,b)=>a.price-b.price);
     if (!quotes.length) return "";
-    return `<div class="odds-runner"><span class="odds-runner-name">${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner")}</span><div class="bookmaker-prices">${quotes.map(q=>`<span class="bookmaker-quote"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong></span>`).join("")}</div></div>`;
+    return `<div class="odds-runner"><span class="odds-runner-name">${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner")}</span><div class="bookmaker-prices">${quotes.map(q=>`<span class="bookmaker-quote"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong>${q.url && /^https?:\\/\\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open book ↗</a>` : ""}</span>`).join("")}</div></div>`;
   }).filter(Boolean).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
     <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":"🐕 GREYHOUND RACING"}</div>
