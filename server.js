@@ -151,12 +151,46 @@ function isSameRunner(pick, winner) {
 }
 
 app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, storage:DATA_DIR}));
+// Keep the priced feed and full schedule on separate cache windows. The browser
+// can refresh its display every 5 seconds without forcing a paid provider request
+// on every visitor refresh.
+let pricedCache = { at: 0, rows: [] };
+let scheduleCache = { at: 0, rows: [], horizonHours: 24 };
+let refreshInFlight = null;
+async function getGlobalRaces() {
+  const now = Date.now();
+  if (now - pricedCache.at >= 15000 || now - scheduleCache.at >= 60000) {
+    if (!refreshInFlight) refreshInFlight = (async () => {
+      const tasks = [];
+      if (now - scheduleCache.at >= 60000) tasks.push((async () => {
+        const data = await provider("/v1/racing/events", { hours_ahead:24, categories:"horse,greyhound" });
+        scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: 24 };
+      })());
+      if (now - pricedCache.at >= 15000) tasks.push((async () => {
+        const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,greyhound" });
+        pricedCache = { at: Date.now(), rows: rowsFrom(data) };
+      })());
+      await Promise.all(tasks);
+    })().finally(() => { refreshInFlight = null; });
+    await refreshInFlight;
+  }
+  const map = new Map();
+  const keyFor = r => String(r.race_id || r.id || [r.country || "",r.category || "",normalizeName(venueOf(r)),raceNumberOf(r) || "",localRaceDate(startTimeOf(r))].join("|"));
+  for (const r of scheduleCache.rows) map.set(keyFor(r), { ...r });
+  for (const r of pricedCache.rows) {
+    const key = keyFor(r);
+    map.set(key, { ...(map.get(key) || {}), ...r, runners: r.runners || map.get(key)?.runners || [] });
+  }
+  const races = [...map.values()].filter(r => ["horse","greyhound"].includes(categoryOf(r)));
+  return { races, scheduleFetchedAt: scheduleCache.at ? new Date(scheduleCache.at).toISOString() : null,
+    oddsFetchedAt: pricedCache.at ? new Date(pricedCache.at).toISOString() : null,
+    horizonHours: scheduleCache.horizonHours };
+}
+
 app.get("/api/races", async (_req, res) => {
   try {
-    const data = await provider("/v1/racing/next-to-go", {
-      num_races:200, categories:"horse,greyhound", country:"AU", include_unresolved:"true"
-    });
-    const races = rowsFrom(data);
+    const feed = await getGlobalRaces();
+    const races = feed.races;
     const history = await readHistory();
     let added = 0;
     for (const race of races) {
@@ -179,7 +213,9 @@ app.get("/api/races", async (_req, res) => {
     if (added) await saveHistory(history);
     res.set("Cache-Control","no-store");
     res.json({races, mode:"live", fetchedAt:new Date().toISOString(),
-      note:"Favourite ranking uses Bet365 prices only when a Bet365 market is present for the race; it never mixes Bet365 and other bookmakers within one race. If Bet365 is unavailable, the displayed fallback is the median of available current quotes. Historical picks are saved when first seen."});
+      scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
+      horizonHours:feed.horizonHours, scope:"worldwide",
+      note:"Worldwide schedule and prices for horse and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. Prices are refreshed from the provider on a separate cache interval; check each quote age and bookmaker market before betting."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
