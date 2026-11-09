@@ -163,4 +163,4 @@ app.get("/api/history", async (_req,res) => {
 });
 
 app.get("*", (_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.listen(PORT,()=>console.log(`Racing Favourite Finder listening on ${PORT}`));
+app.listen(PORT, "0.0.0.0", ()=>console.log(`Racing Favourite Finder listening on ${PORT}`));
