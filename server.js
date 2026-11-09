@@ -15,8 +15,11 @@ app.use(express.static(path.join(__dirname, "public")));
 
 async function readHistory() {
   await fs.mkdir(DATA_DIR, { recursive: true });
-  try { return JSON.parse(await fs.readFile(HISTORY_FILE, "utf8")); }
-  catch (e) { if (e.code === "ENOENT") return { picks: [] }; throw e; }
+  try {
+    const value = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
+    if (!Array.isArray(value.picks)) value.picks = [];
+    return value;
+  } catch (e) { if (e.code === "ENOENT") return { picks: [] }; throw e; }
 }
 async function saveHistory(history) {
   writeQueue = writeQueue.then(async () => {
@@ -31,138 +34,179 @@ async function provider(pathname, params = {}) {
   if (!API_KEY) throw new Error("Add PUNTERSEDGE_API_KEY to the server environment to enable the authenticated live feed.");
   const url = new URL(BASE + pathname);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-  const response = await fetch(url, {
-    headers: { "X-API-Key": API_KEY },
-    signal: AbortSignal.timeout(20000)
-  });
+  const response = await fetch(url, { headers: { "X-API-Key": API_KEY }, signal: AbortSignal.timeout(20000) });
   const body = await response.text();
   if (!response.ok) throw new Error(`Racing provider ${response.status}: ${body.slice(0,300)}`);
   return JSON.parse(body);
 }
 function rowsFrom(data) {
-  return Array.isArray(data) ? data : (data.races || data.data || data.events || []);
+  if (Array.isArray(data)) return data;
+  return data.races || data.results || data.data || data.events || [];
 }
-function runnerQuotes(runner) {
-  return (runner.bookmakers || []).filter(q => Number(q.win_price) > 1 && !q.stale);
+function valueOf(r, keys) {
+  for (const key of keys) if (r && r[key] != null && r[key] !== "") return r[key];
+  return null;
 }
-function selectFavourite(race) {
-  const runners = (race.runners || []).map(r => {
-    const quotes = runnerQuotes(r);
-    if (!quotes.length) return null;
-    const prices = quotes.map(q => Number(q.win_price)).sort((a,b)=>a-b);
-    const median = prices[Math.floor((prices.length-1)/2)];
-    const b365 = quotes.find(q => ["bet365","bet_365"].includes(String(q.key || q.bookmaker || "").toLowerCase()));
-    return {
-      name: r.name, number: r.number ?? r.runner_number ?? null,
-      price: b365 ? Number(b365.win_price) : median,
-      priceSource: b365 ? "Bet365" : "market median",
-      bet365Price: b365 ? Number(b365.win_price) : null,
-      quoteCount: quotes.length
-    };
-  }).filter(Boolean);
-  runners.sort((a,b)=>a.price-b.price);
-  return runners[0] || null;
+function normalizeName(value) {
+  return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 function categoryOf(r) {
-  const c = String(r.category || r.code || r.race_type || "").toLowerCase();
+  const c = String(valueOf(r, ["category","code","race_type","type"]) || "").toLowerCase();
   return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
 }
+function venueOf(r) {
+  return valueOf(r, ["venue","track_name","venue_canonical","track","meeting_name"]) || "Unknown track";
+}
+function raceNumberOf(r) {
+  return valueOf(r, ["race_number","race_no","raceNumber","number"]);
+}
+function startTimeOf(r) {
+  return valueOf(r, ["start_time","race_time","startTime","scheduled_start","start_at","date"]);
+}
 function raceId(r) {
-  return String(r.race_id || r.id || `${r.venue || r.track_name || "track"}-${r.race_number || r.race_no || "x"}-${r.start_time || r.race_time || ""}`);
+  return String(valueOf(r, ["race_id","id","event_id"]) || `${venueOf(r)}-${raceNumberOf(r) || "x"}-${startTimeOf(r) || ""}`);
+}
+function localRaceDate(value) {
+  if (!value) return "";
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Australia/Brisbane", year:"numeric", month:"2-digit", day:"2-digit"
+  }).format(d);
 }
 function raceMatchKey(r) {
-  const venue = String(r.venue || r.track_name || r.venue_canonical || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const number = r.race_number ?? r.race_no ?? "";
-  const rawTime = r.start_time || r.race_time || r.date || "";
-  const date = rawTime ? new Date(rawTime) : null;
-  const day = date && !Number.isNaN(date.getTime())
-    ? new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit" }).format(date)
-    : "";
-  return venue && number && day ? `${venue}|r${number}|${day}` : null;
+  const venue = normalizeName(venueOf(r));
+  const number = raceNumberOf(r);
+  const day = localRaceDate(startTimeOf(r));
+  return venue && number != null && day ? `${categoryOf(r)}|${venue}|r${number}|${day}` : null;
 }
 function findMatchingPick(picks, result) {
   const id = raceId(result);
-  const exact = picks.find(p => p.raceId === id);
-  if (exact) return exact;
+  const exact = picks.filter(p => p.raceId === id);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
   const key = raceMatchKey(result);
   if (!key) return null;
-  const matches = picks.filter(p => p.raceMatchKey === key);
+  const matches = picks.filter(p => p.raceMatchKey === key ||
+    (!p.raceMatchKey && categoryOf(result) === p.category &&
+      normalizeName(p.venue) === normalizeName(venueOf(result)) &&
+      String(p.raceNumber) === String(raceNumberOf(result)) &&
+      localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
   return matches.length === 1 ? matches[0] : null;
 }
+function bookmakerKey(q) {
+  return String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"");
+}
+function runnerQuotes(runner) {
+  return (runner.bookmakers || runner.odds || []).filter(q => Number(q.win_price ?? q.win ?? q.price) > 1 && !q.stale);
+}
+function selectFavourite(race) {
+  const entries = (race.runners || []).map(r => {
+    const quotes = runnerQuotes(r);
+    const b365 = quotes.find(q => ["bet365","bet365au"].includes(bookmakerKey(q)));
+    const prices = quotes.map(q => Number(q.win_price ?? q.win ?? q.price)).sort((a,b)=>a-b);
+    const median = prices.length ? prices[Math.floor((prices.length-1)/2)] : null;
+    return { runner:r, quotes, b365, median };
+  });
+  // Never mix Bet365 prices and other bookmakers in the same race ranking.
+  const hasBet365Market = entries.some(x => x.b365);
+  const candidates = entries.filter(x => hasBet365Market ? !!x.b365 : x.median != null);
+  candidates.sort((a,b) => (hasBet365Market ? Number(a.b365.win_price ?? a.b365.win ?? a.b365.price) : a.median) -
+    (hasBet365Market ? Number(b.b365.win_price ?? b.b365.win ?? b.b365.price) : b.median));
+  const best = candidates[0];
+  if (!best) return null;
+  const r = best.runner;
+  return {
+    name: r.name || r.runner_name || r.horse_name || r.greyhound_name,
+    number: r.number ?? r.runner_number ?? null,
+    price: hasBet365Market ? Number(best.b365.win_price ?? best.b365.win ?? best.b365.price) : best.median,
+    priceSource: hasBet365Market ? "Bet365" : "market median",
+    bet365Price: best.b365 ? Number(best.b365.win_price ?? best.b365.win ?? best.b365.price) : null,
+    quoteCount: best.quotes.length
+  };
+}
 function winnerFromResult(r) {
-  if (r.winner_name) return { name: r.winner_name, number: r.winner_number ?? null };
-  const runners = r.runners || r.results || r.placings || [];
-  const winner = runners.find(x => Number(x.position ?? x.placing ?? x.place ?? x.finish_position) === 1);
-  if (winner) return { name: winner.name || winner.runner_name || winner.horse_name || winner.greyhound_name || "Winner", number: winner.number ?? winner.runner_number ?? null };
-  if (typeof r.winner === "string") return { name: r.winner, number: null };
-  if (r.winner && typeof r.winner === "object") return { name: r.winner.name || r.winner.runner_name || "Winner", number: r.winner.number ?? null };
+  const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
+  if (direct) return { name: direct, number: valueOf(r, ["winner_number","winning_runner_number"]) };
+  const directWinner = r.winner || r.winning_runner;
+  if (typeof directWinner === "string") return { name: directWinner, number: null };
+  if (directWinner && typeof directWinner === "object") return {
+    name: directWinner.name || directWinner.runner_name || directWinner.horse_name || directWinner.greyhound_name,
+    number: directWinner.number ?? directWinner.runner_number ?? null
+  };
+  const runners = r.runners || r.results || r.placings || r.finishers || [];
+  const winner = runners.find(x => Number(x.position ?? x.placing ?? x.place ?? x.finish_position ?? x.position_number) === 1);
+  if (winner) return {
+    name: winner.name || winner.runner_name || winner.horse_name || winner.greyhound_name,
+    number: winner.number ?? winner.runner_number ?? null
+  };
   return null;
 }
 function isSameRunner(pick, winner) {
+  const a = normalizeName(pick.runnerName), b = normalizeName(winner.name);
+  if (a && b && a === b) return true;
   if (pick.runnerNumber != null && winner.number != null) return String(pick.runnerNumber) === String(winner.number);
-  return String(pick.runnerName).trim().toLowerCase() === String(winner.name).trim().toLowerCase();
+  return false;
 }
 
 app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, storage:DATA_DIR}));
 app.get("/api/races", async (_req, res) => {
   try {
     const data = await provider("/v1/racing/next-to-go", {
-      num_races: 200, categories: "horse,greyhound", country: "AU", include_unresolved: "true"
+      num_races:200, categories:"horse,greyhound", country:"AU", include_unresolved:"true"
     });
     const races = rowsFrom(data);
     const history = await readHistory();
     let added = 0;
     for (const race of races) {
       const fav = selectFavourite(race);
-      if (!fav) continue;
-      const id = raceId(race);
-      const matchKey = raceMatchKey(race);
+      if (!fav || !fav.name) continue;
+      const id = raceId(race), matchKey = raceMatchKey(race);
       if (history.picks.some(p => p.raceId === id || (matchKey && p.raceMatchKey === matchKey))) continue;
       history.picks.push({
-        raceId: id, raceMatchKey: matchKey, category: categoryOf(race),
-        venue: race.venue || race.track_name || "Unknown track",
-        raceNumber: race.race_number ?? null,
-        startTime: race.start_time || null,
-        runnerName: fav.name, runnerNumber: fav.number,
-        selectedOdds: fav.price, priceSource: fav.priceSource,
-        quoteCount: fav.quoteCount, confidence: fav.quoteCount >= 3 ? "stronger market coverage" : fav.quoteCount === 2 ? "limited market coverage" : "single bookmaker quote",
-        selectedAt: new Date().toISOString(), status: "pending",
-        winnerName: null, favouriteWon: null
+        raceId:id, raceMatchKey:matchKey, category:categoryOf(race), venue:venueOf(race),
+        raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
+        runnerName:fav.name, runnerNumber:fav.number, selectedOdds:fav.price,
+        priceSource:fav.priceSource, quoteCount:fav.quoteCount,
+        confidence:fav.priceSource === "Bet365" ? "Bet365 price" :
+          fav.quoteCount >= 3 ? "stronger market coverage" :
+          fav.quoteCount === 2 ? "limited market coverage" : "single bookmaker quote",
+        selectedAt:new Date().toISOString(), status:"pending", winnerName:null, favouriteWon:null
       });
       added++;
     }
     if (added) await saveHistory(history);
-    res.set("Cache-Control", "no-store");
-    res.json({
-      races, mode: "live", fetchedAt: new Date().toISOString(),
-      note: "Live Australian racing feed. Favourite is selected from Bet365 win odds where available; otherwise from the median of current bookmaker quotes. Historical picks are saved when first seen."
-    });
-  } catch (err) {
-    res.status(503).json({ error: err.message, mode: "offline" });
-  }
+    res.set("Cache-Control","no-store");
+    res.json({races, mode:"live", fetchedAt:new Date().toISOString(),
+      note:"Favourite ranking uses Bet365 prices only when a Bet365 market is present for the race; it never mixes Bet365 and other bookmakers within one race. If Bet365 is unavailable, the displayed fallback is the median of available current quotes. Historical picks are saved when first seen."});
+  } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
 app.post("/api/history/sync", async (_req,res) => {
   try {
     const results = rowsFrom(await provider("/v1/racing/results", {
-      hours_back: 48, country: "AU", status: "final", limit: 200
+      hours_back:72, country:"AU", status:"final", limit:300
     }));
     const history = await readHistory();
-    let settled = 0;
+    let settled = 0, unmatched = 0, noWinner = 0;
     for (const result of results) {
-      const pick = findMatchingPick(history.picks, result);
-      if (!pick || pick.status === "final") continue;
       const winner = winnerFromResult(result);
-      if (!winner) continue;
+      if (!winner || !winner.name) { noWinner++; continue; }
+      const pick = findMatchingPick(history.picks, result);
+      if (!pick || pick.status === "final") { unmatched++; continue; }
       pick.status = "final";
       pick.winnerName = winner.name;
-      pick.favouriteWon = isSameRunner(pick, winner);
+      pick.favouriteWon = isSameRunner(pick,winner);
       pick.settledAt = new Date().toISOString();
+      pick.resultMatch = "matched";
       settled++;
     }
     if (settled) await saveHistory(history);
-    res.json({ settled, total: history.picks.length, syncedAt: new Date().toISOString() });
-  } catch (err) { res.status(503).json({ error: err.message }); }
+    res.json({settled, unmatched, resultsReceived:results.length, resultsWithoutWinner:noWinner,
+      pending:history.picks.filter(p=>p.status==="pending").length,
+      total:history.picks.length, syncedAt:new Date().toISOString()});
+  } catch (err) { res.status(503).json({error:err.message}); }
 });
 
 app.get("/api/history", async (_req,res) => {
@@ -173,14 +217,17 @@ app.get("/api/history", async (_req,res) => {
     const byCode = code => {
       const rows = final.filter(p=>p.category===code);
       const won = rows.filter(p=>p.favouriteWon).length;
-      return { races: rows.length, wins: won, losses: rows.length-won, strikeRate: rows.length ? +(100*won/rows.length).toFixed(1) : null };
+      return {races:rows.length,wins:won,losses:rows.length-won,
+        strikeRate:rows.length ? +(100*won/rows.length).toFixed(1) : null};
     };
     res.json({
-      picks: history.picks.slice().sort((a,b)=>new Date(b.startTime||b.selectedAt)-new Date(a.startTime||a.selectedAt)),
-      summary: { races: final.length, wins, losses: final.length-wins, strikeRate: final.length ? +(100*wins/final.length).toFixed(1) : null, pending: history.picks.filter(p=>p.status==="pending").length, horse: byCode("horse"), greyhound: byCode("greyhound") }
+      picks:history.picks.slice().sort((a,b)=>new Date(b.startTime||b.selectedAt)-new Date(a.startTime||a.selectedAt)),
+      summary:{races:final.length,wins,losses:final.length-wins,
+        strikeRate:final.length ? +(100*wins/final.length).toFixed(1) : null,
+        pending:history.picks.filter(p=>p.status==="pending").length,
+        horse:byCode("horse"),greyhound:byCode("greyhound")}
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({error:err.message}); }
 });
-
-app.get("*", (_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.listen(PORT, "0.0.0.0", ()=>console.log(`Racing Favourite Finder listening on ${PORT}`));
+app.get("*",(_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Racing Favourite Finder listening on ${PORT}`));
