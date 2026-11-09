@@ -35,35 +35,41 @@ function filteredRaces() {
     : new Date(a.start_time||0)-new Date(b.start_time||0));
   return rows;
 }
+function raceCard(r, live=false) {
+  const fav = marketFavourite(r);
+  const type = categoryOf(r);
+  const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
+  const number = r.race_number ? `R${r.race_number}` : "Race";
+  const date = fmtDate(r.start_time);
+  const time = fmtTime(r.start_time);
+  const price = fav ? Number(fav.consensus).toFixed(2) : "—";
+  const bet365 = fav?.bet365 ? ` · Bet365 <b>$${Number(fav.bet365).toFixed(2)}</b>` : " · Bet365 quote unavailable";
+  const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
+  return `<article class="race-card ${live?"live-race-card":""}">
+    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":"🐕 GREYHOUND RACING"}</div>
+      <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
+      <div class="race-meta">${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
+      <div class="race-time">${time}</div></div>
+    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
+    <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : (r.stale ? "Check price freshness" : "Odds feed")}</div>
+  </article>`;
+}
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
   $("raceCount").textContent = state.races.length;
   $("horseCount").textContent = horses;
   $("dogCount").textContent = state.races.length-horses;
   const rows = filteredRaces();
-  if (!rows.length) {
-    $("raceList").innerHTML = `<div class="empty">${state.races.length ? "No races match your search." : "No races returned. Refresh or connect your racing data API key."}</div>`;
-    return;
-  }
-  $("raceList").innerHTML = rows.map(r => {
-    const fav = marketFavourite(r);
-    const type = categoryOf(r);
-    const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
-    const number = r.race_number ? `R${r.race_number}` : "Race";
-    const date = fmtDate(r.start_time);
-    const time = fmtTime(r.start_time);
-    const price = fav ? Number(fav.consensus).toFixed(2) : "—";
-    const bet365 = fav?.bet365 ? ` · Bet365 <b>$${Number(fav.bet365).toFixed(2)}</b>` : " · Bet365 quote unavailable";
-    return `<article class="race-card">
-      <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":"🐕 GREYHOUND RACING"}</div>
-        <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
-        <div class="race-meta">${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
-        <div class="race-time">${time}</div></div>
-      <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
-      <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
-      <div class="market-tag">${r.stale ? "Check price freshness" : "Odds feed"}</div>
-    </article>`;
-  }).join("");
+  const now = Date.now(), cutoff = now + 30*60*1000;
+  const live = rows.filter(r => {
+    const t = new Date(r.start_time).getTime();
+    return Number.isFinite(t) && t >= now && t <= cutoff;
+  });
+  const later = rows.filter(r => !live.includes(r));
+  $("nextRaceCount").textContent = live.length;
+  $("nextRaceList").innerHTML = live.length ? live.map(r=>raceCard(r,true)).join("") : '<div class="empty compact-empty">No horse or greyhound races scheduled to start in the next 30 minutes. This section refreshes automatically.</div>';
+  $("raceList").innerHTML = later.length ? later.map(r=>raceCard(r,false)).join("") : (rows.length ? '<div class="empty">All matching races are shown in the next 30 minutes section above.</div>' : `<div class="empty">${state.races.length ? "No races match your search." : "No races returned. Refresh or connect your racing data API key."}</div>`);
 }
 function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 async function loadRaces() {
