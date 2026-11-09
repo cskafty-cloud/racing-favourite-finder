@@ -10,7 +10,21 @@ const fmtDate = value => {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",timeZone:"Australia/Brisbane"});
 };
-function runnerPrices(runner) { return (runner.bookmakers || []).filter(b => Number(b.win_price) > 1 && !b.stale); }
+function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => Number(b.win_price ?? b.win ?? b.price) > 1 && !b.stale && Number(b.age_seconds ?? 0) < 180); }
+function bookmakerFavourite(race, wantedKey) {
+  const candidates = (race.runners || []).map(runner => {
+    const quote = runnerPrices(runner).find(q => String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"") === wantedKey);
+    if (!quote) return null;
+    return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
+      number:runner.number ?? runner.runner_number ?? null,
+      price:Number(quote.win_price ?? quote.win ?? quote.price),
+      age:quote.age_seconds};
+  }).filter(x => x && Number.isFinite(x.price) && x.price > 1);
+  return candidates.sort((a,b)=>a.price-b.price)[0] || null;
+}
+function favouritePanel(label, favourite) {
+  return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(favourite.age) ? "Quote age "+Math.round(favourite.age)+"s" : "Live feed quote"}</div>` : `<div class="book-fav-missing">No current quote for this race</div>`}</div>`;
+}
 function marketFavourite(race) {
   const runners = (race.runners || []).map(r => {
     const quotes = runnerPrices(r);
@@ -37,6 +51,8 @@ function filteredRaces() {
 }
 function raceCard(r, live=false) {
   const fav = marketFavourite(r);
+  const sportsbetFav = bookmakerFavourite(r,"sportsbet");
+  const bet365Fav = bookmakerFavourite(r,"bet365");
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
@@ -62,6 +78,7 @@ function raceCard(r, live=false) {
     <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : (r.stale ? "Check price freshness" : "Odds feed")}</div>
+    <div class="bookmaker-favourites">${favouritePanel("SPORTSBET FAVOURITE",sportsbetFav)}${favouritePanel("BET365 FAVOURITE",bet365Fav)}</div>
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
 }
