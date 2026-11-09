@@ -19,3 +19,13 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 .history-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0 12px}.history-stat{background:#101821;border:1px solid #253442;border-radius:9px;padding:13px}.history-stat span{display:block;font-size:9px;letter-spacing:1.1px;color:#8494a4;font-weight:700;margin-bottom:8px}.history-stat strong{font:600 22px "Space Grotesk"}
 .code-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.code-stats>div{display:flex;justify-content:space-between;gap:12px;padding:12px;background:#101821;border-radius:8px;color:#aab7c4;font-size:11px}.code-stats b{color:#e4ebf1}.history-rows{display:grid;gap:7px}.history-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;align-items:center;gap:12px;border-top:1px solid #273441;padding:11px 2px;font-size:11px}.history-row .muted{font-size:10px}.won{color:var(--green);font-weight:700}.lost{color:var(--red);font-weight:700}.pending{color:var(--gold);font-weight:700}
 @media(max-width:700px){.history-stats{grid-template-columns:repeat(2,1fr)}.history-row{grid-template-columns:1fr 1fr}.code-stats{grid-template-columns:1fr}.history-heading{align-items:flex-start;flex-direction:column}}
+
+.next-races-panel{margin:26px 0 22px;padding:20px;border:1px solid #38644f;background:linear-gradient(145deg,#14271f,#121d22);border-radius:14px}
+.next-races-heading{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:16px}
+.next-races-heading .eyebrow{margin-bottom:8px}
+.next-races-heading h2,.all-races-heading h2{font:600 21px "Space Grotesk";margin:0}
+.next-race-count{min-width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#244b39;color:#7ce2ad;font:700 16px "Space Grotesk"}
+.live-race-card{border-color:#3c775b;background:linear-gradient(110deg,#192d26,#121f23)}
+.soon-tag{background:#27523d;color:#8af0b7}
+.compact-empty{padding:25px 16px}
+.all-races-heading{margin:24px 0 12px;color:#dce5ec}
