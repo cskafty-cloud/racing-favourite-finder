@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151d">
+  <title>Racing Favourite Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">RF</span><span>RACING<span class="muted">FINDER</span></span></a>
+    <div class="top-right"><span class="live-dot"></span><span id="feedStatus">CONNECTING</span><span class="divider"></span><span id="clock">--:--:--</span></div>
+  </header>
+  <main class="shell">
+    <section class="hero"><div><div class="eyebrow">AUSTRALIAN RACING MARKETS</div><h1>Find the <em>market favourite.</em></h1><p class="sub">Horse and greyhound races, ranked by the shortest available win odds.</p></div><button id="refreshBtn" class="refresh-btn"><span>↻</span> Refresh now</button></section>
+    <section class="stats">
+      <div class="stat"><span class="stat-label">RACES ON BOARD</span><strong id="raceCount">—</strong></div>
+      <div class="stat"><span class="stat-label">HORSE RACES</span><strong id="horseCount">—</strong></div>
+      <div class="stat"><span class="stat-label">GREYHOUND RACES</span><strong id="dogCount">—</strong></div>
+      <div class="stat"><span class="stat-label">LAST UPDATED</span><strong class="small-stat" id="updatedAt">Waiting…</strong></div>
+    </section>
+    <div id="notice" class="notice hidden"></div>
+    <section class="history-panel">
+      <div class="history-heading"><div><div class="eyebrow">TRACK RECORD</div><h2>Favourite results</h2><p class="sub">Recorded selections are compared with official race results.</p></div><button id="syncHistoryBtn" class="secondary-btn">↻ Update results</button></div>
+      <div class="history-stats">
+        <div class="history-stat"><span>SETTLED RACES</span><strong id="histRaces">—</strong></div>
+        <div class="history-stat"><span>FAVOURITES WON</span><strong id="histWins">—</strong></div>
+        <div class="history-stat"><span>WIN STRIKE RATE</span><strong id="histRate">—</strong></div>
+        <div class="history-stat"><span>AWAITING RESULT</span><strong id="histPending">—</strong></div>
+      </div>
+      <div class="code-stats"><div><b>🐎 Horses</b><span id="horseRecord">No settled races yet</span></div><div><b>🐕 Greyhounds</b><span id="dogRecord">No settled races yet</span></div></div>
+      <div id="historyRows" class="history-rows"><div class="empty">History will appear after the app records selections and results.</div></div>
+    </section>
+    <section class="toolbar">
+      <div class="tabs" role="tablist"><button class="tab active" data-filter="all">All races</button><button class="tab" data-filter="horse">🐎 Horses</button><button class="tab" data-filter="greyhound">🐕 Greyhounds</button></div>
+      <div class="toolbar-right"><label class="search"><span>⌕</span><input id="search" placeholder="Search track or runner…"></label><select id="sort"><option value="time">Soonest first</option><option value="odds">Shortest favourite odds</option></select></div>
+    </section>
+    <section id="raceList" class="race-list"><div class="loading"><div class="spinner"></div><span>Loading Australian races…</span></div></section>
+    <footer><div><strong>RACING FAVOURITE FINDER</strong><p>Market information only · 18+ · No bets are placed by this app.</p></div><div class="footer-right">Prices by data provider · Verify all prices and scratchings before betting.</div></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
