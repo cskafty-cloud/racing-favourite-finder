@@ -68,7 +68,26 @@ function categoryOf(r) {
   return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
 }
 function raceId(r) {
-  return String(r.race_id || r.id || `${r.venue || r.track_name || "track"}-${r.race_number || "x"}-${r.start_time || ""}`);
+  return String(r.race_id || r.id || `${r.venue || r.track_name || "track"}-${r.race_number || r.race_no || "x"}-${r.start_time || r.race_time || ""}`);
+}
+function raceMatchKey(r) {
+  const venue = String(r.venue || r.track_name || r.venue_canonical || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const number = r.race_number ?? r.race_no ?? "";
+  const rawTime = r.start_time || r.race_time || r.date || "";
+  const date = rawTime ? new Date(rawTime) : null;
+  const day = date && !Number.isNaN(date.getTime())
+    ? new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit" }).format(date)
+    : "";
+  return venue && number && day ? `${venue}|r${number}|${day}` : null;
+}
+function findMatchingPick(picks, result) {
+  const id = raceId(result);
+  const exact = picks.find(p => p.raceId === id);
+  if (exact) return exact;
+  const key = raceMatchKey(result);
+  if (!key) return null;
+  const matches = picks.filter(p => p.raceMatchKey === key);
+  return matches.length === 1 ? matches[0] : null;
 }
 function winnerFromResult(r) {
   if (r.winner_name) return { name: r.winner_name, number: r.winner_number ?? null };
@@ -97,14 +116,16 @@ app.get("/api/races", async (_req, res) => {
       const fav = selectFavourite(race);
       if (!fav) continue;
       const id = raceId(race);
-      if (history.picks.some(p => p.raceId === id)) continue;
+      const matchKey = raceMatchKey(race);
+      if (history.picks.some(p => p.raceId === id || (matchKey && p.raceMatchKey === matchKey))) continue;
       history.picks.push({
-        raceId: id, category: categoryOf(race),
+        raceId: id, raceMatchKey: matchKey, category: categoryOf(race),
         venue: race.venue || race.track_name || "Unknown track",
         raceNumber: race.race_number ?? null,
         startTime: race.start_time || null,
         runnerName: fav.name, runnerNumber: fav.number,
         selectedOdds: fav.price, priceSource: fav.priceSource,
+        quoteCount: fav.quoteCount, confidence: fav.quoteCount >= 3 ? "stronger market coverage" : fav.quoteCount === 2 ? "limited market coverage" : "single bookmaker quote",
         selectedAt: new Date().toISOString(), status: "pending",
         winnerName: null, favouriteWon: null
       });
@@ -129,8 +150,7 @@ app.post("/api/history/sync", async (_req,res) => {
     const history = await readHistory();
     let settled = 0;
     for (const result of results) {
-      const id = raceId(result);
-      const pick = history.picks.find(p => p.raceId === id);
+      const pick = findMatchingPick(history.picks, result);
       if (!pick || pick.status === "final") continue;
       const winner = winnerFromResult(result);
       if (!winner) continue;
