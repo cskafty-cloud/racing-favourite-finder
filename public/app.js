@@ -29,10 +29,12 @@ function marketFavourite(race) {
   const runners = (race.runners || []).map(r => {
     const quotes = runnerPrices(r);
     if (!quotes.length) return null;
-    const sorted = quotes.map(q => Number(q.win_price)).sort((a,b)=>a-b);
-    const median = sorted[Math.floor((sorted.length-1)/2)];
-    const b365 = quotes.find(q => ["bet365","bet_365"].includes(String(q.key || q.bookmaker || "").toLowerCase()));
-    return {...r, consensus: b365 ? Number(b365.win_price) : median, bet365: b365?.win_price, quoteCount: quotes.length, priceSource: b365 ? "Bet365" : "market median"};
+    const prices = quotes.map(q => Number(q.win_price ?? q.win ?? q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
+    if (!prices.length) return null;
+    const median = prices[Math.floor((prices.length-1)/2)];
+    const b365 = quotes.find(q => String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"") === "bet365");
+    const b365Price = b365 ? Number(b365.win_price ?? b365.win ?? b365.price) : null;
+    return {...r, consensus: b365Price || median, bet365: b365Price, quoteCount: quotes.length, priceSource: b365Price ? "Bet365" : "market median"};
   }).filter(Boolean);
   return runners.sort((a,b)=>a.consensus-b.consensus)[0] || null;
 }
@@ -77,7 +79,7 @@ function raceCard(r, live=false) {
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+    <div>${fav ? `<div class="favourite-label">★ RACE FAVOURITE · HIGHLIGHTED</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : esc(marketState)}</div>
     <div class="bookmaker-favourites">${favouritePanel("SPORTSBET FAVOURITE",sportsbetFav)}${favouritePanel("BET365 FAVOURITE",bet365Fav)}</div>
@@ -210,5 +212,5 @@ tick(); setInterval(tick,1000);
 loadRaces();
 loadHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,60000);
+setInterval(loadRaces,5000);
 setInterval(syncHistory,15*60*1000);
