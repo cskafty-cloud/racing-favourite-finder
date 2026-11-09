@@ -67,3 +67,5 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 .coverage-subheading{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#e4c17d;font-weight:700;margin:13px 0 2px}
 .coverage-note{font-size:10px;line-height:1.5;color:#8795a2;margin:13px 0 0}
 @media(max-width:600px){.coverage-stats{grid-template-columns:repeat(2,1fr)}.coverage-panel{padding:14px}.coverage-row{align-items:flex-start;flex-direction:column}.coverage-row strong{text-align:left}}
+
+.feed-freshness{font-size:10px;color:#9aa8b5;letter-spacing:.2px;margin:-5px 0 14px;padding:9px 12px;border:1px solid #303943;border-radius:7px;background:#151b21}
