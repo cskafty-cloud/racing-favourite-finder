@@ -56,6 +56,8 @@ function raceCard(r, live=false) {
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
+  const country = r.country || "Country pending";
+  const marketState = r.inplay ? "IN PLAY" : (r.market_status || (r.tote_only ? "TOTE ONLY" : (fav ? "ODDS AVAILABLE" : "SCHEDULED · NO ODDS YET")));
   const date = fmtDate(r.start_time);
   const time = fmtTime(r.start_time);
   const price = fav ? Number(fav.consensus).toFixed(2) : "—";
@@ -73,11 +75,11 @@ function raceCard(r, live=false) {
   return `<article class="race-card ${live?"live-race-card":""}">
     <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":"🐕 GREYHOUND RACING"}</div>
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
-      <div class="race-meta">${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
+      <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
     <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
-    <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : (r.stale ? "Check price freshness" : "Odds feed")}</div>
+    <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : esc(marketState)}</div>
     <div class="bookmaker-favourites">${favouritePanel("SPORTSBET FAVOURITE",sportsbetFav)}${favouritePanel("BET365 FAVOURITE",bet365Fav)}</div>
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
@@ -153,6 +155,7 @@ async function loadRaces() {
     state.races = data.races || [];
     $("feedStatus").textContent = data.mode === "live" ? "LIVE FEED" : "FEED OFFLINE";
     $("updatedAt").textContent = new Date(data.fetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    $("feedFreshness").textContent = `Screen checks every 5s · odds feed ${data.oddsFetchedAt ? new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"} · schedule ${data.scheduleFetchedAt ? new Date(data.scheduleFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"} · ${data.horizonHours || 24}h schedule window`;
     $("notice").textContent = data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.";
     $("notice").classList.remove("hidden");
     render();
