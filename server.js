@@ -6,6 +6,8 @@ const fs = require("fs/promises");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.PUNTERSEDGE_API_KEY || "";
+const PROVIDER_PLAN = String(process.env.PUNTERSEDGE_PLAN || "free").toLowerCase();
+const SCHEDULE_HORIZON_HOURS = PROVIDER_PLAN === "standard" ? 48 : (["plus","premium","pro","enterprise"].includes(PROVIDER_PLAN) ? 168 : 24);
 const BASE = "https://api.puntersedge.online";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
@@ -155,7 +157,7 @@ app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
 let pricedCache = { at: 0, rows: [] };
-let scheduleCache = { at: 0, rows: [], horizonHours: 24 };
+let scheduleCache = { at: 0, rows: [], horizonHours: SCHEDULE_HORIZON_HOURS };
 let refreshInFlight = null;
 async function getGlobalRaces() {
   const now = Date.now();
@@ -163,8 +165,8 @@ async function getGlobalRaces() {
     if (!refreshInFlight) refreshInFlight = (async () => {
       const tasks = [];
       if (now - scheduleCache.at >= 60000) tasks.push((async () => {
-        const data = await provider("/v1/racing/events", { hours_ahead:24, categories:"horse,greyhound" });
-        scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: 24 };
+        const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,greyhound" });
+        scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
       })());
       if (now - pricedCache.at >= 15000) tasks.push((async () => {
         const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,greyhound" });
@@ -214,8 +216,8 @@ app.get("/api/races", async (_req, res) => {
     res.set("Cache-Control","no-store");
     res.json({races, mode:"live", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, scope:"worldwide",
-      note:"Worldwide schedule and prices for horse and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. Prices are refreshed from the provider on a separate cache interval; check each quote age and bookmaker market before betting."});
+      horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, scope:"provider-supported worldwide",
+      note:"Worldwide schedule and prices for horse and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
