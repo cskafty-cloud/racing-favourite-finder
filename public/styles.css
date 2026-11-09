@@ -69,3 +69,6 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 @media(max-width:600px){.coverage-stats{grid-template-columns:repeat(2,1fr)}.coverage-panel{padding:14px}.coverage-row{align-items:flex-start;flex-direction:column}.coverage-row strong{text-align:left}}
 
 .feed-freshness{font-size:10px;color:#9aa8b5;letter-spacing:.2px;margin:-5px 0 14px;padding:9px 12px;border:1px solid #303943;border-radius:7px;background:#151b21}
+
+.bet-link{display:inline-block;margin-left:5px;color:#e9c47b;font-size:9px;text-decoration:none;border-bottom:1px solid #8d7549}
+.bet-link:hover{color:#fff0c7}
