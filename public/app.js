@@ -59,7 +59,7 @@ function render() {
         <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
         <div class="race-meta">${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
         <div class="race-time">${time}</div></div>
-      <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · shortest median market price</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+      <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">FAVOURITE UNAVAILABLE</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
       <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
       <div class="market-tag">${r.stale ? "Check price freshness" : "Odds feed"}</div>
     </article>`;
@@ -109,7 +109,7 @@ async function loadHistory() {
     const rows = (data.picks || []).slice(0,12);
     $("historyRows").innerHTML = rows.length ? rows.map(p => {
       const status = p.status === "final" ? (p.favouriteWon ? '<span class="won">WON</span>' : '<span class="lost">LOST</span>') : '<span class="pending">PENDING</span>';
-      return `<div class="history-row"><div><b>${esc(p.venue)}</b><div class="muted">${p.category==="horse"?"Horse":"Greyhound"} ${p.raceNumber ? "R"+p.raceNumber : ""}</div></div><div>${esc(p.runnerName)}<div class="muted">$ ${Number(p.selectedOdds).toFixed(2)} · ${esc(p.priceSource)}</div></div><div>${p.winnerName ? "Winner: "+esc(p.winnerName) : "Awaiting result"}</div><div>${status}</div></div>`;
+      return `<div class="history-row"><div><b>${esc(p.venue)}</b><div class="muted">${p.category==="horse"?"Horse":"Greyhound"} ${p.raceNumber ? "R"+p.raceNumber : ""}</div></div><div>${esc(p.runnerName)}<div class="muted">$ ${Number(p.selectedOdds).toFixed(2)} · ${esc(p.priceSource)} · ${Number(p.quoteCount||0)} quote${Number(p.quoteCount||0)===1?"":"s"}</div></div><div>${p.winnerName ? "Winner: "+esc(p.winnerName) : "Awaiting result"}</div><div>${status}</div></div>`;
     }).join("") : '<div class="empty">No saved picks yet. Keep the live dashboard running to record upcoming favourites.</div>';
   } catch (e) { $("historyRows").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
