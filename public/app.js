@@ -120,7 +120,7 @@ async function syncHistory() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not update results");
     await loadHistory();
-    btn.textContent = `Updated · ${data.settled} new results`;
+    btn.textContent = `Updated · ${data.settled} settled · ${data.unmatched} unmatched`;
   } catch (e) { btn.textContent = "Update failed"; $("notice").textContent = e.message; $("notice").classList.remove("hidden"); }
   setTimeout(()=>{btn.disabled=false;btn.textContent="↻ Update results";},3500);
 }
