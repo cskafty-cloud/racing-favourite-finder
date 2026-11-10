@@ -570,7 +570,6 @@ app.get("/api/live-sports",async(_req,res)=>{
 
 // Sports catalogue is cached for six hours. Sports odds are fetched on demand
 // per selected sport and cached for 15 minutes to control provider credit use.
-const sportsOddsCache = new Map();
 // Krok Odds is the single source for the sports catalogue and pre-match sports prices.
 let sportsCatalogueCache = { at:0, rows:[], meta:null };
 const sportsOddsCache = new Map();
