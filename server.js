@@ -1018,12 +1018,12 @@ async function getGlobalRaces() {
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_number:r.race_number??r.number??null,
         start_time:start,country:r.country||"Country not supplied",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners};
-    }).filter(r=>r.start_time&&!r.closed&&r.runners.length&&isAustralianRace(r));
+    }).filter(r=>r.start_time&&!r.closed);
     if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
       scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       horizonHours:24,feedErrors:failures,feedSource:"Free public previews · PuntersEdge + Bet365 via MoviOdds",scope:"Australia",
-      note:"Free no-key public previews combined: Australian-only MoviOdds Bet365 racing snapshots plus PuntersEdge multi-bookmaker samples, including Sportsbet where quoted. Overseas meetings are filtered out. Coverage is limited by each public preview and is not guaranteed to include every Australian meeting. Quote age and jump times depend on each source."};
+      note:"Free no-key public previews combined: the next 200 races returned by the Bet365 MoviOdds board plus PuntersEdge multi-bookmaker samples, including Sportsbet where quoted. Races remain listed even when runner fields or bookmaker prices have not arrived. Coverage is limited by each public preview and is not guaranteed to include every meeting worldwide. Quote age and jump times depend on each source."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
   } catch(error) {
     failures.push({feed:"MoviOdds public Bet365 preview",message:error.message});
