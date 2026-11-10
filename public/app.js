@@ -1,4 +1,4 @@
-const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false };
+const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, feedMode:"live", sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false };
 const $ = id => document.getElementById(id);
 const fmtTime = value => {
   if (!value) return "Time TBA";
@@ -363,7 +363,7 @@ function renderSports(){
   const sbText=sb?esc(sb.name)+' $'+sb.price.toFixed(2):"No Sportsbet quote returned";
   const b365Text=b365?esc(b365.name)+' $'+b365.price.toFixed(2):"No Bet365 quote returned";
   return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div>'+(e.sport_name?'<div class="sport-league">'+esc(e.sport_name)+'</div>':"")+(e.league?'<div class="sport-league">'+esc(e.league)+'</div>':"")+(e.in_play===true&&e.score?'<div class="sport-live-score">LIVE SCORE: <b>'+esc(e.score)+'</b>'+(e.timer&&e.timer.tm!=null?' · '+esc(e.timer.tm)+'′':"")+'</div>':"")+'<div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div>'+rankedHtml+'<div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div><div class="sportsbook-links"><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet market ↗</a><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 market ↗</a></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
- }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
+ }).join(""):'<div class="empty">No upcoming fixtures or verified prices were returned for this sport at this refresh. The full sports catalogue is listed above; check current markets directly at the bookmakers. No odds are estimated.</div><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div>';
  renderSportTrends();renderTopTips();
 }
 function liveScoreText(side){
@@ -403,19 +403,25 @@ async function loadSportOdds(key){
  state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);const resultSportId=Number(String(key).replace("oddsdata_",""));if(Number.isFinite(resultSportId)&&resultSportId>0)loadSportResults(resultSportId);
  $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"");
  renderSports();
- }catch(e){$("sportsNotice").textContent=e.message;}
+ }catch(e){$("sportsNotice").textContent="Live fixtures are temporarily unavailable from the connected feed. The public sports widgets and bookmaker market links remain available below. "+e.message;}
 }
 async function loadAllSports(){
  const btn=$("loadAllSportsBtn");btn.disabled=true;state.sportEvents=[];state.sportsByKey={};renderSports();
  try{
-  for(const s of state.sports){state.selectedSport=s.key;$("sportsNotice").textContent="Loading upcoming "+(s.title||s.key)+"…";
-   const r=await fetch("/api/sports/"+encodeURIComponent(s.key)),d=await r.json();
-   if(!r.ok)continue;const events=(d.events||[]).filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
+  let failed=0;
+  for(const s of state.sports){
+   state.selectedSport=s.key;$("sportsNotice").textContent="Loading upcoming "+(s.title||s.key)+"…";
+   const r=await fetch("/api/sports/"+encodeURIComponent(s.key)+"?mode=all"),d=await r.json();
+   if(!r.ok){failed++;continue;}
+   const events=(d.events||[]).filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
    state.sportsByKey[s.key]=events;recordSportTrends(s.key,events);
+   if(d.providerErrors&&d.providerErrors.length)failed++;
   }
-  state.selectedSport=null;state.allSportsLoaded=true;state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
-  renderSports();renderTopTips();$("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming fixtures across "+Object.keys(state.sportsByKey).length+" sports. Feed updates follow provider cache timing.";
- }catch(e){$("sportsNotice").textContent=e.message;}
+  state.selectedSport=null;state.allSportsLoaded=true;
+  state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
+  renderSports();renderTopTips();
+  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming/live fixtures across "+Object.keys(state.sportsByKey).length+" of "+state.sports.length+" catalogue sports. "+(failed?failed+" sports had incomplete or unavailable provider data.":"All catalogue sports responded.")+" Bulk mode limits bookmaker price lookups to two fixtures per sport to protect API limits.";
+ }catch(e){$("sportsNotice").textContent="The full sports catalogue is listed below, but some fixture feeds are temporarily unavailable. "+e.message;}
  finally{btn.disabled=false;}
 }
 function setMainView(view){
@@ -474,7 +480,9 @@ function render() {
   };
   $("raceList").innerHTML=rows.length
     ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
-    : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>';
+    : (state.feedMode === "public-widgets"
+      ? '<div class="empty">Imported race cards are temporarily unavailable. The free live public feed below still shows available Australian races and prices.</div><article class="racing-widget-card"><h3>Free live Australian horse, greyhound & harness races</h3><iframe src="https://puntersedge.online/widget/racing?limit=12" title="Free live Australian racing feed" width="100%" height="760" loading="lazy" frameborder="0"></iframe><p class="widget-credit">Public live feed by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>'
+      : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>');
   renderTopTips();
 }
 function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -486,17 +494,24 @@ async function loadRaces() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
-    $("feedStatus").textContent = data.mode === "demo" ? "DEMO PREVIEW · NOT LIVE" : (data.mode === "live" ? (data.feedErrors?.length ? "LIVE FEED · PARTIAL" : "LIVE FEED") : "FEED OFFLINE");
-    $("updatedAt").textContent = new Date(data.fetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    const feedMeta=data.feedMeta||{}; const books=(data.providerBookmakers||[]).length; const cap=feedMeta.truncated?` · PROVIDER LIMIT: ${feedMeta.limit||"tier cap"} of ${feedMeta.total_matched||"more"} records returned`:""; $("feedFreshness").textContent = `Screen refresh: 60s (display only) · ${books} bookmaker feeds with prices in this response · ${data.scope||"provider coverage"} · provider tier: ${esc(data.providerPlan||"not reported")}${cap} · price freshness varies by bookmaker; check each quote age · last feed fetch ${data.oddsFetchedAt?new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"waiting"}`;
-    $("notice").textContent = (data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.") + (data.feedErrors?.length ? " Feed warning: " + data.feedErrors.map(x => x.feed + ": " + x.message).join(" · ") : "");
+    state.feedMode = data.mode || "live";
+    $("feedStatus").textContent = state.feedMode === "public-widgets" ? "FREE PUBLIC FEEDS" : (data.feedErrors && data.feedErrors.length ? "LIVE FEED · PARTIAL" : "LIVE FEED");
+    $("updatedAt").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const books = (data.providerBookmakers || []).length;
+    $("feedFreshness").textContent = state.feedMode === "public-widgets"
+      ? "Free public racing widgets are available below · imported prices appear only when a connected provider supplies verified current quotes · no sample odds are generated."
+      : "Screen refresh: 60s · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
+    $("notice").textContent = data.note || "Racing cards and prices appear only when a connected provider returns them. Free public feeds remain available below.";
     $("notice").classList.remove("hidden");
     render();
   } catch (err) {
-    $("feedStatus").textContent = "FEED ERROR";
-    $("notice").textContent = `${err.message}. If using live mode, check your server .env API key and provider access.`;
+    state.feedMode = "public-widgets";
+    $("feedStatus").textContent = "FREE PUBLIC FEEDS";
+    $("updatedAt").textContent = new Date().toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    $("feedFreshness").textContent = "The imported race-card API is temporarily unavailable. Free public widgets remain available below; no odds are estimated.";
+    $("notice").textContent = "Use the free live public racing widget below for current fields and prices. Imported bookmaker race cards will return when a connected provider is available.";
     $("notice").classList.remove("hidden");
-    if (!state.races.length) $("raceList").innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+    render();
   } finally { state.loading = false; $("refreshBtn").disabled = false; }
 }
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
