@@ -251,13 +251,17 @@ async function loadLiveSports(){
   const r=await fetch("/api/live-sports"),d=await r.json();
   if(!r.ok)throw Error(d.error||"Live sports feed unavailable");
   const fetched=d.fetchedAt?new Date(d.fetchedAt):null;
-  notice.textContent=d.error?"Feed warning: "+d.error:
-   (d.events.length+" bet365 live events · "+(d.totalInPlay??d.events.length)+" total in-play fixtures · snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+(d.ageSeconds??"—")+"s old. "+d.note);
+  const age=d.ageSeconds==null?"waiting":Math.round(d.ageSeconds/60)+"m old";
+  notice.textContent=(d.events.length+" started fixtures · "+(d.bookmakers||[]).length+" bookmaker feeds requested · snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+age+". "+(d.note||""));
   list.innerHTML=d.events.length?d.events.map(e=>{
-   const score=e.score?" · "+esc(e.score):"",clock=e.minute!=null?" · "+esc(e.minute)+"′":"";
-   const f=e.favourite;
-   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-book-favs"><span>BET365 LIVE FAVOURITE: <b>'+(f?esc(f.name)+" $"+f.price.toFixed(2):"No active price returned")+'</b></span><span>SPORTSBET LIVE FAVOURITE: <b>Not connected — separate live Sportsbet feed required</b></span></div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small></article>';
-  }).join(""):'<div class="empty">No live events were returned by bet365 at this check.</div>';
+   const books=(e.bookmakerFavourites||[]).filter(x=>x.favourite);
+   const favs=books.map(x=>'<span>'+esc(x.bookmaker)+': <b>'+esc(x.favourite.name)+' '+Number(x.favourite.price).toFixed(2)+'</b></span>').join("");
+   const all=(e.bookmakers||[]).map(book=>{
+    const markets=(book.markets||[]).map(m=>'<div class="live-market"><b>'+esc(m.key||"Market")+'</b> '+(m.outcomes||[]).map(o=>esc(o.name)+' <strong>'+Number(o.price).toFixed(2)+'</strong>').join(" · ")+'</div>').join("");
+    return '<div class="live-bookmaker"><b>'+esc(book.name)+'</b><small>'+(book.lastUpdate?"Updated "+esc(new Date(book.lastUpdate).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})):"Update time unavailable")+'</small>'+markets+'</div>';
+   }).join("");
+   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.sport)+' · '+esc(e.status)+' · '+esc(fmtDate(e.commenceTime))+' '+esc(fmtTime(e.commenceTime))+'</small><div class="sport-book-favs">'+(favs||'<span>No bookmaker favourite prices returned.</span>')+'</div><details><summary>All bookmaker markets ('+(e.quoteCount||0)+' prices)</summary><div class="live-bookmakers">'+(all||"No quotes")+'</div></details></article>';
+  }).join(""):'<div class="empty">'+esc(d.error||"No started fixtures with bookmaker prices were returned. This does not mean no games are live; check provider coverage and selected sports.")+'</div>';
  }catch(e){notice.textContent=e.message;list.innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
 
