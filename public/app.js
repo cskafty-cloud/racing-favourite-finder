@@ -4392,6 +4392,80 @@ async function syncHistory() {
   setTimeout(()=>{btn.disabled=false;btn.textContent="↻ Update results";},3500);
 }
 $("syncHistoryBtn").addEventListener("click",syncHistory);
+
+/* Fresh-feed guardrails and canonical bookmaker aliases. */
+function normaliseBookmakerKey(value) {
+ const key=String(value||"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]/g,"");
+ if(key.includes("sportsbet"))return "sportsbet";
+ if(key.includes("bet365")||key.includes("betthree65"))return "bet365";
+ if(key.includes("tabtouch"))return "tabtouch";
+ if(key.includes("tab"))return "tab";
+ if(key.includes("betr"))return "betr";
+ if(key.includes("betfair")||key.includes("exchange"))return "betfair";
+ return key;
+}
+function quoteIsFresh(q) {
+ const age=quoteAgeSeconds(q);
+ return q?.stale!==true && age!==null && Number.isFinite(age) && age<180;
+}
+function bookmakerFavourite(race,wantedKey) {
+ const candidates=(race.runners||[]).map(runner=>{
+  const quote=fixedRunnerPrices(runner).find(q=>
+   [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(v=>bookmakerMatches(v,wantedKey))&&quoteIsFresh(q));
+  if(!quote)return null;
+  return {name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
+   number:runner.number??runner.runner_number??null,price:Number(quote.win_price??quote.win??quote.price),
+   age:quoteAgeSeconds(quote),stale:false,verified:quote.public_demo!==true,
+   url:quote.event_url||quote.market_url||quote.url||BOOKMAKER_URLS[wantedKey]};
+ }).filter(x=>x&&Number.isFinite(x.price)&&x.price>1);
+ return candidates.sort((a,b)=>a.price-b.price)[0]||null;
+}
+function runnerFixedOdds(runner) {
+ const ps=fixedRunnerPrices(runner).filter(quoteIsFresh).map(q=>Number(q.win_price??q.win??q.price))
+  .filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
+ return ps.length?ps[Math.floor((ps.length-1)/2)]:null;
+}
+function sportFavourite(event,wantedBookmaker) {
+ const prices=new Map();
+ for(const book of event.bookmakers||[]) {
+  if(wantedBookmaker&&!bookmakerMatches(book.key||book.title||book.name,wantedBookmaker))continue;
+  for(const market of book.markets||[]) {
+   if(!["h2h","head_to_head"].includes(String(market.key||"").toLowerCase()))continue;
+   for(const outcome of market.outcomes||[]) {
+    const price=Number(outcome.price),age=quoteAgeSeconds({...outcome,...book});
+    if(price>1&&Number.isFinite(price)&&book.stale!==true&&age!==null&&age<180) {
+     if(!prices.has(outcome.name))prices.set(outcome.name,[]);
+     prices.get(outcome.name).push(price);
+    }
+   }
+  }
+ }
+ return [...prices.entries()].map(([name,values])=>{
+  values.sort((a,b)=>a-b);
+  return {name,price:values[Math.floor((values.length-1)/2)],books:values.length};
+ }).sort((a,b)=>a.price-b.price)[0]||null;
+}
+function sportRankings(event) {
+ const prices=new Map();
+ for(const book of event.bookmakers||[]) for(const market of book.markets||[]) {
+  if(!["h2h","head_to_head"].includes(String(market.key||"").toLowerCase()))continue;
+  for(const outcome of market.outcomes||[]) {
+   const price=Number(outcome.price),age=quoteAgeSeconds({...outcome,...book});
+   if(price>1&&Number.isFinite(price)&&book.stale!==true&&age!==null&&age<180) {
+    if(!prices.has(outcome.name))prices.set(outcome.name,[]);
+    prices.get(outcome.name).push(price);
+   }
+  }
+ }
+ const rows=[...prices.entries()].map(([name,values])=>{
+  values.sort((a,b)=>a-b);const mid=values[Math.floor((values.length-1)/2)];
+  return {name,price:mid,books:values.length,spread:values.length>1?(values[values.length-1]-values[0])/mid:1};
+ }).sort((a,b)=>a.price-b.price);
+ if(rows.length){const gap=rows[1]?Math.max(0,(1/rows[0].price-1/rows[1].price)/(1/rows[0].price)):0;
+  rows[0].score=Math.round(Math.min(40,rows[0].books/3*40)+Math.max(0,30*(1-rows[0].spread/.35))+Math.min(30,gap/.15*30));}
+ return rows;
+}
+
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
 loadRaces();
