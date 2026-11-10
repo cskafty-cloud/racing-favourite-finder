@@ -74,7 +74,9 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     : "";
   const details=favourite
     ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' public-feed favourite</div>'+details+
+  const heading=favourite&&favourite.isFallback?"Sportsbet estimated favourite · market proxy":esc(bookmaker)+" public-feed favourite";
+  const priceCaption=favourite&&favourite.isFallback?'<div class="book-fav-age">Indicative market consensus · not Sportsbet odds</div>':"";
+  return '<div class="book-fav"><div class="book-fav-label">'+heading+'</div>'+details+priceCaption+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
 +Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed via MoviOdds":"Sportsbet fixed-win public quote"))+(favourite.age==null?"":" · "+Math.round(Number(favourite.age))+"s old")+freshness+'</div>'+(favourite.isFallback?'<div class="book-fav-missing">Estimate only: this is the overall market consensus, not a Sportsbet fixed-win price. Open Sportsbet to verify its live quote.</div>':"")
