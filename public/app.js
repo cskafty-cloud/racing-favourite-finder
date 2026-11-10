@@ -1,4 +1,4 @@
-const state = { races: [], filter: "all", search: "", sort: "time", loading: false, sports: [], selectedSport: null, sportEvents: [] };
+const state = { races: [], filter: "all", search: "", sort: "time", loading: false, sports: [], selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false };
 const $ = id => document.getElementById(id);
 const fmtTime = value => {
   if (!value) return "Time TBA";
@@ -204,17 +204,76 @@ function renderFullCoverage(rows) {
     return '<details class="full-race-row" '+(live?"open":"")+'><summary><span><b>'+esc(venue)+' R'+esc(number)+'</b><small>'+esc(categoryOf(r))+' · '+esc(r.country||"Country n/a")+' · '+esc(fmtDate(r.start_time))+' '+esc(fmtTime(r.start_time))+(live?' · LIVE NOW':'')+'</small></span><strong>'+raceQuoteCount+' quotes · '+(r.runners||[]).length+' runners</strong><span class="detail-chevron">⌄</span></summary><div class="full-race-runners">'+(all||'<div class="no-odds">No runners supplied by the provider for this race yet.</div>')+'</div></details>';
   }).join("") : '<div class="empty">No races returned by the provider.</div>';
 }
-function sportFavourite(event){
- const prices=new Map();
- for(const b of event.bookmakers||[]) for(const m of b.markets||[]) if(["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())) for(const o of m.outcomes||[]){const p=Number(o.price);if(p>1){if(!prices.has(o.name))prices.set(o.name,[]);prices.get(o.name).push(p);}}
+function sportFavourite(event, wantedBookmaker){
+ const aliases={sportsbet:["sportsbet","sportsbetau","sportsbetcomau"],bet365:["bet365","bet365au","bet365comau"]};
+ const wanted=aliases[wantedBookmaker]||null, prices=new Map();
+ for(const b of event.bookmakers||[]){
+  const bk=String(b.key||b.title||b.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(wanted&&!wanted.includes(bk))continue;
+  for(const m of b.markets||[]) if(["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())) for(const o of m.outcomes||[]){const p=Number(o.price);if(p>1){if(!prices.has(o.name))prices.set(o.name,[]);prices.get(o.name).push(p);}}
+ }
  return [...prices.entries()].map(([name,v])=>{v.sort((a,b)=>a-b);return {name,price:v[Math.floor((v.length-1)/2)],books:v.length};}).sort((a,b)=>a.price-b.price)[0]||null;
 }
-function renderSports(){
- $("sportsCatalogue").innerHTML=state.sports.map(s=>'<button class="sport-chip" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
- $("sportsEvents").innerHTML=state.sportEvents.length?state.sportEvents.map(e=>{const f=sportFavourite(e),t=e.commence_time||"",home=e.home_team||"",away=e.away_team||"";return '<article class="sport-event"><b>'+esc(away)+' @ '+esc(home)+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div></article>';}).join(""):'<div class="empty">Choose a sport above to load upcoming fixtures.</div>';
+function recordSportTrends(key, events){
+ const now=Date.now();
+ for(const e of events){
+  const fav=sportFavourite(e);if(!fav)continue;
+  const id=String(e.id||e.event_id||[e.home_team,e.away_team,e.commence_time].join("|"));
+  const k=key+"|"+id, old=state.sportTrendPrices[k];
+  if(old&&old.name===fav.name){
+   const pct=(fav.price-old.price)/old.price*100;
+   if(Math.abs(pct)>=5){
+    state.sportTrendAlerts.unshift({sport:key,event:(e.away_team||"")+" @ "+(e.home_team||""),runner:fav.name,from:old.price,to:fav.price,pct,at:now});
+    state.sportTrendAlerts=state.sportTrendAlerts.slice(0,30);
+   }
+  }
+  state.sportTrendPrices[k]={name:fav.name,price:fav.price,at:now};
+ }
+ renderSportTrends();
 }
-async function loadSports(){try{const r=await fetch("/api/sports"),d=await r.json();if(!r.ok)throw Error(d.error||"Sports feed unavailable");state.sports=d.sports||[];$("sportsNotice").textContent=d.note||"Pre-match only; no in-play sports feed.";renderSports();}catch(e){$("sportsNotice").textContent=e.message;}}
-async function loadSportOdds(key){state.selectedSport=key;try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;state.sportEvents=d.events||[];renderSports();}catch(e){$("sportsEvents").textContent=e.message;}}
+function renderSportTrends(){
+ const el=$("sportsTrends");if(!el)return;
+ el.innerHTML=state.sportTrendAlerts.length?state.sportTrendAlerts.map(a=>'<div class="trend-alert"><span class="trend-tag">'+(a.pct<0?"SHORTENING":"DRIFTING")+'</span><div><b>'+esc(a.sport)+' · '+esc(a.event)+'</b><small>'+esc(a.runner)+' · '+a.from.toFixed(2)+' → '+a.to.toFixed(2)+' ('+(a.pct>0?"+":"")+a.pct.toFixed(1)+'%) · '+new Date(a.at).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+'</small></div></div>').join(""):'<div class="empty compact-empty">No 5%+ favourite price movements detected in the returned snapshots yet.</div>';
+}
+function renderSports(){
+ $("sportsCatalogue").innerHTML=state.sports.map(s=>'<button class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
+ const events=state.sportEvents.slice().filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
+ $("sportsEvents").innerHTML=events.length?events.map(e=>{
+  const f=sportFavourite(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),t=e.commence_time||"";
+  return '<article class="sport-event"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ MARKET FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><div class="sport-book-favs"><span>SPORTSBET: <b>'+(sb?esc(sb.name)+" $"+sb.price.toFixed(2):"No quote returned")+'</b></span><span>BET365: <b>'+(b365?esc(b365.name)+" $"+b365.price.toFixed(2):"No quote returned")+'</b></span></div></article>';
+ }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
+ renderSportTrends();
+}
+async function loadSports(){
+ try{const r=await fetch("/api/sports"),d=await r.json();if(!r.ok)throw Error(d.error||"Sports feed unavailable");state.sports=d.sports||[];$("sportsNotice").textContent=d.note||"Upcoming fixtures and pre-match markets only. Live/in-play odds are not supplied.";renderSports();}
+ catch(e){$("sportsNotice").textContent=e.message;}
+}
+async function loadSportOdds(key){
+ state.selectedSport=key;$("sportsNotice").textContent="Loading "+key+" fixtures…";
+ try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
+ state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);
+ $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Last provider snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"});
+ renderSports();
+ }catch(e){$("sportsNotice").textContent=e.message;}
+}
+async function loadAllSports(){
+ const btn=$("loadAllSportsBtn");btn.disabled=true;state.sportEvents=[];state.sportsByKey={};renderSports();
+ try{
+  for(const s of state.sports){state.selectedSport=s.key;$("sportsNotice").textContent="Loading upcoming "+(s.title||s.key)+"…";
+   const r=await fetch("/api/sports/"+encodeURIComponent(s.key)),d=await r.json();
+   if(!r.ok)continue;const events=(d.events||[]).filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
+   state.sportsByKey[s.key]=events;recordSportTrends(s.key,events);
+  }
+  state.selectedSport=null;state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
+  renderSports();$("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming fixtures across "+Object.keys(state.sportsByKey).length+" sports. Feed updates follow provider cache timing.";
+ }catch(e){$("sportsNotice").textContent=e.message;}
+ finally{btn.disabled=false;}
+}
+function setMainView(view){
+ state.sportsMode=view==="sports";document.body.classList.toggle("sports-mode",state.sportsMode);
+ document.querySelectorAll(".main-tab").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
+ if(state.sportsMode)loadSports();
+}
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
   const harness = state.races.filter(r=>categoryOf(r)==="harness").length;
@@ -266,6 +325,8 @@ $("search").addEventListener("input",e=>{state.search=e.target.value;render();})
 $("sort").addEventListener("change",e=>{state.sort=e.target.value;render();});
 $("refreshBtn").addEventListener("click",loadRaces);
 $("sportsCatalogue").addEventListener("click",e=>{const b=e.target.closest("[data-sport]");if(b)loadSportOdds(b.dataset.sport);});
+$("loadAllSportsBtn").addEventListener("click",loadAllSports);
+document.querySelectorAll(".main-tab").forEach(b=>b.addEventListener("click",()=>setMainView(b.dataset.view)));
 async function loadHistory() {
   try {
     const res = await fetch("/api/history");
@@ -324,6 +385,6 @@ loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
 setInterval(loadRaces,5000);
-setInterval(()=>{if(state.selectedSport)loadSportOdds(state.selectedSport);},5000);
+setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
