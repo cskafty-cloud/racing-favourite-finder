@@ -78,9 +78,11 @@ function normalizeName(value) {
   return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 function categoryOf(r) {
-  const c = String(valueOf(r, ["category","code","race_type","type"]) || "").toLowerCase();
-  if (c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
-  return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
+  const raw = valueOf(r, ["race_type","raceType","race_code","code","category","sport","type"]);
+  const c = String(raw || "").trim().toLowerCase().replace(/[ _-]+/g,"");
+  if (c === "h" || c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
+  if (c === "g" || c.includes("grey") || c.includes("dog")) return "greyhound";
+  return "horse";
 }
 function venueOf(r) {
   return valueOf(r, ["venue","track_name","venue_canonical","track","meeting_name"]) || "Unknown track";
@@ -319,23 +321,27 @@ async function fetchKrokRacing(date) {
   for (const bookRow of sourceRows) {
     const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
-    const code = String(bookRow.race_type || "").trim().toUpperCase();
+    const rawType = valueOf(bookRow, ["race_type","raceType","race_code","code","category","sport","type"]);
+      const code = String(rawType || "").trim().toUpperCase();
     const venueText = String(venue).toLowerCase();
-    const category = code === "G" || /greyhound|dog/i.test(String(bookRow.race_type||"")) ? "greyhound"
-      : code === "H" || /harness|trotting|pacing/i.test(String(bookRow.race_type||"")) ||
+    const category = code === "G" || /greyhound|dog/i.test(String(rawType||"")) ? "greyhound"
+      : code === "H" || /harness|trotting|pacing/i.test(String(rawType||"")) ||
         /gloucester park|menangle|sulky|addington|alexandra park|ballarat harness|kilmore harness|bendigo harness|albion park harness/.test(venueText) ? "harness" : "horse";
     for (const race of (bookRow.races || [])) {
       const number = race.race_number ?? race.race_no ?? race.number;
-      const start = race.start_time || race.jump_time || race.startTime || race.commence_time || null;
+      const start = race.start_time || race.jump_time || race.startTime || race.commence_time || race.scheduled_start || race.off_time || race.start_at || race.race_time || race.time || null;
       const id = String(race.race_id || race.id || [date,normalizeName(venue),code,number].join("-"));
       const key = id+"|"+category;
       if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category==="greyhound"?"greyhound":"harness",
         venue,track:venue,race_number:number,start_time:start||null,country:/^[A-Z]{2}$/i.test(String(bookRow.jurisdiction||""))?String(bookRow.jurisdiction).toUpperCase():null,
-        status:race.status||"scheduled",closed:/closed|final|result|abandon/i.test(String(race.status||"")),
-        abandoned:/abandon/i.test(String(race.status||"")),captured_at:bookRow.captured_at||null,runners:[]});
+        status:race.status||race.market_status||race.event_status||(race.in_play||race.inplay||race.is_live?"in_play":"scheduled"),
+        in_play:!!(race.in_play||race.inplay||race.is_live||/in[ _-]?play|live|running/i.test(String(race.status||race.market_status||race.event_status||""))),
+        closed:/closed|final|result|abandon/i.test(String(race.status||race.market_status||race.event_status||"")),
+        abandoned:/abandon/i.test(String(race.status||race.market_status||race.event_status||"")),captured_at:bookRow.captured_at||null,runners:[]});
       const target=grouped.get(key);
       if (race.status && (!target.status || target.status==="scheduled")) target.status=race.status;
-      if (race.start_time && !target.start_time) target.start_time=race.start_time;
+      if (race.in_play || race.inplay || race.is_live || /in[ _-]?play|live|running/i.test(String(race.status||race.market_status||race.event_status||""))) target.in_play=true;
+      if (start && !target.start_time) target.start_time=start;
       for (const runner of (race.runners || [])) {
         const name=runner.name||runner.runner_name||"Runner";
         const number=runner.number??runner.runner_number??null;
@@ -793,9 +799,11 @@ app.get("/api/sports/:sportKey", async (req,res) => {
           }
         }
       }
-      const events=[...eventMap.values()].map(e=>({...e,
-        in_play:!!e.in_play,status:e.in_play?"IN PLAY":"UPCOMING"
-      }));
+      const events=[...eventMap.values()].map(e=>{
+        const status=String(e.status||e.event_status||e.market_status||"").toLowerCase();
+        const inPlay=!!(e.in_play||e.inplay||e.is_live||/in[ _-]?play|live|running/.test(status));
+        return {...e,in_play:inPlay,status:inPlay?"IN PLAY":(e.status||"UPCOMING")};
+      });
       cached={at:Date.now(),rows:events,meta:result.payload.meta||null,creditsRemaining:result.creditsRemaining};
       sportsOddsCache.set(key,cached);
       console.info("KROK_SPORT_ODDS",JSON.stringify({sport:key,events:events.length,
