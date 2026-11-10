@@ -96,3 +96,5 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 @media(max-width:700px){.full-coverage-panel{padding:14px}.full-race-row summary{grid-template-columns:1fr auto}.detail-chevron{display:none}.full-runner{grid-template-columns:1fr;gap:5px}}
 
 .sports-panel{margin-top:25px;padding:20px;border:1px solid var(--line);border-radius:14px;background:#141c26}.sports-panel h2{font:600 24px "Space Grotesk";margin:0}.sports-catalogue{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.sport-chip{border:1px solid #354655;background:#111923;color:#c7d2dc;border-radius:20px;padding:8px 12px;cursor:pointer}.sport-event{padding:14px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:#101821}.sport-event small{display:block;color:var(--muted);margin-top:5px}.sport-favourite{margin-top:10px;color:var(--green)}
+
+.brand-logo{width:42px;height:42px;object-fit:cover;border-radius:9px;border:1px solid #36536a;box-shadow:0 0 14px #2e8ed655}.brand{gap:12px}
