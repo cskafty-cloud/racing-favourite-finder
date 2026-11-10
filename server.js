@@ -351,7 +351,21 @@ app.get("/api/live-sports",async(_req,res)=>{
      }));
      liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining,
       totalInPlay:list.data.results?.length||0};
-    }catch(err){liveSportsCache={...liveSportsCache,at:Date.now(),error:err.message};}
+     console.info("BET365_INPLAY_REFRESH",JSON.stringify({
+      fetchedAt:new Date(liveSportsCache.at).toISOString(),
+      totalInPlay:liveSportsCache.totalInPlay,
+      detailed:details.length,
+      withScore:details.filter(x=>!!x.score).length,
+      withFavourite:details.filter(x=>!!x.favourite?.price).length,
+      withMarkets:details.filter(x=>(x.markets||[]).length>0).length,
+      eventErrors:details.filter(x=>!!x.error).length,
+      rateLimitRemaining:liveSportsCache.rateLimitRemaining,
+      sample:details.slice(0,3).map(x=>({name:x.name,score:x.score,minute:x.minute,favourite:x.favourite}))
+     }));
+    }catch(err){
+     liveSportsCache={...liveSportsCache,at:Date.now(),error:err.message};
+     console.error("BET365_INPLAY_ERROR",JSON.stringify({at:new Date().toISOString(),error:err.message}));
+    }
    })().finally(()=>{liveSportsRefresh=null;});
    await liveSportsRefresh;
   }
