@@ -290,14 +290,32 @@ function sportRankings(event) {
 }
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
- const tips=[];
- for(const r of state.races||[]) {const fav=marketFavourite(r);if(!fav)continue;tips.push({kind:"RACING",category:categoryOf(r).toUpperCase(),event:(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore,source:fav.priceSource,time:r.start_time});}
- for(const e of state.sportEvents||[]) {const ranks=sportRankings(e);if(!ranks.length)continue;const f=ranks[0];tips.push({kind:"SPORT",category:e._sport||e.sport||"SPORT",event:(e.away_team||"")+" @ "+(e.home_team||""),selection:f.name,odds:f.price,score:f.score||0,source:f.books+" bookmaker quotes",time:e.commence_time});}
+ const raceRows=(state.races||[]).filter(r=>{const t=Date.parse(r.start_time||"");return !Number.isFinite(t)||t>=Date.now()||isExplicitlyLive(r);}).sort((a,b)=>Date.parse(a.start_time||"")-Date.parse(b.start_time||""));
+ const sportsbetPicks=[],racePicks=[],sportPicks=[],allTips=[];
+ for(const r of raceRows){
+  const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
+  const sb=bookmakerFavourite(r,"sportsbet");
+  if(sb)sportsbetPicks.push({event,category,selection:(sb.number?sb.number+". ":"")+sb.name,odds:sb.price,time,source:"Sportsbet public quote",score:0,quotes:1,signal:"SPORTSBET PRICE CONFIRMED"});
+  const fav=marketFavourite(r);
+  if(fav){const pick={kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"LOW CONFIDENCE"};racePicks.push(pick);allTips.push(pick);}
+ }
+ for(const e of state.sportEvents||[]){
+  const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
+  const ranks=sportRankings(e);if(!ranks.length)continue;const f=ranks[0],books=f.books||0;
+  const pick={kind:"SPORT",category:e._sport||e.sport||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:books>=2?"MULTI-QUOTE":"SINGLE-SOURCE"};
+  sportPicks.push(pick);allTips.push(pick);
+ }
  const today=new Date().toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"});
- const todays=tips.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
- const ranked=(todays.length?todays:tips).sort((a,b)=>b.score-a.score||a.odds-b.odds).slice(0,8);
- el.innerHTML=ranked.length?ranked.map((t,i)=>'<article class="sport-event"><div class="sport-event-heading"><b>#'+(i+1)+' · '+esc(t.selection)+'</b><span class="sport-upcoming-label">'+esc(t.kind)+' · '+esc(t.category)+'</span></div><div>'+esc(t.event)+' · '+esc(t.time?fmtTime(t.time):"Time TBA")+'</div><div class="sport-favourite">Fixed bookmaker odds: <strong>$'+t.odds.toFixed(2)+'</strong> · signal score '+t.score+'/100</div><small>'+esc(t.source)+' · ranked by price agreement, market spread and favourite gap. Not a guaranteed tip.</small></article>').join(""):'<div class="empty">No fresh fixed bookmaker odds available yet for today’s shortlist.</div>';
+ const todays=allTips.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
+ const bestDay=(todays.length?todays:allTips).sort((a,b)=>b.score-a.score||a.odds-b.odds).slice(0,10);
+ const card=(t,i,label)=>'<article class="sport-event"><div class="sport-event-heading"><b>#'+(i+1)+' · '+esc(t.selection)+'</b><span class="sport-upcoming-label">'+esc(label||t.kind||"RACING")+'</span></div><div>'+esc(t.event)+' · '+esc(t.time?fmtDate(t.time)+" "+fmtTime(t.time):"Time TBA")+'</div><div class="sport-favourite">Fixed odds: <strong>$'+t.odds.toFixed(2)+'</strong> · '+(t.quotes||0)+' quote'+((t.quotes||0)===1?"":"s")+' · '+esc(t.signal||("signal "+(t.score||0)+"/100"))+'</div><small>'+esc(t.source||"Public snapshot")+' · market ranking only, not a guaranteed winner.</small></article>';
+ const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
+ el.innerHTML=section("SPORTSBET RACING SHORTLIST","Only runners with a returned Sportsbet fixed-odds quote. No Bet365 or market-median substitution.",sportsbetPicks,"No Sportsbet race prices were returned in this public snapshot. This is a feed coverage gap, not a missing favourite.")
+ +section("BEST PICK IN EACH RACE","One current market favourite per returned Australian race, ranked using fresh fixed bookmaker quotes. Weak single-book quotes are clearly labelled.",racePicks,"No fresh priced race favourites are available.")
+ +section("SPORTS FAVOURITES","One lowest-priced head-to-head outcome per returned live or upcoming sports fixture. Sportsbet is shown separately on each fixture where its quote exists.",sportPicks,"No sports fixtures with usable head-to-head prices are available.")
+ +section("BEST OF THE DAY · TOP TIPS","Top 10 current market signals for today, ranked by quote agreement, price spread and favourite separation. These are market shortlists, not predictions of certainty.",bestDay,"No fresh odds are available for a daily shortlist.");
 }
+
 function recordSportTrends(key, events){
  const now=Date.now();
  for(const e of events){
