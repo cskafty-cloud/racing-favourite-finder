@@ -401,7 +401,7 @@ async function loadSportOdds(key){
  state.selectedSport=key;$("sportsNotice").textContent="Loading "+key+" fixtures…";
  try{const r=await fetch("/api/public-sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
  state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);
- $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"");
+ $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"")+(d.providerErrors&&d.providerErrors.length?" · "+d.providerErrors.join(" · "):"");
  renderSports();
  }catch(e){$("sportsNotice").textContent="Live fixtures are temporarily unavailable from the connected feed. The public sports widgets and bookmaker market links remain on this page. "+e.message;}
 }
@@ -420,7 +420,7 @@ async function loadAllSports(){
   state.selectedSport=null;state.allSportsLoaded=true;
   state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
   renderSports();renderTopTips();
-  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming/live fixtures across "+Object.keys(state.sportsByKey).length+" of "+state.sports.length+" catalogue sports. "+(failed?failed+" sports had incomplete or unavailable provider data.":"All catalogue sports responded.")+" Bulk mode limits bookmaker price lookups to two fixtures per sport to protect API limits.";
+  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming/live fixtures across "+Object.keys(state.sportsByKey).length+" of "+state.sports.length+" catalogue sports. "+(failed?failed+" sports had incomplete or unavailable provider data.":"All catalogue sports responded.")+" Public preview size is capped by each source; missing markets are not estimated.";
  }catch(e){$("sportsNotice").textContent="The full sports catalogue is listed below, but some fixture feeds are temporarily unavailable. "+e.message;}
  finally{btn.disabled=false;}
 }
