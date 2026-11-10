@@ -612,12 +612,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -1154,11 +1148,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -1695,11 +1684,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+b365.price.toFixed(2):(f?'No Bet365 quote · overall market favourite: '+esc(f.name)+' 
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div>'+(e.sport_name?'<div class="sport-league">'+esc(e.sport_name)+'</div>':"")+(e.league?'<div class="sport-league">'+esc(e.league)+'</div>':"")+(e.in_play===true&&e.score?'<div class="sport-live-score">LIVE SCORE: <b>'+esc(e.score)+'</b>'+(e.timer&&e.timer.tm!=null?' · '+esc(e.timer.tm)+'′':"")+'</div>':"")+'<div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div>'+rankedHtml+'<div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div><div class="sportsbook-links"><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet market ↗</a><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 market ↗</a></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
- }).join(""):'<div class="empty">No upcoming fixtures or verified prices were returned for this sport at this refresh. The full sports catalogue is listed above; check current markets directly at the bookmakers. No odds are estimated.</div><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div>';
- renderSportTrends();renderTopTips();
-}
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
@@ -1923,12 +1907,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -2465,11 +2443,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -3006,11 +2979,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+f.price.toFixed(2):"No Bet365 quote or overall market price returned");
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div>'+(e.sport_name?'<div class="sport-league">'+esc(e.sport_name)+'</div>':"")+(e.league?'<div class="sport-league">'+esc(e.league)+'</div>':"")+(e.in_play===true&&e.score?'<div class="sport-live-score">LIVE SCORE: <b>'+esc(e.score)+'</b>'+(e.timer&&e.timer.tm!=null?' · '+esc(e.timer.tm)+'′':"")+'</div>':"")+'<div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div>'+rankedHtml+'<div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div><div class="sportsbook-links"><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet market ↗</a><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 market ↗</a></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
- }).join(""):'<div class="empty">No upcoming fixtures or verified prices were returned for this sport at this refresh. The full sports catalogue is listed above; check current markets directly at the bookmakers. No odds are estimated.</div><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div>';
- renderSportTrends();renderTopTips();
-}
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
@@ -3234,12 +3202,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -3776,11 +3738,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -4414,16 +4371,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(t.odds).toFixed(2):'Unavailable')+'</strong> · '+(t.quotes||0)+' quote'+((t.quotes||0)===1?"":"s")+' · '+esc(t.signal||("signal "+(t.score||0)+"/100"))+'</div><small>'+esc(t.source||"Public snapshot")+' · market ranking only, not a guaranteed winner.</small></article>';
- const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
- el.innerHTML=section("SPORTSBET RACING FAVOURITES","Verified Sportsbet prices are shown when returned. Otherwise the overall market favourite is shown as a labelled fallback, never represented as a Sportsbet quote.",sportsbetPicks,'No Sportsbet race prices were returned in this public snapshot. This is a feed coverage gap, not a missing favourite. <a href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Open Sportsbet racing markets ↗</a>')
- +section("BET365 RACING FAVOURITES","Verified Bet365 prices only, including the Bet365-labelled MoviOdds feed. Where a Bet365 quote is missing, the race cards still show the overall market favourite separately; another bookmaker is never relabelled as Bet365.",bet365Picks,'No verified Bet365 racing quotes were returned in this refresh. Overall market favourites remain listed in BEST PICK IN EACH RACE. <a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 race markets ↗</a>')
- +section("BEST PICK IN EACH RACE","One current market favourite per returned Australian race, ranked using fresh fixed bookmaker quotes. Weak single-book quotes are clearly labelled.",racePicks,"No fresh priced race favourites are available.")
- +section("SPORTSBET SPORTS FAVOURITES","Sportsbet prices are matched across normalized bookmaker names. When no Sportsbet quote is returned, the overall market favourite is shown as a clearly labelled fallback, never as a Sportsbet price.",sportsbetSportPicks,"No priced sports fixtures are available in this refresh.")
- +section("SPORTS FAVOURITES","One lowest-priced head-to-head outcome per returned live or upcoming sports fixture. Sportsbet and other bookmaker prices remain separately identified.",sportPicks,"No sports fixtures with usable head-to-head prices are available.")
- +section("BEST OF THE DAY · TOP TIPS","Top 10 live/upcoming racing and sports market signals for today (Brisbane time), ranked by quote agreement, price spread and favourite separation. Single-source picks are clearly labelled; these are not guaranteed winners.",bestDay,"No fresh odds are available for a daily shortlist.");
-}
-
 function recordSportTrends(key, events){
  const now=Date.now();
  for(const e of events){
@@ -4703,12 +4650,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -5245,11 +5186,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -5786,11 +5722,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+b365.price.toFixed(2):(f?'No Bet365 quote · overall market favourite: '+esc(f.name)+' 
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div>'+(e.sport_name?'<div class="sport-league">'+esc(e.sport_name)+'</div>':"")+(e.league?'<div class="sport-league">'+esc(e.league)+'</div>':"")+(e.in_play===true&&e.score?'<div class="sport-live-score">LIVE SCORE: <b>'+esc(e.score)+'</b>'+(e.timer&&e.timer.tm!=null?' · '+esc(e.timer.tm)+'′':"")+'</div>':"")+'<div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div>'+rankedHtml+'<div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div><div class="sportsbook-links"><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet market ↗</a><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 market ↗</a></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
- }).join(""):'<div class="empty">No upcoming fixtures or verified prices were returned for this sport at this refresh. The full sports catalogue is listed above; check current markets directly at the bookmakers. No odds are estimated.</div><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div>';
- renderSportTrends();renderTopTips();
-}
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
@@ -6014,12 +5945,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -6556,11 +6481,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -7097,11 +7017,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+f.price.toFixed(2):"No Bet365 quote or overall market price returned");
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div>'+(e.sport_name?'<div class="sport-league">'+esc(e.sport_name)+'</div>':"")+(e.league?'<div class="sport-league">'+esc(e.league)+'</div>':"")+(e.in_play===true&&e.score?'<div class="sport-live-score">LIVE SCORE: <b>'+esc(e.score)+'</b>'+(e.timer&&e.timer.tm!=null?' · '+esc(e.timer.tm)+'′':"")+'</div>':"")+'<div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div>'+rankedHtml+'<div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div><div class="sportsbook-links"><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet market ↗</a><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 market ↗</a></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
- }).join(""):'<div class="empty">No upcoming fixtures or verified prices were returned for this sport at this refresh. The full sports catalogue is listed above; check current markets directly at the bookmakers. No odds are estimated.</div><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div>';
- renderSportTrends();renderTopTips();
-}
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
@@ -7325,12 +7240,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+'. ':'')+overallFavourite.name)+'</b> at <b>
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
@@ -7867,11 +7776,6 @@ setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.se
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
-+Number(overallFavourite.consensus).toFixed(2)+'</b> · '+esc(overallFavourite.priceSource||'available market price')+'.</div>'
-      : '<div class="book-fav-missing">No '+esc(bookmaker)+' quote or overall market price is available for this race yet. Check the live market link below.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
