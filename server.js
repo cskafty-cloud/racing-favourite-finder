@@ -159,7 +159,9 @@ async function demoRacingFeed() {
   const body = await response.text();
   if (!response.ok) throw new Error("Public racing demo feed " + response.status + ": " + body.slice(0, 240));
   const payload = JSON.parse(body);
-  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload.races) ? payload.races : []);
+  const rows = (Array.isArray(payload) ? payload : (Array.isArray(payload.races) ? payload.races : []))
+    .map(r=>({...r,_publicDemo:true,runners:(r.runners||[]).map(x=>({...x,
+      bookmakers:(x.bookmakers||x.odds||[]).map(q=>({...q,public_demo:true}))}))}));
   // An empty array is a valid off-hours response (Australian racing has no cards 24/7).
   // Cache it too, otherwise every browser refresh hammers both feeds and fills logs with false errors.
   demoRacingCache = { at: Date.now(), rows };
@@ -879,7 +881,7 @@ async function getGlobalRaces() {
         return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||"Runner",
           bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365 via MoviOdds",name:"Bet365",win_price:price,
             last_update:updated,age_seconds:updated?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null,
-            source_url:x.url||x.source_url||null}]:[]};
+            source_url:x.url||x.source_url||null,public_demo:true}]:[]};
       });
       const start=r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const venue=r.venue||r.track||r.meeting||"Track TBA";
