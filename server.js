@@ -193,7 +193,46 @@ function isSameRunner(pick, winner) {
   return false;
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, storage:DATA_DIR}));
+
+const ODDS_API_TOKEN = process.env.ODDS_DATA_API_TOKEN || "";
+async function oddsApi(pathname, params={}) {
+  if (!ODDS_API_TOKEN) throw new Error("ODDS_DATA_API_TOKEN is not active in Railway.");
+  const url = new URL("https://api.odds-data-api.com" + pathname);
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
+  url.searchParams.set("token",ODDS_API_TOKEN);
+  const response = await fetch(url,{signal:AbortSignal.timeout(20000)});
+  const data = await response.json();
+  if (!response.ok || data.success !== 1) throw new Error("Odds Data API: "+(data.error||response.status));
+  return {data, headers: {remaining:response.headers.get("X-RateLimit-Remaining"), reset:response.headers.get("X-RateLimit-Reset")}};
+}
+function fractionalDecimal(value) {
+  if (!value) return null;
+  const s=String(value);
+  if (/^\d+(\.\d+)?$/.test(s)) return Number(s);
+  const m=s.match(/^(\d+)\/(\d+)$/);
+  return m && Number(m[2]) ? 1+Number(m[1])/Number(m[2]) : null;
+}
+function parseBet365Live(rows) {
+  const flat=Array.isArray(rows?.[0])?rows.flat():Array.isArray(rows)?rows:[];
+  const ev=flat.find(x=>x.type==="EV")||{};
+  const teams=flat.filter(x=>x.type==="TE");
+  const home=teams.find(x=>String(x.OR)==="0")||teams[0]||{};
+  const away=teams.find(x=>String(x.OR)==="1")||teams[1]||{};
+  const markets=[]; let current=null;
+  for(const x of flat){
+    if(x.type==="MG"||x.type==="MA"){current={name:x.NA||"Market",suspended:String(x.SU)==="1",selections:[]};markets.push(current);}
+    else if(x.type==="PA"&&current) current.selections.push({name:x.NA,price:fractionalDecimal(x.OD),suspended:String(x.SU)==="1"});
+  }
+  const main=markets.find(m=>/full.?time result|match winner|money line/i.test(m.name))||markets.find(m=>m.selections.length>=2);
+  const valid=(main?.selections||[]).filter(x=>x.price>1&&!x.suspended);
+  const favourite=valid.sort((a,b)=>a.price-b.price)[0]||null;
+  return {id:ev.FI||null,name:ev.NA||[home.NA,away.NA].filter(Boolean).join(" v "),
+    league:ev.CT||null,score:ev.SS||null,minute:ev.TM||null,second:ev.TS||null,
+    status:"IN PLAY",updatedAt:ev.TU||null,home:home.NA||null,away:away.NA||null,
+    favourite,markets,bookmaker:"bet365"};
+}
+
+app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, storage:DATA_DIR}));
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
@@ -284,6 +323,37 @@ app.get("/api/races", async (_req, res) => {
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
+
+
+let liveSportsCache={at:0,events:[],error:null,rateLimitRemaining:null};
+let liveSportsRefresh=null;
+app.get("/api/live-sports",async(_req,res)=>{
+ try{
+  if(!ODDS_API_TOKEN)return res.status(503).json({configured:false,error:"Add ODDS_DATA_API_TOKEN to Railway and deploy it."});
+  if(Date.now()-liveSportsCache.at>5000){
+   if(!liveSportsRefresh)liveSportsRefresh=(async()=>{
+    try{
+     const list=await oddsApi("/v3/events/inplay",{});
+     const fixtures=(list.data.results||[]).filter(e=>e.bet365_id).slice(0,25);
+     const details=await Promise.all(fixtures.map(async e=>{
+      try{
+       const d=await oddsApi("/v1/bet365/event",{FI:e.bet365_id});
+       return parseBet365Live(d.data.results);
+      }catch(err){return {id:e.bet365_id,name:[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",league:e.league?.name||null,score:e.ss||null,minute:e.timer?.tm||null,status:"IN PLAY",error:err.message,bookmaker:"bet365"};}
+     }));
+     liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining};
+    }catch(err){liveSportsCache={...liveSportsCache,error:err.message};}
+   })().finally(()=>{liveSportsRefresh=null;});
+   await liveSportsRefresh;
+  }
+  res.set("Cache-Control","no-store");
+  res.json({configured:true,provider:"Odds Data API / bet365",events:liveSportsCache.events,
+   fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
+   ageSeconds:liveSportsCache.at?Math.round((Date.now()-liveSportsCache.at)/1000):null,
+   rateLimitRemaining:liveSportsCache.rateLimitRemaining,error:liveSportsCache.error,
+   note:"Live scores and bet365 in-play prices only where returned. Sportsbet in-play prices are not provided by this connection."});
+ }catch(err){res.status(503).json({error:err.message});}
+});
 
 // Sports catalogue is cached for six hours. Sports odds are fetched on demand
 // per selected sport and cached for 15 minutes to control provider credit use.
