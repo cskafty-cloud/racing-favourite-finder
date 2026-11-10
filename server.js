@@ -413,8 +413,9 @@ function oddsDataMarketOutcomes(row,event) {
  for(const [field,name] of pairs){const p=Number(row?.[field]);if(Number.isFinite(p)&&p>1)outcomes.push({name,price:p});}
  return outcomes;
 }
-async function loadOddsDataSport(sport) {
- const prior=oddsDataSportCache.get(sport.key);
+async function loadOddsDataSport(sport, options={}) {
+ const cacheKey=sport.key+(options.bulk?":bulk":":full");
+ const prior=oddsDataSportCache.get(cacheKey);
  if(prior&&Date.now()-prior.at<8*60*1000)return prior;
  const [upcomingResult,inplayResult]=await Promise.allSettled([
   oddsApi("/v3/events/upcoming",{sport_id:sport.id,page:1,skip_esports:1}),
@@ -429,7 +430,7 @@ async function loadOddsDataSport(sport) {
  for(const item of [...inplay,...upcoming]){const event=oddsDataEvent(item,sport);if(event.id)byId.set(event.id,event);}
  const events=[...byId.values()].sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
  if(!events.length&&errors.length)throw new Error(errors.join(" · "));
- const priced=events.slice(0,6);
+ const priced=events.slice(0,options.bulk?2:6);
  const summaries=await Promise.allSettled(priced.map(e=>oddsApi("/v2/event/odds/summary",{event_id:e.id})));
  summaries.forEach((result,index)=>{
   if(result.status!=="fulfilled"){errors.push("Odds "+priced[index].id+": "+result.reason.message);return;}
@@ -443,8 +444,8 @@ async function loadOddsDataSport(sport) {
   if(markets.length)e.bookmakers=[{key:"bet365",name:"Bet365",last_update:new Date().toISOString(),markets}];
  });
  const result={at:Date.now(),rows:events,errors,provider:"Odds Data API / Bet365"};
- oddsDataSportCache.set(sport.key,result);
- console.info("ODDS_DATA_SPORT",JSON.stringify({sport:sport.title,id:sport.id,events:events.length,live:events.filter(x=>x.in_play).length,priced:events.filter(x=>x.bookmakers.length).length,errors:errors.length}));
+ oddsDataSportCache.set(cacheKey,result);
+ console.info("ODDS_DATA_SPORT",JSON.stringify({sport:sport.title,id:sport.id,events:events.length,live:events.filter(x=>x.in_play).length,priced:events.filter(x=>x.bookmakers.length).length,errors:errors.length,errorSamples:errors.slice(0,3),bulk:!!options.bulk}));
  return result;
 }
 
@@ -1039,7 +1040,8 @@ app.get("/api/sports/:sportKey", async (req,res) => {
   const oddsSport=ODDS_DATA_SPORTS.find(x=>x.key===String(req.params.sportKey||"").toLowerCase());
   if(oddsSport) {
     try {
-      const data=await loadOddsDataSport(oddsSport);
+      const bulk=req.query.mode==="all";
+      const data=await loadOddsDataSport(oddsSport,{bulk});
       res.set("Cache-Control","no-store");
       return res.json({sport:{key:oddsSport.key,title:oddsSport.title},events:data.rows,
         fetchedAt:new Date(data.at).toISOString(),provider:data.provider,providerErrors:data.errors,
