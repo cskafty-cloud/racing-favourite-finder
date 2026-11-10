@@ -451,29 +451,96 @@ async function loadRapidRacing() {
   const races=groups.flat().filter(r=>r.start_time && !r.abandoned);
   return {races,errors};
 }
+// PuntersEdge is the primary Australian racing source: its schedule endpoint includes
+// unpriced races and next-to-go supplies runner-by-runner quotes from the supported books.
+const PUNTERS_EDGE_BOOKMAKERS = ["Sportsbet","BetRight","PointsBet","TAB","TABtouch","Palmerbet","Unibet","NextBet","Ladbrokes","Neds","bet365","BetDeluxe"];
+const puntersEdgeCache = {
+  schedule:{at:0,rows:[],etag:null}, priced:{at:0,rows:[],etag:null},
+  errors:[]
+};
+let puntersEdgeRefresh = null;
+async function fetchPuntersEdge(pathname, params, cacheName) {
+  const cache=puntersEdgeCache[cacheName];
+  const url=new URL(BASE+pathname);
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
+  const headers={"X-API-Key":API_KEY};
+  if(cache.etag) headers["If-None-Match"]=cache.etag;
+  const response=await fetch(url,{headers,signal:AbortSignal.timeout(20000)});
+  if(response.status===304) {
+    cache.at=Date.now();
+    return cache.rows;
+  }
+  const body=await response.text();
+  let payload;
+  try{payload=JSON.parse(body);}catch{throw new Error("PuntersEdge "+pathname+" returned invalid JSON (HTTP "+response.status+").");}
+  if(!response.ok) throw new Error("PuntersEdge "+pathname+" "+response.status+": "+(payload.detail||payload.error||body.slice(0,220)));
+  cache.rows=rowsFrom(payload).filter(r=>{
+    const country=String(r.country||r.country_code||"").toUpperCase();
+    return !country || country==="AU";
+  });
+  cache.etag=response.headers.get("ETag")||null;
+  cache.at=Date.now();
+  return cache.rows;
+}
+async function loadPuntersEdgeRaces() {
+  const errors=[];
+  if(!puntersEdgeCache.schedule.at || Date.now()-puntersEdgeCache.schedule.at>=10*60*1000) {
+    try {
+      await fetchPuntersEdge("/v1/racing/events",{
+        hours_ahead:SCHEDULE_HORIZON_HOURS,country:"AU",include_unresolved:"true",
+        categories:"horse,greyhound,harness"
+      },"schedule");
+    } catch(err) { errors.push("Schedule: "+err.message); }
+  }
+  // Conditional ETag reads return HTTP 304 at no credit cost when the board is unchanged.
+  if(!puntersEdgeCache.priced.at || Date.now()-puntersEdgeCache.priced.at>=60000) {
+    try {
+      await fetchPuntersEdge("/v1/racing/next-to-go",{
+        num_races:200,country:"AU",include_unresolved:"true",
+        categories:"horse,greyhound,harness"
+      },"priced");
+    } catch(err) { errors.push("Live odds: "+err.message); }
+  }
+  const races=dedupeRaces([...(puntersEdgeCache.schedule.rows||[]),...(puntersEdgeCache.priced.rows||[])]);
+  if(!races.length && errors.length) throw new Error(errors.join(" · "));
+  console.info("PUNTERS_EDGE_RACING",JSON.stringify({
+    scheduleCount:puntersEdgeCache.schedule.rows.length,pricedCount:puntersEdgeCache.priced.rows.length,
+    mergedCount:races.length,books:[...new Set(races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).map(q=>q.bookmaker||q.name||q.key))))],
+    errors
+  }));
+  return {
+    races, scheduleFetchedAt:puntersEdgeCache.schedule.at?new Date(puntersEdgeCache.schedule.at).toISOString():null,
+    oddsFetchedAt:puntersEdgeCache.priced.at?new Date(puntersEdgeCache.priced.at).toISOString():null,
+    horizonHours:SCHEDULE_HORIZON_HOURS,feedErrors:errors.map(message=>({feed:"PuntersEdge",message})),
+    feedSource:"PuntersEdge Australian racing",scope:"Australia",providerPlan:PROVIDER_PLAN,
+    note:"Australian horse, greyhound and harness schedule merged with current runner prices from every bookmaker supported by the connected feed. Sportsbet, bet365 and other supported Australian books appear when they publish a quote. Quote age varies by bookmaker. The feed cannot include bookmakers or races its licensed data provider does not supply."
+  };
+}
 async function getGlobalRaces() {
-  // Krok Odds is the selected racing provider. Avoid RapidOddsAPI racing calls:
-  // this account's plan returns HTTP 403 for racing endpoints.
-  if (KROKODDS_API_KEY) return getKrokRaces();
+  if(API_KEY) {
+    try { return await loadPuntersEdgeRaces(); }
+    catch(error) {
+      console.error("PUNTERS_EDGE_PRIMARY_FAILED",error.message);
+      if(!KROKODDS_API_KEY && !RAPID_ODDS_KEY) throw error;
+      const fallback=KROKODDS_API_KEY?await getKrokRaces():null;
+      if(fallback) return {...fallback,feedErrors:[...(fallback.feedErrors||[]),{feed:"PuntersEdge",message:error.message}]};
+    }
+  }
   if (RAPID_ODDS_KEY) {
     if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
       if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
         const result=await loadRapidRacing();
         rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
-        console.info("RAPIDODDS_RACING_FEED",JSON.stringify({fetchedAt:new Date(rapidRacingCache.at).toISOString(),
-          races:result.races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,result.races.filter(r=>r.category===k).length])),
-          pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
-          runners:result.races.reduce((n,r)=>n+r.runners.length,0),errors:result.errors.slice(0,8)}));
       })().finally(()=>{rapidRacingRefresh=null;});
       await rapidRacingRefresh;
     }
-    return {races:rapidRacingCache.races, scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
+    return {races:rapidRacingCache.races,scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
       oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
       feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})),
-      feedSource:"RapidOddsAPI Racing",scope:feed.feedSource==="Krok Odds"?"Australia":"Australia and New Zealand"};
+      feedSource:"RapidOddsAPI Racing",scope:"Australia and New Zealand"};
   }
   if (KROKODDS_API_KEY) return getKrokRaces();
-  throw new Error("Add RAPIDODDSAPI_API_KEY or KROKODDS_API_KEY in Railway Variables to enable racing feeds.");
+  throw new Error("No racing feed API key is configured in Railway.");
 }
 
 function dedupeRaces(input) {
@@ -536,8 +603,8 @@ app.get("/api/races", async (_req, res) => {
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
     res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?(feed.meta?.tier||"Krok Odds tier not reported"):"RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:"Australian thoroughbred, greyhound and harness race cards supplied by Krok Odds. This list shows all races returned by the connected feed, including races waiting for bookmaker prices. Coverage is limited by the provider feed and free-tier request cap; it cannot guarantee every meeting or race in Australia."});
+      horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
+      note:feed.note||"Australian horse, greyhound and harness races returned by the connected licensed feed. Bookmaker prices are shown only when supplied; coverage depends on the provider and supported bookmakers."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
