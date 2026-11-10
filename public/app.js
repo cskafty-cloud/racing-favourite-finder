@@ -245,7 +245,7 @@ function renderSportTrends(){
 }
 function renderSports(){
  $("sportsCatalogue").innerHTML=state.sports.map(s=>'<button class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
- const events=state.sportEvents.slice().filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
+ const events=state.sportEvents.slice().filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||new Date(a.commence_time||0)-new Date(b.commence_time||0));
  $("sportsEvents").innerHTML=events.length?events.map(e=>{
   const f=sportFavourite(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),t=e.commence_time||"";
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
@@ -267,7 +267,7 @@ function renderSports(){
   const marketFav=f?'<b>'+esc(f.name)+'</b> at <strong>$'+f.price.toFixed(2)+'</strong> (best market consensus)':'Waiting for bookmaker odds';
   const sbText=sb?esc(sb.name)+' $'+sb.price.toFixed(2):"No Sportsbet quote returned";
   const b365Text=b365?esc(b365.name)+' $'+b365.price.toFixed(2):"No Bet365 quote returned";
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">UPCOMING · PRE-MATCH</span></div><div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div><div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
+  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?'LIVE · IN PLAY':'UPCOMING · PRE-MATCH')+'</span></div><div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div><div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
  }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
  renderSportTrends();
 }
@@ -315,7 +315,7 @@ async function loadAllSports(){
  try{
   for(const s of state.sports){state.selectedSport=s.key;$("sportsNotice").textContent="Loading upcoming "+(s.title||s.key)+"…";
    const r=await fetch("/api/sports/"+encodeURIComponent(s.key)),d=await r.json();
-   if(!r.ok)continue;const events=(d.events||[]).filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
+   if(!r.ok)continue;const events=(d.events||[]).filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
    state.sportsByKey[s.key]=events;recordSportTrends(s.key,events);
   }
   state.selectedSport=null;state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
