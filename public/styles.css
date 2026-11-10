@@ -215,5 +215,5 @@ body.sports-mode .sports-panel{display:block!important}
 .racing-widget-card iframe{display:block;width:100%;border:0;border-radius:7px;background:#101821}
 .widget-credit{font:12px/1.4 system-ui,sans-serif;margin:6px 0 0;color:#a9b6c2}
 .widget-credit a{color:#a9dfba;text-decoration:underline}
-body.sports-mode .public-racing-sources,body.sports-mode .racing-widgets-panel{display:none!important}
+body.sports-mode .public-racing-sources,body.sports-mode .racing-widgets-panel:not(#liveSportsWidgets),body.sports-mode .bookmaker-feed-panel{display:none!important}\n#liveSportsWidgets{display:none!important}\nbody.sports-mode #liveSportsWidgets{display:block!important}
 @media(max-width:900px){.racing-widget-grid{grid-template-columns:1fr}.racing-widget-card iframe{height:420px}}
