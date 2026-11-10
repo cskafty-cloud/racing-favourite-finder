@@ -700,6 +700,8 @@ async function loadPuntersEdgeRaces() {
 }
 async function getGlobalRaces() {
   const failures=[];
+  // Primary licensed schedule/odds source. If its free quota is exhausted, fall
+  // through to the already-configured alternate providers rather than stopping.
   if (API_KEY) {
     try {
       const primary=await loadPuntersEdgeRaces();
@@ -710,6 +712,38 @@ async function getGlobalRaces() {
       failures.push({feed:"PuntersEdge",message:error.message});
     }
   }
+  // Krok Odds is a separately configured racing provider. It is queried only
+  // after the primary feed fails and is cached for 60 seconds by getKrokRaces().
+  if (KROKODDS_API_KEY) {
+    try {
+      const alternate=await getKrokRaces();
+      if (alternate.races?.length) {
+        return {...alternate,feedErrors:failures.concat(alternate.feedErrors||[]),
+          feedSource:"Krok Odds Australian racing",
+          note:"Australian horse, greyhound and harness race prices from the configured Krok Odds feed. Bookmaker coverage and quote timestamps depend on provider availability."};
+      }
+      failures.push({feed:"Krok Odds",message:(alternate.feedErrors||[]).join(" · ")||"No racing markets returned."});
+    } catch(error) {
+      failures.push({feed:"Krok Odds",message:error.message});
+    }
+  }
+  // Use the direct, read-only Betfair Exchange API integration before the
+  // optional external proxy URL. This path was implemented but previously
+  // never called by the production racing feed selector.
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN) {
+    try {
+      const exchange=await getBetfairRaces();
+      if (exchange.races?.length) {
+        return {...exchange,feedErrors:failures,
+          note:"Australian racing markets and exchange prices from Betfair's delayed application key. Prices are delayed and may not represent current bookmaker odds. Display-only; no betting actions are enabled."};
+      }
+      failures.push({feed:"Betfair Exchange",message:"No Australian racing markets returned."});
+    } catch(error) {
+      console.error("BETFAIR_DIRECT_API_FAILED",error.message);
+      failures.push({feed:"Betfair Exchange",message:error.message});
+    }
+  }
+  // Optional externally hosted Australian feed adapter, if configured.
   if (BETFAIR_FEED_URL) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
@@ -722,10 +756,10 @@ async function getGlobalRaces() {
       failures.push({feed:"Betfair AU service",message:error.message});
     }
   }
-  // Do not mix the limited public sample endpoint into the production race board.
-  // Real public prices are embedded as provider-hosted widgets in the website.
+  // Do not mix limited public sample data into the production race board.
+  // Public provider-hosted widgets remain available on the website.
   if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
-  throw new Error("No authenticated live Australian racing feed is available. Use the live racing widgets while provider access is restored.");
+  throw new Error("No authenticated live Australian racing feed is available. Public live racing widgets remain available while provider access is restored.");
 }
 
 function dedupeRaces(input) {
