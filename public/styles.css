@@ -133,3 +133,19 @@ body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
 .race-list-track small,.race-list-fav{font-size:10px;color:#9aa9b6}
 .race-list-fav{overflow-wrap:anywhere}
 @media(max-width:650px){.race-list-row{grid-template-columns:62px 1fr;gap:7px 10px}.race-list-track{grid-column:2}.race-list-fav{grid-column:2}.race-list-code{grid-column:1;grid-row:2}.race-list-status{grid-column:1;grid-row:1}}
+
+
+/* Runner-level live price visibility */
+.runner-estimates{grid-column:1/-1;border-top:1px solid #2e3c49;margin-top:5px;padding-top:8px}
+.runner-estimates summary{cursor:pointer;color:#9fb4c5;font-size:10px;font-weight:700;letter-spacing:.35px}
+.runner-estimate-list{display:grid;gap:7px;margin-top:9px}
+.runner-estimate-row{display:grid;grid-template-columns:minmax(130px,1fr) minmax(190px,auto);gap:4px 12px;padding:8px 10px;background:#101923;border:1px solid #283744;border-radius:6px}
+.runner-estimate-row>b{font-size:11px;color:#e8eff4}
+.runner-price-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.runner-price-chip{font-size:10px;color:#bdcbd5;background:#202d39;border-radius:4px;padding:4px 7px}
+.runner-price-chip b{color:#fff}
+.runner-price-chip small{color:#94a5b3}
+.market-estimate{font-size:10px;color:#a6d7ba;justify-self:end;text-align:right}
+.market-estimate.unavailable{color:#c3a56d}
+.missing-price{font-size:10px;color:#e4b66f;background:#35291b;border:1px solid #654a2b;border-radius:4px;padding:4px 7px}
+@media(max-width:650px){.runner-estimate-row{grid-template-columns:1fr}.market-estimate{justify-self:start;text-align:left}}
