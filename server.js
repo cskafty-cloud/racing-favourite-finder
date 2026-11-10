@@ -972,9 +972,16 @@ let sportsCatalogueCache = { at:0, rows:[], meta:null };
 const sportsOddsCache = new Map();
 app.get("/api/sports", async (_req,res) => {
   if(ODDS_API_TOKEN) {
-    return res.json({sports:ODDS_DATA_SPORTS.map(s=>({key:s.key,title:s.title,name:s.title,category:"Sports",event_count:0,provider:s.provider,active:true})),
-      fetchedAt:new Date().toISOString(),provider:"Odds Data API / Bet365",refreshSeconds:60,liveInPlayAvailable:true,
-      note:"28 sports are loaded from the connected Bet365 data API. Upcoming fixtures and live scores are separate; bookmaker prices are shown where the provider returns them. Prices are Bet365-only, not a multi-bookmaker consensus."});
+    let krokRows=[],krokError=null;
+    try {
+      await ensureSportsCatalogue();
+      krokRows=sportsCatalogueCache.rows.map(x=>({...x,key:"krok_"+x.key,provider:"Krok Odds · multi-bookmaker"}));
+    } catch(err) { krokError=err.message; }
+    const bet365Rows=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id)).map(s=>({key:s.key,title:s.title,name:s.title,category:"Sports",event_count:0,provider:s.provider,active:true}));
+    return res.json({sports:[...bet365Rows,...krokRows],fetchedAt:new Date().toISOString(),
+      provider:"Odds Data API / Bet365 + Krok Odds",refreshSeconds:60,liveInPlayAvailable:true,
+      providerErrors:krokError?["Krok Odds catalogue: "+krokError]:[],
+      note:"Bet365 live and upcoming sports feed plus Krok multi-bookmaker sports catalogue where the existing Krok allowance responds. Sportsbet prices are displayed only when Krok returns an actual Sportsbet quote; no prices are inferred."});
   }
   try {
     if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 300000) {
@@ -1110,7 +1117,8 @@ app.get("/api/sports/:sportKey", async (req,res) => {
         note:"Fixtures and live scores from the Bet365 data feed. Bet365 odds are attached to up to six events per sport per refresh; no missing prices are estimated."});
     } catch(err) { return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365"}); }
   }
-  const key=String(req.params.sportKey||"").toLowerCase();
+  const requestedKey=String(req.params.sportKey||"").toLowerCase();
+  const key=requestedKey.startsWith("krok_")?requestedKey.slice(5):requestedKey;
   if(!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
   try {
     await ensureSportsCatalogue();
