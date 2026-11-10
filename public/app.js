@@ -585,6 +585,7 @@ async function loadHistory() {
     const codeText = x => x.races ? `${x.wins}/${x.races} wins · ${x.strikeRate}%` : "No settled races yet";
     $("horseRecord").textContent = codeText(s.horse);
     $("dogRecord").textContent = codeText(s.greyhound);
+    if ($("harnessRecord")) $("harnessRecord").textContent = codeText(s.harness || {races:0,wins:0,strikeRate:null});
     const rows = (data.picks || []).slice(0,12);
     $("historyRows").innerHTML = rows.length ? rows.map(p => {
       const status = p.status === "final" ? (p.favouriteWon ? '<span class="won">WON</span>' : '<span class="lost">LOST</span>') : '<span class="pending">PENDING</span>';
