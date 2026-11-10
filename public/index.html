@@ -17,10 +17,20 @@
   <main class="shell">
     <section class="hero"><div><div class="eyebrow">AUSTRALIAN RACING · LIVE & UPCOMING</div><h1>Australian <em>Race List</em></h1><p class="sub">One simple live and upcoming list for thoroughbred horse, greyhound and harness races across Australia.</p></div><button id="refreshBtn" class="refresh-btn"><span>↻</span> Refresh now</button></section>
     <nav class="main-tabs" role="tablist" aria-label="Dashboard sections"><button class="main-tab active" data-view="racing">🏇 Racing</button><button class="main-tab" data-view="sports">🏆 All Sports & Upcoming</button></nav>
+    <section class="racing-widgets-panel" id="racingWidgets">
+      <div class="coverage-heading"><div><div class="eyebrow">FREE LIVE PUBLIC ODDS · NO API KEY</div><h2>Live racing odds & next to jump</h2><p class="sub">Live race cards and current prices for each code. These are embedded directly from the data provider, with its credit visible; this dashboard does not scrape or re-serve the widget data.</p></div></div>
+      <div class="racing-widget-grid"><article class="racing-widget-card"><h3>All Australian racing codes · next 12 races</h3><iframe src="https://puntersedge.online/widget/racing?limit=12" title="Next 12 Australian horse, greyhound and harness races with live odds" width="100%" height="850" frameborder="0" loading="lazy"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/">PuntersEdge</a></p></article></div><div class="racing-widget-grid">
+        <article class="racing-widget-card"><h3>🐎 Thoroughbred horse racing</h3><iframe src="https://puntersedge.online/widget/racing-horse?limit=3&runners=5" title="Live Australian thoroughbred racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
+        <article class="racing-widget-card"><h3>🐕 Greyhound racing</h3><iframe src="https://puntersedge.online/widget/racing-greyhound?limit=3&runners=5" title="Live Australian greyhound racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
+        <article class="racing-widget-card"><h3>🏇 Harness racing</h3><iframe src="https://puntersedge.online/widget/racing-harness?limit=3&runners=5" title="Live Australian harness racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
+      </div>
+      <div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Bet365 racing markets ↗</a><a href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & upcoming · all racing codes ↗</a></div>
+    </section>
+
     <section class="stats">
-      <div class="stat"><span class="stat-label">RACES ON BOARD</span><strong id="raceCount">—</strong></div>
-      <div class="stat"><span class="stat-label">HORSE RACES</span><strong id="horseCount">—</strong></div>
-      <div class="stat"><span class="stat-label">GREYHOUND RACES</span><strong id="dogCount">—</strong></div><div class="stat"><span class="stat-label">HARNESS RACES</span><strong id="harnessCount">—</strong></div>
+      <div class="stat"><span class="stat-label">IMPORTED RACE CARDS</span><strong id="raceCount">—</strong></div>
+      <div class="stat"><span class="stat-label">HORSE CARDS</span><strong id="horseCount">—</strong></div>
+      <div class="stat"><span class="stat-label">GREYHOUND CARDS</span><strong id="dogCount">—</strong></div><div class="stat"><span class="stat-label">HARNESS CARDS</span><strong id="harnessCount">—</strong></div>
       <div class="stat"><span class="stat-label">LAST UPDATED</span><strong class="small-stat" id="updatedAt">Waiting…</strong></div>
     </section>
     <div id="feedFreshness" class="feed-freshness">Racing data refreshes about every 60 seconds. Free-feed coverage is limited by provider availability and per-code request caps; each bookmaker price has its own update time. Missing prices are not estimated.</div>
@@ -57,16 +67,6 @@
       </div>
       <div class="sportsbet-market-link"><span><b>Sportsbet markets</b><small>Opens Sportsbet directly. Prices are not imported into this dashboard.</small></span><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet ↗</a></div>
     </section>
-    <section class="racing-widgets-panel">
-      <div class="coverage-heading"><div><div class="eyebrow">FREE LIVE PUBLIC ODDS · NO API KEY</div><h2>Live racing odds & next to jump</h2><p class="sub">Live race cards and current prices for each code. These are embedded directly from the data provider, with its credit visible; this dashboard does not scrape or re-serve the widget data.</p></div></div>
-      <div class="racing-widget-grid"><article class="racing-widget-card"><h3>All Australian racing codes · next 12 races</h3><iframe src="https://puntersedge.online/widget/racing?limit=12" title="Next 12 Australian horse, greyhound and harness races with live odds" width="100%" height="850" frameborder="0" loading="lazy"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/">PuntersEdge</a></p></article></div><div class="racing-widget-grid">
-        <article class="racing-widget-card"><h3>🐎 Thoroughbred horse racing</h3><iframe src="https://puntersedge.online/widget/racing-horse?limit=3&runners=5" title="Live Australian thoroughbred racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
-        <article class="racing-widget-card"><h3>🐕 Greyhound racing</h3><iframe src="https://puntersedge.online/widget/racing-greyhound?limit=3&runners=5" title="Live Australian greyhound racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
-        <article class="racing-widget-card"><h3>🏇 Harness racing</h3><iframe src="https://puntersedge.online/widget/racing-harness?limit=3&runners=5" title="Live Australian harness racing odds" width="100%" height="430" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe><p class="widget-credit">Live odds by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>
-      </div>
-      <div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Bet365 racing markets ↗</a><a href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & upcoming · all racing codes ↗</a></div>
-    </section>
-
     <section class="racing-widgets-panel" id="liveSportsWidgets">
       <div class="coverage-heading"><div><div class="eyebrow">FREE PUBLIC LIVE ODDS WIDGETS</div><h2>Upcoming sports & market favourites</h2><p class="sub">Live bookmaker prices where the provider has a current market. Widgets are embedded directly from the provider; no sample prices are generated here.</p></div></div>
       <div class="racing-widget-grid">
