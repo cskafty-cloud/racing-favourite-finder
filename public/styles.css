@@ -296,3 +296,5 @@ body.site-entered .toolbar,
 body.site-entered .stats,
 body.site-entered #feedFreshness{display:block!important}
 body.site-entered .dashboard-start-menu{display:none!important}
+
+.sportsbet-view-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.sportsbet-view-tabs .active{border-color:var(--accent,#d7b46a);color:var(--accent,#d7b46a)}
