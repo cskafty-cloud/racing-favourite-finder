@@ -166,8 +166,17 @@ function bookmakerKey(q) {
   return String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"");
 }
 function runnerQuotes(runner) {
-  // Preserve every valid provider-returned price; stale/age metadata is displayed, not used to erase quotes.
-  return (runner.bookmakers || runner.odds || []).filter(q => Number(q.win_price ?? q.win ?? q.price) > 1);
+  // One current quote per independent bookmaker; ignore scratched runners and invalid prices.
+  const unique=new Map();
+  for(const q of (runner.bookmakers || runner.odds || [])) {
+    const price=Number(q.win_price ?? q.win ?? q.price), key=bookmakerKey(q);
+    if(!key || !Number.isFinite(price) || price<=1 || q.stale===true) continue;
+    const previous=unique.get(key);
+    const stamp=Date.parse(q.last_update||q.updated_at||"")||0;
+    const previousStamp=Date.parse(previous?.last_update||previous?.updated_at||"")||0;
+    if(!previous || stamp>=previousStamp) unique.set(key,q);
+  }
+  return [...unique.values()];
 }
 function selectFavourite(race) {
   const median = values => { const x=values.slice().sort((a,b)=>a-b); return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null; };
@@ -184,12 +193,16 @@ function selectFavourite(race) {
   }).filter(x=>x.fair!=null).sort((a,b)=>a.fair-b.fair);
   const best=entries[0];if(!best)return null;
   const second=entries[1],gap=second?Math.max(0,(1/best.fair-1/second.fair)/(1/best.fair)):0;
-  const signalScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
+  const spreadPct=best.spread*100;
+  // Quote agreement is a hard quality gate: broad disagreement must never be called strong.
+  const rawScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
+  const signalScore=spreadPct>25?Math.min(rawScore,25):spreadPct>15?Math.min(rawScore,55):rawScore;
+  const signalLabel=best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
+    :best.quotes.length>=2&&spreadPct<=25&&signalScore>=40?"CAUTION":"NO BET · WEAK SIGNAL";
   const r=best.runner;
   return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
     price:best.fair,priceSource:"multi-bookmaker median",quoteCount:best.quotes.length,
-    spreadPct:+(best.spread*100).toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,
-    signalLabel:best.quotes.length>=3&&signalScore>=65?"STRONG SIGNAL":signalScore>=45?"CAUTION":"NO BET · WEAK SIGNAL"};
+    spreadPct:+spreadPct.toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,signalLabel};
 }
 function winnerFromResult(r) {
   const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
@@ -329,9 +342,15 @@ async function fetchKrokRacing(date) {
         const winRaw=runner.fixed_win??runner.win??runner.win_price??runner.odds;
         const placeRaw=runner.fixed_place??runner.place??runner.place_price;
         const win=Number(winRaw), place=Number(placeRaw);
-        if(Number.isFinite(win)&&win>1) existing.bookmakers.push({bookmaker:book,name:book,win_price:win,
-          place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,last_update:runner.captured_at||runner.updated_at||bookRow.captured_at||null,
-          url:runner.bet_link||null});
+        if(!runner.scratched && Number.isFinite(win)&&win>1) {
+          const bookmakerId=String(book).toLowerCase().replace(/[^a-z0-9]/g,"");
+          const quote={bookmaker:book,name:book,key:bookmakerId,win_price:win,
+            place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,
+            last_update:runner.captured_at||runner.updated_at||bookRow.captured_at||null,url:runner.bet_link||null};
+          const prior=existing.bookmakers.findIndex(q=>bookmakerKey(q)===bookmakerId);
+          if(prior<0) existing.bookmakers.push(quote);
+          else if(Date.parse(quote.last_update||"")>Date.parse(existing.bookmakers[prior].last_update||"")) existing.bookmakers[prior]=quote;
+        }
       }
     }
   }
