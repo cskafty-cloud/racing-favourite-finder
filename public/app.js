@@ -252,11 +252,11 @@ async function loadLiveSports(){
   if(!r.ok)throw Error(d.error||"Live sports feed unavailable");
   const fetched=d.fetchedAt?new Date(d.fetchedAt):null;
   notice.textContent=d.error?"Feed warning: "+d.error:
-   (d.events.length+" live events · bet365 feed snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+(d.ageSeconds??"—")+"s old. "+d.note);
+   (d.events.length+" bet365 live events · "+(d.totalInPlay??d.events.length)+" total in-play fixtures · snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+(d.ageSeconds??"—")+"s old. "+d.note);
   list.innerHTML=d.events.length?d.events.map(e=>{
    const score=e.score?" · "+esc(e.score):"",clock=e.minute!=null?" · "+esc(e.minute)+"′":"";
    const f=e.favourite;
-   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-favourite">★ BET365 FAVOURITE: <b>'+(f?esc(f.name):"No active main-market price")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small><small>SPORTSBET: in-play prices not available from this feed</small></article>';
+   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-book-favs"><span>BET365 LIVE FAVOURITE: <b>'+(f?esc(f.name)+" $"+f.price.toFixed(2):"No active price returned")+'</b></span><span>SPORTSBET LIVE FAVOURITE: <b>Not connected — separate live Sportsbet feed required</b></span></div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small></article>';
   }).join(""):'<div class="empty">No live events were returned by bet365 at this check.</div>';
  }catch(e){notice.textContent=e.message;list.innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
