@@ -289,7 +289,7 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  return /Racing provider 402/.test(String(error)) ? 6 * 60 * 60 * 1000 : 60 * 1000;
+  return /(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error)) ? 6 * 60 * 60 * 1000 : 60 * 1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
@@ -484,22 +484,35 @@ async function fetchPuntersEdge(pathname, params, cacheName) {
 }
 async function loadPuntersEdgeRaces() {
   const errors=[];
-  if(!puntersEdgeCache.schedule.at || Date.now()-puntersEdgeCache.schedule.at>=10*60*1000) {
+  const now=Date.now();
+  if((!puntersEdgeCache.schedule.at || now-puntersEdgeCache.schedule.at>=10*60*1000) && now>=providerRetryAt.schedule) {
     try {
       await fetchPuntersEdge("/v1/racing/events",{
         hours_ahead:SCHEDULE_HORIZON_HOURS,country:"AU",include_unresolved:"true",
         categories:"horse,greyhound,harness"
       },"schedule");
-    } catch(err) { errors.push("Schedule: "+err.message); }
+      providerRetryAt.schedule=0;
+    } catch(err) {
+      errors.push("Schedule: "+err.message);
+      providerRetryAt.schedule=Date.now()+providerRetryDelay(err.message);
+    }
+  } else if(now<providerRetryAt.schedule) {
+    errors.push("Schedule refresh paused after provider quota response; retrying after "+new Date(providerRetryAt.schedule).toISOString());
   }
   // Conditional ETag reads return HTTP 304 at no credit cost when the board is unchanged.
-  if(!puntersEdgeCache.priced.at || Date.now()-puntersEdgeCache.priced.at>=60000) {
+  if((!puntersEdgeCache.priced.at || now-puntersEdgeCache.priced.at>=60000) && now>=providerRetryAt.odds) {
     try {
       await fetchPuntersEdge("/v1/racing/next-to-go",{
         num_races:200,country:"AU",include_unresolved:"true",
         categories:"horse,greyhound,harness"
       },"priced");
-    } catch(err) { errors.push("Live odds: "+err.message); }
+      providerRetryAt.odds=0;
+    } catch(err) {
+      errors.push("Live odds: "+err.message);
+      providerRetryAt.odds=Date.now()+providerRetryDelay(err.message);
+    }
+  } else if(now<providerRetryAt.odds) {
+    errors.push("Live odds refresh paused after provider quota response; retrying after "+new Date(providerRetryAt.odds).toISOString());
   }
   const races=dedupeRaces([...(puntersEdgeCache.schedule.rows||[]),...(puntersEdgeCache.priced.rows||[])]);
   if(!races.length && errors.length) throw new Error(errors.join(" · "));
