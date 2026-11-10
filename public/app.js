@@ -481,7 +481,7 @@ function render() {
   $("raceList").innerHTML=rows.length
     ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
     : (state.feedMode === "public-widgets"
-      ? '<div class="empty">Imported race cards are temporarily unavailable. The free live public feed below still shows available Australian races and prices.</div><article class="racing-widget-card"><h3>Free live Australian horse, greyhound & harness races</h3><iframe src="https://puntersedge.online/widget/racing?limit=12" title="Free live Australian racing feed" width="100%" height="760" loading="lazy" frameborder="0"></iframe><p class="widget-credit">Public live feed by <a href="https://puntersedge.online/" target="_blank" rel="noopener noreferrer">PuntersEdge</a></p></article>'
+      ? '<div class="empty">No imported race cards are available from the connected licensed feeds at this refresh. The live public racing board is displayed above under Live racing odds & next to jump. <a href="#racingWidgets">Jump to the free live racing board ↗</a></div>'
       : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>');
   renderTopTips();
 }
