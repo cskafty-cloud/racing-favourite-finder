@@ -1003,26 +1003,39 @@ async function getGlobalRaces() {
     if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   try {
-    const response=await fetch("https://moviodds.com/racing?code=all&near=200",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(20000)});
-    const body=await response.text(); let payload;
-    try { payload=JSON.parse(body); } catch { throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+")."); }
-    if(!response.ok) throw new Error("MoviOdds "+response.status);
-    const raw=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,venue:r.venue||r.track||r.course||m.track||m.course||m.name,country:r.country||m.country})));
+    const codeResults=await Promise.allSettled(["horse","greyhound","harness"].map(async code=>{
+      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=200",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(20000)});
+      const body=await response.text();let data;
+      try{data=JSON.parse(body);}catch{throw new Error(code+" returned invalid JSON (HTTP "+response.status+").");}
+      if(!response.ok)throw new Error(code+" HTTP "+response.status+": "+(data.error||"request failed"));
+      return data;
+    }));
+    const successfulBoards=codeResults.filter(x=>x.status==="fulfilled").map(x=>x.value);
+    const boardErrors=codeResults.filter(x=>x.status==="rejected").map(x=>x.reason.message);
+    if(!successfulBoards.length)throw new Error(boardErrors.join(" · ")||"No Bet365 racing board returned.");
+    const payload={server_time:successfulBoards.map(x=>x.server_time).filter(Boolean).sort().slice(-1)[0]||new Date().toISOString(),
+      races:successfulBoards.flatMap(data=>Array.isArray(data.races)?data.races:(data.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country}))))};
+    if(boardErrors.length)failures.push({feed:"MoviOdds Bet365 board",message:boardErrors.join(" · ")});
+    const raw=payload.races;
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
       const runners=(r.runners||[]).map(x=>{
-        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.odds??x.price;
+        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.odds??x.price??x.fixedOdds??x.win;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
-        const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:null;
+        const winFraction=x.win_frac??x.fixed_win_frac??x.odds_fractional??null;
+        const fractionText=typeof winFraction==="string"&&winFraction.includes("/")?winFraction.split("/").map(Number):null;
+        const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:
+          (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice),updated=x.updated_at||r.updated_at||payload.server_time||null;
         const age=updated&&Number.isFinite(Date.parse(updated))?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null;
+        const raceId=r.id||r.race_id||"";
         return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||x.selection_name||"Runner",
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
           scratched:x.scratched===true,suspended:x.suspended===true,
-          bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365 via MoviOdds public feed",name:"Bet365",win_price:price,
-            last_update:updated,age_seconds:age,stale:age!=null&&age>=180,suspended:x.suspended===true,
-            source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(r.id||r.race_id||"")),public_demo:true}]:[]};
+          bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365",name:"Bet365",win_price:price,
+            last_update:updated,updated_at:updated,age_seconds:age,stale:age!=null&&age>=180,suspended:x.suspended===true,
+            source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),public_demo:true}]:[]};
       });
       const rawStart=r.jump_utc||r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const start=typeof rawStart==="number"?(rawStart>1000000000000?new Date(rawStart).toISOString():new Date(rawStart*1000).toISOString()):rawStart;
