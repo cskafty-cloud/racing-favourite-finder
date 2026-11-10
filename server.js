@@ -204,9 +204,25 @@ function publicDemoItems(payload) {
   for(const key of ["items","events","results","data","matches"]) if(Array.isArray(payload?.[key])) return payload[key];
   return [];
 }
+const PUNTERS_EDGE_BOOK_SPORTS = {
+  oddsdata_36:"afl",oddsdata_19:"nrl",oddsdata_18:"nba",
+  oddsdata_3:"cricket",oddsdata_13:"tennis",oddsdata_8:"rugby-union"
+};
+const PUNTERS_EDGE_BEST_SPORTS = {oddsdata_36:"afl",oddsdata_19:"nrl",oddsdata_18:"nba"};
+function addPublicOutcome(event, bookKey, name, price, updatedAt=null) {
+  if(!Number.isFinite(Number(price))||Number(price)<=1||!name)return;
+  const key=String(bookKey||"unknown").toLowerCase().replace(/[^a-z0-9]/g,"");
+  let book=(event.bookmakers||[]).find(b=>String(b.key||b.name||"").toLowerCase().replace(/[^a-z0-9]/g,"")===key);
+  if(!book){book={key:String(bookKey||"unknown").toLowerCase(),name:String(bookKey||"Unknown").replace(/[_-]/g," "),last_update:updatedAt,markets:[]};event.bookmakers.push(book);}
+  let market=book.markets.find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
+  if(!market){market={key:"h2h",name:"Head to head",outcomes:[]};book.markets.push(market);}
+  const existing=market.outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
+  if(existing)existing.price=Number(price);else market.outcomes.push({name:String(name),price:Number(price)});
+}
 function normalizePublicBookSport(item, book, sport) {
-  const prices=Array.isArray(item.prices)?item.prices:Array.isArray(item.odds)?item.odds:[];
-  const outcomes=prices.map(p=>({name:p.name||p.selection||p.label||"Selection",price:Number(p.price??p.odds??p.decimal)}))
+  const prices=Array.isArray(item.prices)?item.prices:Array.isArray(item.odds)?item.odds:
+    (item.markets||[]).flatMap(m=>m.outcomes||m.selections||[]);
+  const outcomes=prices.map(p=>({name:p.name||p.selection||p.label||"Selection",price:Number(p.price??p.odds??p.decimal??p.best_price)}))
     .filter(p=>Number.isFinite(p.price)&&p.price>1);
   const home=item.home_team||item.home||item.homeTeam||"";
   const away=item.away_team||item.away||item.awayTeam||"";
@@ -218,41 +234,61 @@ function normalizePublicBookSport(item, book, sport) {
     bookmakers:outcomes.length?[{key:book,name:book==="sportsbet"?"Sportsbet":"Bet365",last_update:item.updated_at||item.last_update||null,
       markets:[{key:"h2h",name:"Head to head",outcomes}]}]:[],_publicDemo:true};
 }
+function normalizeBestOddsEvent(item,sport) {
+  const home=item.home_team||item.home||"",away=item.away_team||item.away||"";
+  const event={id:String(item.id||[home,away,item.commence_time].join("|")),home_team:home||"Event",away_team:away,
+    league:item.league||item.competition||"",sport_name:sport.title,commence_time:item.commence_time||item.start_time||null,
+    in_play:item.in_play===true||/^(live|in.?play|running)$/i.test(String(item.status||"")),
+    status:item.in_play===true?"LIVE":"UPCOMING",score:item.score||null,bookmakers:[],_publicDemo:true,_bestOddsDemo:true};
+  for(const selection of item.selections||[])addPublicOutcome(event,selection.best_bookmaker||selection.bookmaker||"best-odds",
+    selection.name||selection.selection,selection.best_price??selection.price,item.updated_at||null);
+  return event;
+}
 async function loadPublicDemoSport(sport) {
   const cached=publicDemoCache.get(sport.key);
   if(cached&&Date.now()-cached.at<85000)return cached;
-  const slug=PUBLIC_DEMO_SPORTS[sport.key];
-  if(!slug)return {at:Date.now(),rows:[],errors:["No public preview mapping for this sport."]};
-  const books=["sportsbet","bet365"];
-  const [sportsbetResult,bet365Result,moviResult]=await Promise.allSettled([
-    publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport:slug}),
-    publicDemoRequest("/v1/demo/book-sport",{book:"bet365",sport:slug}),
+  const bookSlug=PUNTERS_EDGE_BOOK_SPORTS[sport.key]||null;
+  const bestSlug=PUNTERS_EDGE_BEST_SPORTS[sport.key]||null;
+  const jobs=[
+    bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport:bookSlug}):Promise.resolve(null),
+    bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"bet365",sport:bookSlug}):Promise.resolve(null),
+    bestSlug?publicDemoRequest("/v1/demo/best-odds",{sport:bestSlug}):Promise.resolve(null),
     (async()=>{
       const url=new URL("https://moviodds.com/odds");
-      url.searchParams.set("sport",MOVI_SPORT_SLUGS[sport.key]||slug);
-
+      url.searchParams.set("sport",MOVI_SPORT_SLUGS[sport.key]||PUBLIC_DEMO_SPORTS[sport.key]||sport.key);
       const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
       const body=await response.text();let payload;
       try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error("MoviOdds "+response.status+": "+(payload.error||"unavailable"));
       return payload;
     })()
-  ]);
+  ];
+  const [sportsbetResult,bet365Result,bestOddsResult,moviResult]=await Promise.allSettled(jobs);
   const rowsByKey=new Map(),errors=[];
   for(const [index,result] of [sportsbetResult,bet365Result].entries()){
-    const book=books[index];
+    const book=index===0?"sportsbet":"bet365";
     if(result.status!=="fulfilled"){errors.push(book+": "+result.reason.message);continue;}
-    const payload=result.value;
+    const payload=result.value;if(!payload)continue;
     for(const item of publicDemoItems(payload)){
       const event=normalizePublicBookSport(item,book,sport);
       const key=[event.home_team,event.away_team].join("|").toLowerCase();
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
-      else {
-        const target=rowsByKey.get(key);
-        for(const b of event.bookmakers)if(!target.bookmakers.some(x=>x.key===b.key))target.bookmakers.push(b);
-      }
+      else for(const b of event.bookmakers)if(!rowsByKey.get(key).bookmakers.some(x=>x.key===b.key))rowsByKey.get(key).bookmakers.push(b);
     }
     if(payload.has_data===false)errors.push(book+": no public snapshot for this sport right now.");
+  }
+  if(bestOddsResult.status==="rejected")errors.push("PuntersEdge best-odds: "+bestOddsResult.reason.message);
+  else if(bestOddsResult.value){
+    const payload=bestOddsResult.value;
+    for(const item of publicDemoItems(payload)){
+      const event=normalizeBestOddsEvent(item,sport),key=[event.home_team,event.away_team].join("|").toLowerCase();
+      if(!rowsByKey.has(key))rowsByKey.set(key,event);
+      else{
+        const target=rowsByKey.get(key);
+        for(const book of event.bookmakers)for(const market of book.markets||[])for(const outcome of market.outcomes||[])
+          addPublicOutcome(target,book.key,outcome.name,outcome.price,book.last_update);
+      }
+    }
   }
   if(moviResult.status==="fulfilled"){
     const matches=Array.isArray(moviResult.value.matches)?moviResult.value.matches:[];
@@ -260,36 +296,33 @@ async function loadPublicDemoSport(sport) {
       const quotes=Array.isArray(match.quotes)?match.quotes:[];
       const groupIds=MOVI_WINNER_GROUPS[sport.key]||[];
       const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|3.?way result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
-      const use=main;
-      const outcomes=use.map(q=>({name:q.label||q.name||"Selection",price:Number(q.odds_dec??q.price)}))
+      const outcomes=main.map(q=>({name:q.label||q.name||"Selection",price:Number(q.odds_dec??q.price)}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1);
       if(!outcomes.length)continue;
       const event={id:String(match.id||[match.home,match.away,match.kickoff_utc].join("|")),
         home_team:match.home||"Event",away_team:match.away||"",league:match.league||"",
         sport_name:sport.title,commence_time:match.kickoff_utc||null,in_play:!!match.in_play,
         status:match.in_play?"LIVE":"UPCOMING",score:match.score||null,
-        bookmakers:[{key:"bet365",name:"Bet365 via MoviOdds",last_update:match.updated_at||null,
+        bookmakers:[{key:"bet365_movi",name:"Bet365 via MoviOdds",last_update:match.updated_at||null,
           markets:[{key:"h2h",name:"Head to head",outcomes}],public_demo:true}],_publicDemo:true};
       const key=[event.home_team,event.away_team].join("|").toLowerCase();
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
       else{
         const target=rowsByKey.get(key);
-        const ix=target.bookmakers.findIndex(x=>x.key==="bet365");
-        if(ix>=0)target.bookmakers[ix]=event.bookmakers[0];else target.bookmakers.push(event.bookmakers[0]);
+        for(const book of event.bookmakers)if(!target.bookmakers.some(x=>x.key===book.key))target.bookmakers.push(book);
         if(event.in_play){target.in_play=true;target.status="LIVE";}
         if(!target.commence_time)target.commence_time=event.commence_time;
       }
     }
-  }else{
-    errors.push("Bet365 live sports: "+moviResult.reason.message);
-  }
+  }else errors.push("MoviOdds: "+moviResult.reason.message);
   const rows=[...rowsByKey.values()].filter(e=>{const t=Date.parse(e.commence_time||"");return e.in_play===true||!Number.isFinite(t)||t>=Date.now();})
     .sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
-  const result={at:Date.now(),rows,errors,provider:"Public no-key previews · Sportsbet + Bet365 (MoviOdds)"};
+  const result={at:Date.now(),rows,errors,provider:"PuntersEdge public demo · Sportsbet + Bet365 snapshots + best odds; MoviOdds"};
   publicDemoCache.set(sport.key,result);
-  console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,slug,events:rows.length,live:rows.filter(x=>x.in_play).length,
+  console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,bookSlug,bestSlug,events:rows.length,live:rows.filter(x=>x.in_play).length,
     sportsbet:rows.filter(x=>x.bookmakers.some(b=>b.key==="sportsbet")).length,
-    bet365:rows.filter(x=>x.bookmakers.some(b=>b.key==="bet365")).length,errors:errors.length}));
+    bet365:rows.filter(x=>x.bookmakers.some(b=>String(b.key).startsWith("bet365"))).length,
+    bestOdds:rows.filter(x=>x._bestOddsDemo).length,errors:errors.length}));
   return result;
 }
 
