@@ -245,3 +245,20 @@ body.entry-pending> :not(#entryScreen){visibility:hidden}
 .entry-screen-exit{opacity:0;visibility:hidden;transition:opacity .5s ease,visibility .5s ease}
 @media(max-width:560px){.entry-logo-wrap{margin-bottom:25px}.entry-kicker{font-size:8px;letter-spacing:2px}.entry-description{font-size:13px;margin:16px 0 24px}.entry-bottom-line{gap:9px;font-size:7px;letter-spacing:1px;bottom:4%}.enter-website-btn{min-width:210px}.entry-screen:before{top:9%}.entry-screen:after{bottom:10%}}
 @media(prefers-reduced-motion:reduce){.enter-website-btn,.entry-screen-exit{transition:none}}
+
+
+/* Start menu shown immediately after entering the website */
+.dashboard-start-menu{display:none;margin:18px 0 24px;padding:clamp(18px,3vw,28px);border:1px solid #365064;border-radius:16px;background:linear-gradient(145deg,#172633,#101923);box-shadow:0 16px 45px #0005}
+.dashboard-start-menu.menu-visible{display:block;animation:startMenuIn .28s ease both}
+.start-menu-heading h2{font:700 clamp(24px,4vw,34px)/1.1 "Space Grotesk",sans-serif;margin:7px 0;color:#f3f7fa}
+.start-menu-heading .sub{margin:0;color:#aab8c4}
+.start-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:20px}
+.start-menu-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-height:185px;padding:20px;text-align:left;border:1px solid #3b5668;border-radius:13px;background:#101b26;color:#edf4f8;cursor:pointer;transition:transform .18s,border-color .18s,background .18s}
+.start-menu-card:hover{transform:translateY(-3px);border-color:#78d9a9;background:#172a30}
+.start-menu-icon{font-size:34px}
+.start-menu-card strong{font:700 21px "Space Grotesk",sans-serif;letter-spacing:.5px}
+.start-menu-card>span:not(.start-menu-icon){font-size:13px;color:#aab8c4;line-height:1.5}
+.start-menu-card small{margin-top:auto;color:#8fe0b5;font-weight:700;font-size:12px}
+.start-menu-foot{margin:15px 0 0;color:#8294a2;font-size:11px}
+@keyframes startMenuIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:620px){.start-menu-grid{grid-template-columns:1fr}.start-menu-card{min-height:150px}}
