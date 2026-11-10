@@ -60,13 +60,16 @@ function bookmakerFavourite(race, wantedKey) {
 }
 function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
   const key=bookmaker.toLowerCase();
-  const url=favourite && favourite.url ? favourite.url : BOOKMAKER_URLS[key];
+  const url=favourite&&favourite.url?favourite.url:BOOKMAKER_URLS[key];
   const extra=key==="bet365"
     ? '<a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Bet365 live racing information ↗</a>'
     : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & next-to-jump · horses, greyhounds and harness ↗</a>';
-  const runner=favourite ? (favourite.number!=null?favourite.number+". ":"")+favourite.name : "";
+  const runner=favourite?(favourite.number!=null?favourite.number+". ":"")+favourite.name:"";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?"Public preview · quote age unavailable":"Quote age "+Math.round(Number(favourite.age))+"s")+' · '+(favourite.verified===false?"public preview":"latest returned quote")+'</div>'
+    : overallFavourite
+      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+". ":"")+overallFavourite.name)+'</b> at <b>$'+Number(overallFavourite.consensus).toFixed(2)+'</b> · not a '+esc(bookmaker)+' price.</div>'
+      : '<div class="book-fav-missing">No current verified '+esc(bookmaker)+' quote returned for this race.</div>';
   return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
