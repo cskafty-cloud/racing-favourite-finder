@@ -184,7 +184,7 @@ const MOVI_SPORT_SLUGS = {
   oddsdata_16:"baseball",oddsdata_17:"ice_hockey",oddsdata_18:"basketball",oddsdata_19:"rugby_league",
   oddsdata_36:"australian_rules",oddsdata_75:"gaelic_sports",oddsdata_78:"handball",oddsdata_83:"futsal",
   oddsdata_90:"floorball",oddsdata_91:"volleyball",oddsdata_92:"table_tennis",oddsdata_94:"badminton",
-  oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field_hockey"
+  oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field-hockey",oddsdata_163:"bandy",oddsdata_164:"field_hockey"
 };
 const MOVI_WINNER_GROUPS = {
   oddsdata_1:["40","1777"],oddsdata_3:["1246","30154"],oddsdata_12:["1441","58"],
@@ -230,7 +230,7 @@ async function loadPublicDemoSport(sport) {
     (async()=>{
       const url=new URL("https://moviodds.com/odds");
       url.searchParams.set("sport",MOVI_SPORT_SLUGS[sport.key]||slug);
-      url.searchParams.set("groups","40");
+
       const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
       const body=await response.text();let payload;
       try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+").");}
