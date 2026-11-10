@@ -354,8 +354,8 @@ function render() {
   }).sort((a,b) => {
     const ta=Date.parse(a.start_time||"");
     const tb=Date.parse(b.start_time||"");
-    if(!Number.isFinite(ta))return 1;
-    if(!Number.isFinite(tb))return -1;
+    if(!Number.isFinite(ta)) return 1;
+    if(!Number.isFinite(tb)) return -1;
     return ta-tb;
   });
   const live=rows.filter(isExplicitlyLive);
@@ -364,7 +364,7 @@ function render() {
   $("horseCount").textContent=rows.filter(r=>categoryOf(r)==="horse").length;
   $("dogCount").textContent=rows.filter(r=>categoryOf(r)==="greyhound").length;
   $("harnessCount").textContent=rows.filter(r=>categoryOf(r)==="harness").length;
-  const rowHtml=(r,isLive)=> {
+  const rowHtml=(r,isLive)=>{
     const type=categoryOf(r);
     const typeLabel=type==="horse"?"HORSE":type==="greyhound"?"GREYHOUND":"HARNESS";
     const venue=r.venue||r.track_name||r.venue_canonical||"Track TBA";
@@ -372,110 +372,16 @@ function render() {
     const date=r.start_time?fmtDate(r.start_time):"Date/time TBA";
     const time=r.start_time?fmtTime(r.start_time):"Jump time TBA";
     const fav=marketFavourite(r);
-    return '<div class="race-list-row '+(isLive?"race-list-live":"")+'"><span class="race-list-status">'+(isLive?"LIVE":"UPCOMING")+'</span><span class="race-list-code">'+typeLabel+'</span><span class="race-list-track"><b>'+esc(venue)+' · R'+esc(number)+'</b><small>'+esc(date)+' · '+esc(time)+' · Australia</small></span><span class="race-list-fav">'+(fav?'Favourite: '+esc(fav.number?fav.number+'. ':'')+esc(fav.name)+' · 
-function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-async function loadRaces() {
-  if (state.loading) return;
-  state.loading = true; $("refreshBtn").disabled = true;
-  try {
-    const res = await fetch("/api/races");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Feed request failed");
-    state.races = data.races || [];
-    $("feedStatus").textContent = data.mode === "live" ? (data.feedErrors?.length ? "LIVE FEED · PARTIAL" : "LIVE FEED") : "FEED OFFLINE";
-    $("updatedAt").textContent = new Date(data.fetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    const feedMeta=data.feedMeta||{}; const books=(data.providerBookmakers||[]).length; const cap=feedMeta.truncated?` · PROVIDER LIMIT: ${feedMeta.limit||"tier cap"} of ${feedMeta.total_matched||"more"} records returned`:""; $("feedFreshness").textContent = `Screen refresh: 5s (display only) · ${books} bookmaker feeds with prices in this response · ${data.scope||"provider coverage"} · provider tier: ${esc(data.providerPlan||"not reported")}${cap} · price freshness varies by bookmaker; check each quote age · last feed fetch ${data.oddsFetchedAt?new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"waiting"}`;
-    $("notice").textContent = (data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.") + (data.feedErrors?.length ? " Feed warning: " + data.feedErrors.map(x => x.feed + ": " + x.message).join(" · ") : "");
-    $("notice").classList.remove("hidden");
-    render();
-  } catch (err) {
-    $("feedStatus").textContent = "FEED ERROR";
-    $("notice").textContent = `${err.message}. If using live mode, check your server .env API key and provider access.`;
-    $("notice").classList.remove("hidden");
-    if (!state.races.length) $("raceList").innerHTML = `<div class="empty">${esc(err.message)}</div>`;
-  } finally { state.loading = false; $("refreshBtn").disabled = false; }
-}
-document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>{
-  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-  btn.classList.add("active"); state.filter=btn.dataset.filter; render();
-}));
-$("search").addEventListener("input",e=>{state.search=e.target.value;render();});
-$("sort").addEventListener("change",e=>{state.sort=e.target.value;render();});
-$("refreshBtn").addEventListener("click",loadRaces);
-$("sportsCatalogue").addEventListener("click",e=>{const b=e.target.closest("[data-sport]");if(b)loadSportOdds(b.dataset.sport);});
-$("loadAllSportsBtn").addEventListener("click",loadAllSports);
-$("refreshLiveSportsBtn").addEventListener("click",loadLiveSports);
-document.querySelectorAll(".main-tab").forEach(b=>b.addEventListener("click",()=>setMainView(b.dataset.view)));
-async function loadHistory() {
-  try {
-    const res = await fetch("/api/history");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "History unavailable");
-    const s = data.summary;
-    $("histRaces").textContent = s.races;
-    $("histWins").textContent = s.wins;
-    $("histRate").textContent = s.strikeRate == null ? "—" : s.strikeRate + "%";
-    $("histPending").textContent = s.pending;
-    const codeText = x => x.races ? `${x.wins}/${x.races} wins · ${x.strikeRate}%` : "No settled races yet";
-    $("horseRecord").textContent = codeText(s.horse);
-    $("dogRecord").textContent = codeText(s.greyhound);
-    const rows = (data.picks || []).slice(0,12);
-    $("historyRows").innerHTML = rows.length ? rows.map(p => {
-      const status = p.status === "final" ? (p.favouriteWon ? '<span class="won">WON</span>' : '<span class="lost">LOST</span>') : '<span class="pending">PENDING</span>';
-      return `<div class="history-row"><div><b>${esc(p.venue)}</b><div class="muted">${p.category==="horse"?"Horse":"Greyhound"} ${p.raceNumber ? "R"+p.raceNumber : ""}</div></div><div>${esc(p.runnerName)}<div class="muted">$ ${Number(p.selectedOdds).toFixed(2)} · ${esc(p.priceSource)} · ${p.quoteCount == null ? "quote count unavailable (older record)" : Number(p.quoteCount)+" quote"+(Number(p.quoteCount)===1?"":"s")}</div></div><div>${p.winnerName ? "Winner: "+esc(p.winnerName) : "Awaiting result"}</div><div>${status}</div></div>`;
-    }).join("") : '<div class="empty">No saved picks yet. Keep the live dashboard running to record upcoming favourites.</div>';
-  } catch (e) { $("historyRows").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
-}
-async function loadMarketHistory() {
-  try {
-    const res = await fetch("/api/market-history");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Market history unavailable");
-    $("marketRaces").textContent = data.racesTracked ?? 0;
-    $("marketSnapshots").textContent = data.total ?? 0;
-    $("marketCaptured").textContent = data.capturedAt ? new Date(data.capturedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "Waiting";
-    const rows = (data.snapshots || []).slice(0,15);
-    $("marketHistoryRows").innerHTML = rows.length ? rows.map(x => {
-      const fav = x.favourite;
-      const when = new Date(x.capturedAt).toLocaleString("en-AU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Australia/Brisbane"});
-      const price = fav ? "$"+Number(fav.price).toFixed(2)+" · "+esc(fav.priceSource)+" · "+esc(fav.signalLabel||"") : "Waiting for odds";
-      const runners = (x.runners || []).length;
-      return `<div class="history-row"><div><b>${esc(x.venue)} ${x.raceNumber ? "R"+esc(x.raceNumber) : ""}</b><div class="muted">${x.category==="horse"?"Horse":"Greyhound"} · ${esc(when)}</div></div><div>${fav ? esc(fav.name) : "No favourite yet"}<div class="muted">${price}</div></div><div>${x.quoteCount} bookmaker quotes<div class="muted">${runners} runners recorded</div></div><div><span class="pending">${x.status==="priced"?"SNAPSHOT":"WAITING"}</span></div></div>`;
-    }).join("") : '<div class="empty">No market changes captured yet. The archive fills as the live feed updates.</div>';
-  } catch (e) { $("marketHistoryRows").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
-}
-async function syncHistory() {
-  const btn = $("syncHistoryBtn"); btn.disabled = true; btn.textContent = "Updating…";
-  try {
-    const res = await fetch("/api/history/sync",{method:"POST"});
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not update results");
-    await loadHistory();
-    btn.textContent = `Updated · ${data.settled} settled · ${data.unmatched} unmatched`;
-  } catch (e) { btn.textContent = "Update failed"; $("notice").textContent = e.message; $("notice").classList.remove("hidden"); }
-  setTimeout(()=>{btn.disabled=false;btn.textContent="↻ Update results";},3500);
-}
-$("syncHistoryBtn").addEventListener("click",syncHistory);
-function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
-tick(); setInterval(tick,1000);
-loadRaces();
-loadSports();
-loadLiveSports();
-loadHistory();
-loadMarketHistory();
-// Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,5000);
-setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
-setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
-setInterval(loadMarketHistory,30000);
-setInterval(syncHistory,15*60*1000);
-+Number(fav.consensus).toFixed(2):'Waiting for prices')+'</span></div>';
+    const favouriteText=fav
+      ? "Favourite: "+(fav.number?fav.number+". ":"")+fav.name+" · $"+Number(fav.consensus).toFixed(2)
+      : "Waiting for bookmaker prices";
+    const quoteCount=(r.runners||[]).reduce((n,x)=>n+runnerPrices(x).length,0);
+    return '<div class="race-list-row '+(isLive?"race-list-live":"")+'"><span class="race-list-status">'+(isLive?"LIVE":"UPCOMING")+'</span><span class="race-list-code">'+typeLabel+'</span><span class="race-list-track"><b>'+esc(venue)+' · R'+esc(number)+'</b><small>'+esc(date)+' · '+esc(time)+' · Australia</small></span><span class="race-list-fav">'+esc(favouriteText)+'<small>'+quoteCount+' returned runner quotes</small></span></div>';
   };
   $("raceList").innerHTML=rows.length
     ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
     : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>';
 }
-function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 async function loadRaces() {
   if (state.loading) return;
   state.loading = true; $("refreshBtn").disabled = true;
@@ -566,7 +472,7 @@ loadLiveSports();
 loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,5000);
+setInterval(loadRaces,60000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
