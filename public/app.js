@@ -43,7 +43,7 @@ function allBookmakerFavourites(race) { const books=new Map(); for(const runner 
 function allBookFavouritePanel(f) {
   const runner=(f.number!=null?f.number+". ":"")+f.name;
   const age=f.age==null?"Quote age unavailable":"Quote age "+Math.round(f.age)+"s";
-  return `<div class="book-fav"><div class="book-fav-label">${esc(f.bookmaker)}</div><div class="book-fav-runner">${esc(runner)}</div><div class="book-fav-price>$${f.price.toFixed(2)}</div><div class="book-fav-age">${esc(age)} · shortest returned quote</div><a class="bookmaker-market-link" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">Open ${esc(f.bookmaker)} ↗</a></div>`;
+  return `<div class="book-fav"><div class="book-fav-label">${esc(f.bookmaker)}</div><div class="book-fav-runner">${esc(runner)}</div><div class="book-fav-price">$${f.price.toFixed(2)}</div><div class="book-fav-age">${esc(age)} · shortest returned quote</div><a class="bookmaker-market-link" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">Open ${esc(f.bookmaker)} ↗</a></div>`;
 }
 
 function marketFavourite(race) {
