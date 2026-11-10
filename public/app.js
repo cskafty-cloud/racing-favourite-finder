@@ -378,7 +378,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -496,13 +496,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -933,7 +933,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -1051,13 +1051,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -1487,7 +1487,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -1605,13 +1605,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -1833,13 +1833,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -2270,7 +2270,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -2388,13 +2388,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -2824,7 +2824,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -2942,13 +2942,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -3170,13 +3170,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -3607,7 +3607,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -3725,13 +3725,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
@@ -4161,7 +4161,7 @@ function renderSports(){
   const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
   const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
   const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
-  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1&&quoteIsFresh({...o,...b})))));
   const bookFavourites=books.map(book=>{
    const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
@@ -4279,13 +4279,13 @@ function render() {
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(q.age)||q.age<180));
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
       const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const num=runner.number??runner.runner_number;
       const isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||(q.age!=null&&q.age>=180)?' · STALE':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
