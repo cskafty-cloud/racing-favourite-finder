@@ -244,6 +244,23 @@ function renderSports(){
  }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
  renderSportTrends();
 }
+
+async function loadLiveSports(){
+ const notice=$("liveSportsNotice"),list=$("liveSportsEvents");
+ try{
+  const r=await fetch("/api/live-sports"),d=await r.json();
+  if(!r.ok)throw Error(d.error||"Live sports feed unavailable");
+  const fetched=d.fetchedAt?new Date(d.fetchedAt):null;
+  notice.textContent=d.error?"Feed warning: "+d.error:
+   (d.events.length+" live events · bet365 feed snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+(d.ageSeconds??"—")+"s old. "+d.note);
+  list.innerHTML=d.events.length?d.events.map(e=>{
+   const score=e.score?" · "+esc(e.score):"",clock=e.minute!=null?" · "+esc(e.minute)+"′":"";
+   const f=e.favourite;
+   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-favourite">★ BET365 FAVOURITE: <b>'+(f?esc(f.name):"No active main-market price")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small></article>';
+  }).join(""):'<div class="empty">No live events were returned by bet365 at this check.</div>';
+ }catch(e){notice.textContent=e.message;list.innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
+}
+
 async function loadSports(){
  try{const r=await fetch("/api/sports"),d=await r.json();if(!r.ok)throw Error(d.error||"Sports feed unavailable");state.sports=d.sports||[];$("sportsNotice").textContent=d.note||"Upcoming fixtures and pre-match markets only. Live/in-play odds are not supplied.";renderSports();}
  catch(e){$("sportsNotice").textContent=e.message;}
@@ -326,6 +343,7 @@ $("sort").addEventListener("change",e=>{state.sort=e.target.value;render();});
 $("refreshBtn").addEventListener("click",loadRaces);
 $("sportsCatalogue").addEventListener("click",e=>{const b=e.target.closest("[data-sport]");if(b)loadSportOdds(b.dataset.sport);});
 $("loadAllSportsBtn").addEventListener("click",loadAllSports);
+$("refreshLiveSportsBtn").addEventListener("click",loadLiveSports);
 document.querySelectorAll(".main-tab").forEach(b=>b.addEventListener("click",()=>setMainView(b.dataset.view)));
 async function loadHistory() {
   try {
@@ -381,10 +399,12 @@ function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",
 tick(); setInterval(tick,1000);
 loadRaces();
 loadSports();
+loadLiveSports();
 loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
 setInterval(loadRaces,5000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
+setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
