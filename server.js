@@ -179,11 +179,16 @@ async function publicDemoRequest(pathname, params={}) {
   return data;
 }
 const MOVI_SPORT_SLUGS = {
-  oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby",oddsdata_12:"american-football",
-  oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",oddsdata_16:"baseball",
-  oddsdata_17:"hockey",oddsdata_18:"basketball",oddsdata_19:"rugby",oddsdata_36:"australian-rules",
-  oddsdata_78:"handball",oddsdata_83:"futsal",oddsdata_91:"volleyball",oddsdata_92:"table-tennis",
-  oddsdata_94:"badminton",oddsdata_151:"esports",oddsdata_162:"mma"
+  oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby_union",oddsdata_9:"boxing",
+  oddsdata_12:"american_football",oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",
+  oddsdata_16:"baseball",oddsdata_17:"ice_hockey",oddsdata_18:"basketball",oddsdata_19:"rugby_league",
+  oddsdata_36:"australian_rules",oddsdata_75:"gaelic_sports",oddsdata_78:"handball",oddsdata_83:"futsal",
+  oddsdata_90:"floorball",oddsdata_91:"volleyball",oddsdata_92:"table_tennis",oddsdata_94:"badminton",
+  oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field_hockey",oddsdata_163:"bandy",oddsdata_164:"field_hockey"
+};
+const MOVI_WINNER_GROUPS = {
+  oddsdata_1:["40","1777"],oddsdata_3:["1246","30154"],oddsdata_12:["1441","58"],
+  oddsdata_13:["83","67"],oddsdata_16:["1096"],oddsdata_17:["972","96"],oddsdata_18:["1453","112"]
 };
 const PUBLIC_DEMO_SPORTS = {
   oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",oddsdata_9:"boxing",
@@ -253,8 +258,9 @@ async function loadPublicDemoSport(sport) {
     const matches=Array.isArray(moviResult.value.matches)?moviResult.value.matches:[];
     for(const match of matches){
       const quotes=Array.isArray(match.quotes)?match.quotes:[];
-      const main=quotes.filter(q=>String(q.group_id)==="40");
-      const use=main.length?main:quotes;
+      const groupIds=MOVI_WINNER_GROUPS[sport.key]||[];
+      const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
+      const use=main;
       const outcomes=use.map(q=>({name:q.label||q.name||"Selection",price:Number(q.odds_dec??q.price)}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1);
       if(!outcomes.length)continue;
@@ -528,7 +534,7 @@ const ODDS_DATA_SPORTS = [
  [12,"American Football"],[13,"Tennis"],[14,"Snooker"],[15,"Darts"],[16,"Baseball"],[17,"Ice Hockey"],
  [18,"Basketball"],[19,"Rugby League"],[36,"Australian Rules"],[66,"Bowls"],[75,"Gaelic Sports"],
  [78,"Handball"],[83,"Futsal"],[90,"Floorball"],[91,"Volleyball"],[92,"Table Tennis"],[94,"Badminton"],
- [95,"Beach Volleyball"],[107,"Squash"],[110,"Water Polo"],[151,"E-sports"],[162,"MMA/UFC"]
+ [95,"Beach Volleyball"],[107,"Squash"],[110,"Water Polo"],[151,"E-sports"],[162,"MMA/UFC"],[163,"Bandy"],[164,"Field Hockey"]
 ].map(([id,title])=>({id,title,key:"oddsdata_"+id,provider:"Odds Data API / Bet365"}));
 const oddsDataSportCache = new Map();
 function oddsDataEvent(raw,sport) {
