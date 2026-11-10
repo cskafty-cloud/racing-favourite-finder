@@ -9,6 +9,7 @@ const API_KEY = process.env.PUNTERSEDGE_API_KEY || "";
 const BETFAIR_APP_KEY = process.env.BETFAIR_APP_KEY || "";
 const BETFAIR_SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
 const BETFAIR_RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1";
+const BETFAIR_FEED_URL = process.env.BETFAIR_FEED_URL || "";
 let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
 let betfairRacingRefresh = null;
 async function betfairRpc(method, params) {
@@ -644,6 +645,18 @@ async function getGlobalRaces() {
     } catch(error) {
       console.error("PUNTERS_EDGE_PRIMARY_FAILED",error.message);
       failures.push({feed:"PuntersEdge",message:error.message});
+    }
+  }
+  if (BETFAIR_FEED_URL) {
+    try {
+      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+      const data=await response.json();
+      if(response.ok && Array.isArray(data.races) && data.races.length) {
+        return {...data,feedErrors:failures,feedSource:data.feedSource||"Betfair Exchange"};
+      }
+      failures.push({feed:"Betfair AU service",message:data.error||"No Australian markets returned (HTTP "+response.status+")."});
+    } catch(error) {
+      failures.push({feed:"Betfair AU service",message:error.message});
     }
   }
   // Betfair delayed Exchange data is the no-cost read-only fallback.
