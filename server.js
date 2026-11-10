@@ -12,6 +12,8 @@ const BETFAIR_RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1";
 const BETFAIR_FEED_URL = process.env.BETFAIR_FEED_URL || "";
 let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
 let betfairRacingRefresh = null;
+let betfairRetryAt = 0;
+let betfairFeedRetryAt = 0;
 async function betfairRpc(method, params) {
   if (!BETFAIR_APP_KEY || !BETFAIR_SESSION_TOKEN) throw new Error("Betfair delayed app key or session token is missing in Railway.");
   const response = await fetch(BETFAIR_RPC_URL, {
@@ -465,7 +467,8 @@ function providerRetryDelay(error) {
 const RAPID_RACING_CODES = ["thoroughbred","harness","greyhound"];
 const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
 const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
-let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null};
+let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null,errors:[]};
+let krokRetryAt = 0;
 async function fetchKrokRacing(date, raceType) {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
@@ -537,8 +540,15 @@ async function fetchKrokRacing(date, raceType) {
     creditsRemaining:response.headers.get("X-Credits-Remaining")};
 }
 async function getKrokRaces() {
+  const now=Date.now();
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Melbourne",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-  if(!krokRacingCache.at || Date.now()-krokRacingCache.at>=60000) {
+  if(krokRetryAt && now<krokRetryAt) {
+    return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
+      oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
+      feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+      feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
+  }
+  if(!krokRacingCache.at || now-krokRacingCache.at>=60000) {
     const codes=["T","G","H"];
     const results=await Promise.all(codes.map(async code=>{
       try { return await fetchKrokRacing(today,code); }
@@ -546,19 +556,21 @@ async function getKrokRaces() {
     }));
     const races=results.flatMap(x=>x.races||[]);
     const errors=results.filter(x=>x.error).map(x=>x.error);
-    krokRacingCache={at:Date.now(),races,meta:results.map(x=>x.meta).filter(Boolean),
+    const quotaBlocked=errors.some(message=>/429|monthly api limit|credit limit/i.test(message));
+    krokRetryAt=quotaBlocked?now+24*60*60*1000:0;
+    krokRacingCache={at:now,races,meta:results.map(x=>x.meta).filter(Boolean),
       creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
     console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
       raceCount:races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,races.filter(r=>r.category===k).length])),
       pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
-      runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,errors}));
+      runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,
+      retryAt:krokRetryAt?new Date(krokRetryAt).toISOString():null,errors}));
   }
-  return {races:krokRacingCache.races,scheduleFetchedAt:new Date(krokRacingCache.at).toISOString(),
-    oddsFetchedAt:new Date(krokRacingCache.at).toISOString(),horizonHours:24,
+  return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
+    oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
     feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
     feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
 }
-
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
 let rapidRacingCache = { at:0, races:[], errors:[] };
 let rapidRacingRefresh = null;
@@ -722,7 +734,7 @@ async function getGlobalRaces() {
           feedSource:"Krok Odds Australian racing",
           note:"Australian horse, greyhound and harness race prices from the configured Krok Odds feed. Bookmaker coverage and quote timestamps depend on provider availability."};
       }
-      failures.push({feed:"Krok Odds",message:(alternate.feedErrors||[]).join(" · ")||"No racing markets returned."});
+      failures.push({feed:"Krok Odds",message:(alternate.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x))).join(" · ")||"No racing markets returned."});
     } catch(error) {
       failures.push({feed:"Krok Odds",message:error.message});
     }
@@ -730,31 +742,33 @@ async function getGlobalRaces() {
   // Use the direct, read-only Betfair Exchange API integration before the
   // optional external proxy URL. This path was implemented but previously
   // never called by the production racing feed selector.
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN) {
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
-      if (exchange.races?.length) {
-        return {...exchange,feedErrors:failures,
-          note:"Australian racing markets and exchange prices from Betfair's delayed application key. Prices are delayed and may not represent current bookmaker odds. Display-only; no betting actions are enabled."};
-      }
+      if (exchange.races?.length) return {...exchange,feedErrors:failures,
+        note:"Australian racing markets and delayed exchange prices from Betfair. Exchange prices are not fixed bookmaker odds. Display-only; no betting actions are enabled."};
       failures.push({feed:"Betfair Exchange",message:"No Australian racing markets returned."});
     } catch(error) {
       console.error("BETFAIR_DIRECT_API_FAILED",error.message);
+      betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
       failures.push({feed:"Betfair Exchange",message:error.message});
     }
+  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()<betfairRetryAt) {
+    failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
   }
-  // Optional externally hosted Australian feed adapter, if configured.
-  if (BETFAIR_FEED_URL) {
+  if (BETFAIR_FEED_URL && Date.now()>=betfairFeedRetryAt) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
-      if(response.ok && Array.isArray(data.races) && data.races.length) {
-        return {...data,feedErrors:failures,feedSource:data.feedSource||"Betfair Exchange"};
-      }
-      failures.push({feed:"Betfair AU service",message:data.error||"No Australian markets returned (HTTP "+response.status+")."});
+      if(response.ok && Array.isArray(data.races) && data.races.length) return {...data,feedErrors:failures,feedSource:data.feedSource||"Betfair Exchange"};
+      failures.push({feed:"Betfair feed adapter",message:data.error||"No Australian markets returned (HTTP "+response.status+")."});
+      betfairFeedRetryAt=Date.now()+6*60*60*1000;
     } catch(error) {
-      failures.push({feed:"Betfair AU service",message:error.message});
+      failures.push({feed:"Betfair feed adapter",message:error.message});
+      betfairFeedRetryAt=Date.now()+6*60*60*1000;
     }
+  } else if (BETFAIR_FEED_URL && Date.now()<betfairFeedRetryAt) {
+    failures.push({feed:"Betfair feed adapter",message:"Connection temporarily paused after the previous network failure."});
   }
   // Do not mix limited public sample data into the production race board.
   // Public provider-hosted widgets remain available on the website.
@@ -824,7 +838,17 @@ app.get("/api/races", async (_req, res) => {
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       note:feed.note||"Racing cards appear only when a connected provider returns them. Official public fields/results are linked separately below; no bookmaker prices are inferred."});
-  } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
+  } catch (err) {
+    const raw=String(err.message||"");
+    const safeWarnings=[];
+    if(/PuntersEdge|402|credit limit/i.test(raw)) safeWarnings.push({feed:"PuntersEdge",message:"Free API quota exhausted; public live widgets remain available."});
+    if(/Krok Odds|429|monthly api limit/i.test(raw)) safeWarnings.push({feed:"Krok Odds",message:"Monthly API quota reached; waiting for provider reset."});
+    if(/Betfair|403|fetch failed/i.test(raw)) safeWarnings.push({feed:"Betfair",message:"The current hosting route cannot access the Betfair feed."});
+    res.set("Cache-Control","no-store");
+    res.json({races:[],providerBookmakers:[],mode:"public-widgets",feedSource:"Free public racing widgets",
+      fetchedAt:new Date().toISOString(),scheduleFetchedAt:null,oddsFetchedAt:null,scope:"Australia",
+      feedErrors:safeWarnings,note:"The authenticated race-card feeds are temporarily unavailable. Free public racing widgets and official Australian racing links remain below. No sample races or estimated prices are shown."});
+  }
 });
 
 
