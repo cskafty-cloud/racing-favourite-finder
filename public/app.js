@@ -15,7 +15,7 @@ function bookmakerFavourite(race, wantedKey) {
   const aliases = { sportsbet:["sportsbet","sportsbetau","sportsbetcomau"], bet365:["bet365","bet365au","bet365comau"] };
   const accepted = aliases[wantedKey] || [wantedKey];
   const candidates = (race.runners || []).map(runner => {
-    const quote = runnerPrices(runner).find(q => accepted.includes(String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"")));
+    const quote = runnerPrices(runner).find(q => [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => accepted.includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,""))));
     if (!quote) return null;
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
       number:runner.number ?? runner.runner_number ?? null,
@@ -25,7 +25,7 @@ function bookmakerFavourite(race, wantedKey) {
   return candidates.sort((a,b)=>a.price-b.price)[0] || null;
 }
 function favouritePanel(label, favourite) {
-  return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">No current quote for this race</div>`}</div>`;
+  return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
 function marketFavourite(race) {
   const runners = (race.runners || []).map(r => {
@@ -69,7 +69,7 @@ function raceCard(r, live=false) {
   const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
   const runnerOdds = (r.runners || []).map(runner => {
     const quotes = runnerPrices(runner).map(q => ({
-      name: q.name || q.bookmaker || q.key || "Bookmaker",
+      name: q.bookmaker || q.bookmaker_name || q.name || q.site || q.key || "Bookmaker",
       price: Number(q.win_price ?? q.win ?? q.price), url: q.source_link || q.source_url || null
     })).filter(q => Number.isFinite(q.price) && q.price > 1)
       .sort((a,b)=>a.price-b.price);
