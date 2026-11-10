@@ -52,7 +52,8 @@ async function demoRacingFeed() {
   if (!response.ok) throw new Error("Public racing demo feed " + response.status + ": " + body.slice(0, 240));
   const payload = JSON.parse(body);
   const rows = Array.isArray(payload) ? payload : (Array.isArray(payload.races) ? payload.races : []);
-  if (!rows.length) throw new Error("Public racing demo feed returned no races.");
+  // An empty array is a valid off-hours response (Australian racing has no cards 24/7).
+  // Cache it too, otherwise every browser refresh hammers both feeds and fills logs with false errors.
   demoRacingCache = { at: Date.now(), rows };
   return rows;
 }
@@ -372,7 +373,8 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    res.json({races, providerBookmakers, mode:"live", fetchedAt:new Date().toISOString(),
+    const usingPublicDemo = Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds;
+    res.json({races, providerBookmakers, mode:"live", feedSource:usingPublicDemo ? "PuntersEdge public demo (free)" : "PuntersEdge authenticated", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, feedErrors:feed.feedErrors, scope:"provider-supported worldwide",
       note:"Worldwide schedule and prices for horse, harness and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
