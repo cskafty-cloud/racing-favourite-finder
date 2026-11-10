@@ -1648,5 +1648,5 @@ app.listen(PORT,"0.0.0.0",()=>{
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
-  setInterval(refreshBackgroundRacingFeed, 5 * 60 * 1000);
+  setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
 });
