@@ -67,7 +67,7 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
   const url=favourite&&favourite.url?favourite.url:BOOKMAKER_URLS[key];
   const extra=key==="bet365"
     ? '<a class="bookmaker-market-link" href="https://moviodds.com/racing?code=all&near=200" target="_blank" rel="noopener noreferrer">View public Bet365 racing board ↗</a><a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Open Bet365 racing ↗</a>'
-    : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Open Sportsbet racing ↗</a>';
+    : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/horse/today" target="_blank" rel="noopener noreferrer">Sportsbet horse races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/greyhound/today" target="_blank" rel="noopener noreferrer">Sportsbet greyhound races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer">Sportsbet harness races ↗</a>';
   const runner=favourite?(favourite.number!=null?favourite.number+". ":"")+favourite.name:"";
   const freshness=favourite
     ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · quote age unavailable":" · "+Math.round(Number(favourite.age))+"s old")
@@ -138,7 +138,7 @@ function marketFavourite(race) {
   const second=runners[1],gap=second?Math.max(0,(1/fav.consensus-1/second.consensus)/(1/fav.consensus)):0;
   fav.gapPct=+(gap*100).toFixed(1);
   fav.signalScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
-  fav.signalLabel=fav.quoteCount===1?"LOW CONFIDENCE · ONE BOOKMAKER":fav.quoteCount>=3&&fav.signalScore>=65?"STRONG SIGNAL":fav.signalScore>=45?"CAUTION":"LOW CONFIDENCE · LIMITED QUOTES";
+  fav.signalLabel=fav.quoteCount===1?"LIMITED MARKET DATA · ONE PRICE SOURCE":fav.quoteCount>=3&&fav.signalScore>=65?"STRONG SIGNAL":fav.signalScore>=45?"CAUTION":"LIMITED MARKET DATA · FEW PRICE SOURCES";
   return fav;
 }
 // Best available display fallback for the Sportsbet panel:
@@ -382,14 +382,14 @@ function renderTopTips() {
   const b365=bookmakerFavourite(r,"bet365");
   bet365Picks.push({kind:"RACING",category,event,selection:b365?(b365.number?b365.number+". ":"")+b365.name:"No verified Bet365 favourite",odds:b365?b365.price:null,time,source:b365?"Bet365-labelled public quote":"No current Bet365 quote returned",score:0,quotes:b365?1:0,signal:b365?"PRICE RETURNED":"PRICE UNAVAILABLE"});
   const fav=marketFavourite(r);
-  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"LOW CONFIDENCE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
+  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"LIMITED MARKET DATA"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
   racePicks.push(tip);if(fav)pricedTips.push(tip);
  }
  for(const e of state.sportEvents||[]){
   const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
   const ranks=sportRankings(e);if(!ranks.length)continue;
   const f=ranks[0],books=f.books||0;
-  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:books>=2?"MULTI-QUOTE SIGNAL":"SINGLE-SOURCE · LOW CONFIDENCE"};
+  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:books>=2?"MULTI-QUOTE SIGNAL":"SINGLE-SOURCE · LIMITED MARKET DATA"};
   sportPicks.push(tip);pricedTips.push(tip);
  }
  const today=new Date().toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"});
@@ -404,7 +404,7 @@ function renderTopTips() {
  el.innerHTML=section("BEST OF THE DAY · RACING + SPORTS","Top 10 priced favourites across today's returned horse, greyhound, harness and sports markets (Brisbane time). Ranked by available bookmaker agreement, price spread and separation from the next selection. This is a market-strength signal, not a prediction.",bestDay,"No fresh priced race or sports favourites are available for today's shortlist.")
  +section("SPORTSBET BEST OF THE DAY","Best available runner for every returned race. Exact Sportsbet quote is preferred; if missing, the overall market median is used and clearly marked as a proxy. Check the Sportsbet site before relying on a fallback.",sportsbetBestOfDay,"No usable Sportsbet or overall-market runner prices were returned for today's races.")
  +section("SPORTSBET TOP TIPS · ALL RACES","Top 20 best-available racing favourites. Exact Sportsbet quotes are preferred, then overall-market median proxies; stale quotes are marked. A proxy is not a Sportsbet price.",sportsbetTopTips,"No usable Sportsbet or overall-market prices are available in the public racing sample.")
- +section("SPORTSBET FAVOURITES · EVERY RACE","Best available favourite for every returned race: Sportsbet quote first, then overall-market median proxy. Stale prices and proxies are explicitly labelled.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
+ +section("SPORTSBET FAVOURITES · EVERY RACE","Favourites for every race returned by the public racing feeds, with Sportsbet's public horse, greyhound and harness race schedules linked for cross-checking. Sportsbet prices are used where present; otherwise the market favourite is shown as a proxy.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
  +section("BET365 FAVOURITES · EVERY RACE","Separate Bet365-labelled favourite for every returned upcoming/live race. Only Bet365-labelled prices are shown.",bet365Picks,"No upcoming races were returned by the racing feed.")
  +section("TOP TIPS · ALL RACES + SPORTS","Top 20 priced market favourites across all returned horse, greyhound, harness and sports events. Selections are ranked by the number of quotes, price agreement and market separation.",topTips,"No priced favourites are available from the current public feeds.")
  +section("RACE FAVOURITES · EVERY RACE","Market favourite for each returned race, including races awaiting prices.",racePicks,"No upcoming races were returned by the racing feed.")
