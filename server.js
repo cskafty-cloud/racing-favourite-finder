@@ -722,18 +722,10 @@ async function getGlobalRaces() {
       failures.push({feed:"Betfair AU service",message:error.message});
     }
   }
-  // No exhausted or plan-restricted odds providers are polled. Public racing
-  // information is linked in the dashboard; this demo is labelled as a preview.
-  // Last-resort public preview only; this is not a complete bookmaker board.
-  try {
-    const demo=await demoRacingFeed();
-    if(demo.length) return {races:demo,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),
-      oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),horizonHours:24,
-      feedErrors:failures,feedSource:"PuntersEdge public demo · limited preview",scope:"Australia",
-      note:"Limited public preview feed. It may omit races, runners and bookmaker quotes; it is not a complete live odds feed. Full coverage requires a licensed API plan with display rights."};
-  } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
+  // Do not mix the limited public sample endpoint into the production race board.
+  // Real public prices are embedded as provider-hosted widgets in the website.
   if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
-  throw new Error("No Australian racing feed API key is configured in Railway.");
+  throw new Error("No authenticated live Australian racing feed is available. Use the live racing widgets while provider access is restored.");
 }
 
 function dedupeRaces(input) {
