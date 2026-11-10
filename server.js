@@ -259,7 +259,7 @@ async function loadPublicDemoSport(sport) {
     for(const match of matches){
       const quotes=Array.isArray(match.quotes)?match.quotes:[];
       const groupIds=MOVI_WINNER_GROUPS[sport.key]||[];
-      const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
+      const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|3.?way result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
       const use=main;
       const outcomes=use.map(q=>({name:q.label||q.name||"Selection",price:Number(q.odds_dec??q.price)}))
         .filter(q=>Number.isFinite(q.price)&&q.price>1);
