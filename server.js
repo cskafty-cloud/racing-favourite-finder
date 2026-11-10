@@ -13,19 +13,27 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 let writeQueue = Promise.resolve();
 const lastMarketSignatures = new Map();
-const MARKET_HISTORY_LIMIT = 25000;
-const MARKET_HISTORY_DAYS = 30;
+// Snapshots were growing past 20k entries (every race, every ~20s), which pushed the
+// Node heap over its limit and crash-looped the service. Keep the archive small.
+const MARKET_HISTORY_LIMIT = 3000;
+const MARKET_HISTORY_DAYS = 3;
+const SNAPSHOT_MIN_INTERVAL_MS = 60000;
+const SNAPSHOT_WINDOW_MS = 90 * 60000;
+const lastSnapshotAt = new Map();
+let historyCache = null;
 
 app.use(express.static(path.join(__dirname, "public")));
 
 async function readHistory() {
+  if (historyCache) return historyCache;
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
     const value = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
     if (!Array.isArray(value.picks)) value.picks = [];
     if (!Array.isArray(value.marketSnapshots)) value.marketSnapshots = [];
-    return value;
-  } catch (e) { if (e.code === "ENOENT") return { picks: [], marketSnapshots: [] }; throw e; }
+    value.marketSnapshots = value.marketSnapshots.slice(-MARKET_HISTORY_LIMIT);
+    return (historyCache = value);
+  } catch (e) { if (e.code === "ENOENT") return (historyCache = { picks: [], marketSnapshots: [] }); throw e; }
 }
 async function saveHistory(history) {
   writeQueue = writeQueue.then(async () => {
@@ -120,8 +128,12 @@ async function recordMarketSnapshots(races, capturedAt) {
     const favourite = selectFavourite(race);
     const signature = JSON.stringify({runners, favourite});
     const id = raceId(race);
+    const startMs = Date.parse(startTimeOf(race));
+    if (Number.isFinite(startMs) && (startMs - Date.now() > SNAPSHOT_WINDOW_MS || startMs < Date.now() - 600000)) continue;
     if (lastMarketSignatures.get(id) === signature) continue;
+    if (Date.now() - (lastSnapshotAt.get(id) || 0) < SNAPSHOT_MIN_INTERVAL_MS) continue;
     lastMarketSignatures.set(id, signature);
+    lastSnapshotAt.set(id, Date.now());
     history.marketSnapshots.push({
       raceId:id, category:categoryOf(race), venue:venueOf(race),
       raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
@@ -197,7 +209,7 @@ function isSameRunner(pick, winner) {
 const ODDS_API_TOKEN = process.env.ODDS_DATA_API_TOKEN || "";
 async function oddsApi(pathname, params={}) {
   if (!ODDS_API_TOKEN) throw new Error("ODDS_DATA_API_TOKEN is not active in Railway.");
-  const url = new URL("https://api.odds-data-api.com" + pathname);
+  const url = new URL((process.env.ODDS_API_BASE || "https://api.b365api.com") + pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   url.searchParams.set("token",ODDS_API_TOKEN);
   const response = await fetch(url,{signal:AbortSignal.timeout(20000)});
