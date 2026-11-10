@@ -73,7 +73,7 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · quote age unavailable":" · "+Math.round(Number(favourite.age))+"s old")
     : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(key==="bet365"?"Bet365 public racing feed via MoviOdds":"Sportsbet-labelled public quote")+(favourite.age==null?"":" · "+Math.round(Number(favourite.age))+"s old")+freshness+'</div>'
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed via MoviOdds":"Sportsbet-labelled public quote"))+(favourite.age==null?"":" · "+Math.round(Number(favourite.age))+"s old")+freshness+'</div>'
     : '<div class="book-fav-missing">No '+esc(bookmaker)+'-labelled public runner price was returned for this race. Another bookmaker price is not substituted.</div>';
   return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' public-feed favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
