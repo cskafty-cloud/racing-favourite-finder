@@ -956,7 +956,7 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    res.json({races, providerBookmakers, mode:String(feed.feedSource||"").toLowerCase().includes("demo")?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
+    res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       note:feed.note||"Racing cards appear only when a connected provider returns them. Official public fields/results are linked separately below; no bookmaker prices are inferred."});
@@ -1049,13 +1049,13 @@ const sportsOddsCache = new Map();
 app.get("/api/sports", async (_req,res) => {
   const sports=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id)).map(s=>({
     key:s.key,title:s.title,name:s.title,category:"Sports",event_count:0,
-    provider:"Odds Data API / Bet365",active:true
+    provider:"Free public Sportsbet + Bet365 snapshots",active:true
   }));
   res.set("Cache-Control","no-store");
   res.json({sports,fetchedAt:new Date().toISOString(),
-    provider:"Odds Data API / Bet365",refreshSeconds:60,liveInPlayAvailable:true,
+    provider:"Free public Sportsbet + Bet365 snapshots",refreshSeconds:90,liveInPlayAvailable:true,
     providerErrors:[],
-    note:"Sports catalogue, fixtures, live event status and available odds are from the connected Bet365 data feed via Odds Data API. Sportsbet is an external market link only; no Sportsbet prices are imported. No missing prices are estimated."});
+    note:"Free no-key public preview for the available sport catalogue. Sportsbet and Bet365 prices are shown where their public snapshot returns them; coverage is limited and not every sport has a live market."});
 });
 const RAPID_SPORT_ALIASES={
  nfl:"NFL",americanfootball_nfl:"NFL",nba:"NBA",basketball_nba:"NBA",wnba:"WNBA",mlb:"MLB",baseball_mlb:"MLB",nhl:"NHL",icehockey_nhl:"NHL",
