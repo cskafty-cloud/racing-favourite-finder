@@ -4466,6 +4466,29 @@ function sportRankings(event) {
  return rows;
 }
 
+
+function marketFavourite(race) {
+ const median=values=>{const x=values.slice().sort((a,b)=>a-b);return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null;};
+ const runners=(race.runners||[]).map(runner=>{
+  const seen=new Set();
+  const quotes=fixedRunnerPrices(runner).filter(q=>{
+   const key=normaliseBookmakerKey(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"");
+   if(!key||seen.has(key)||!quoteIsFresh(q))return false;
+   seen.add(key);return true;
+  });
+  const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
+  const consensus=median(prices);if(consensus==null)return null;
+  const spread=prices.length>1?(Math.max(...prices)-Math.min(...prices))/consensus:1;
+  return {...runner,consensus,quoteCount:quotes.length,spreadPct:+(spread*100).toFixed(1),priceSource:quotes.length>1?"multi-bookmaker median":"single-bookmaker price"};
+ }).filter(Boolean).sort((a,b)=>a.consensus-b.consensus);
+ const favourite=runners[0];if(!favourite)return null;
+ const second=runners[1],gap=second?Math.max(0,(1/favourite.consensus-1/second.consensus)/(1/favourite.consensus)):0;
+ favourite.gapPct=+(gap*100).toFixed(1);
+ favourite.signalScore=Math.round(Math.min(40,favourite.quoteCount/3*40)+Math.max(0,30*(1-(favourite.spreadPct/100)/.35))+Math.min(30,gap/.15*30));
+ favourite.signalLabel=favourite.quoteCount>=3&&favourite.signalScore>=65?"STRONG SIGNAL":favourite.signalScore>=45?"CAUTION":"NO BET · WEAK SIGNAL";
+ return favourite;
+}
+
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
 loadRaces();
