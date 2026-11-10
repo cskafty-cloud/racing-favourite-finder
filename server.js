@@ -942,7 +942,7 @@ function isAustralianRace(race) {
 
 let sportsbetPublicCache={at:0,races:[],refresh:null};
 function sportsbetDecodeHtml(value){return String(value||"").replace(/&nbsp;|&#160;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">");}
-function sportsbetHtmlLines(html){return sportsbetDecodeHtml(String(html||"").replace(/<[^>]*>/g,"\\n")).split(/\\r?\\n/).map(x=>x.replace(/\\s+/g," ").trim()).filter(Boolean);}
+function sportsbetHtmlLines(html){return sportsbetDecodeHtml(String(html||"").replace(/<\/(?:td|th|tr|div|p|li|section|h[1-6])\s*>/gi,"\n").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<[^>]*>/g," ")).split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);}
 async function sportsbetFetch(url){const r=await fetch(url,{headers:{Accept:"text/html,application/xhtml+xml","User-Agent":"Mozilla/5.0 (compatible; RacingFavouriteFinder/1.0)"},signal:AbortSignal.timeout(7000)});if(!r.ok)throw new Error("Sportsbet public page HTTP "+r.status);return r.text();}
 function parseSportsbetRacePage(html,url){
  const lines=sportsbetHtmlLines(html),p=new URL(url).pathname.toLowerCase(),cat=p.includes("greyhound-racing")?"greyhound":p.includes("harness-racing")?"harness":"horse";
