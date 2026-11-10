@@ -116,3 +116,20 @@ body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
 .sport-book-favs{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px;font-size:10px;color:#9aa9b6}
 .sport-book-favs b{color:#e5edf3}
 @media(max-width:650px){.main-tabs{width:100%}.main-tab{flex:1;padding:10px 6px}.sports-panel>.coverage-heading,.trend-heading{align-items:flex-start;flex-direction:column}}
+
+/* Simple Australian racing list view */
+.main-tabs,.history-panel,.sports-panel,.coverage-panel,.next-races-panel,.full-coverage-panel{display:none!important}
+.race-list{display:grid;gap:18px;margin-top:14px}
+.race-list-group{display:grid;gap:7px}
+.race-list-group h3{display:flex;align-items:center;gap:9px;margin:0 0 4px;font:700 14px "Space Grotesk";letter-spacing:1px;color:#dce7ef}
+.race-list-group h3 span{font:600 11px "DM Sans";color:#91a0af;background:#202b36;border-radius:20px;padding:3px 8px}
+.race-list-row{display:grid;grid-template-columns:76px 92px minmax(170px,1.2fr) minmax(170px,1fr);align-items:center;gap:12px;padding:12px 14px;border:1px solid #2e3c49;background:#131c26;border-radius:8px}
+.race-list-row.race-list-live{border-color:#3d8b62;background:#14241d}
+.race-list-status{font-size:9px;font-weight:800;letter-spacing:1px;color:#9baab8}
+.race-list-live .race-list-status{color:#75e0a0}
+.race-list-code{font-size:9px;font-weight:800;letter-spacing:.7px;color:#d3b879}
+.race-list-track{display:flex;flex-direction:column;gap:4px;min-width:0}
+.race-list-track b{font-size:12px;color:#edf3f7}
+.race-list-track small,.race-list-fav{font-size:10px;color:#9aa9b6}
+.race-list-fav{overflow-wrap:anywhere}
+@media(max-width:650px){.race-list-row{grid-template-columns:62px 1fr;gap:7px 10px}.race-list-track{grid-column:2}.race-list-fav{grid-column:2}.race-list-code{grid-column:1;grid-row:2}.race-list-status{grid-column:1;grid-row:1}}
