@@ -366,7 +366,7 @@ async function rapidOdds(pathname, params={}) {
  if(!response.ok) throw new Error("RapidOddsAPI "+response.status+": "+(data.detail||data.error||"request failed"));
  return {data,remaining:response.headers.get("X-RateLimit-Remaining")};
 }
-function sportsTeamKey(v){return String(v||"").toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]/g,"");}
+function sportsTeamKey(v){return String(v||"").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g,"");}
 function liveScoreSummary(score){
  if(!score)return null;
  const side=x=>x?Object.fromEntries(Object.entries(x).filter(([k,v])=>k!=="team"&&v!=null)):{};
