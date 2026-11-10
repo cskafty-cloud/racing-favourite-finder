@@ -944,7 +944,7 @@ async function getGlobalRaces() {
       scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       horizonHours:24,feedErrors:failures,feedSource:"Free public previews · PuntersEdge + Bet365 via MoviOdds",scope:"Australia",
-      note:"Free no-key public previews combined: PuntersEdge supplies a limited multi-bookmaker sample (including Sportsbet where quoted), while independent provider MoviOdds supplies Bet365-only race cards and prices. Coverage is not a complete national card; quote age and jump times depend on each source."};
+      note:"Free no-key public previews combined: independent provider MoviOdds supplies up to the next 100 Bet365 horse, greyhound and harness races; PuntersEdge adds a small multi-bookmaker sample, including Sportsbet where quoted. Coverage still depends on the public feeds and is not guaranteed to include every Australian meeting. Quote age and jump times depend on each source."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
   } catch(error) {
     failures.push({feed:"MoviOdds public Bet365 preview",message:error.message});
