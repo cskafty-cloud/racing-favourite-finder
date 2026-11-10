@@ -269,6 +269,10 @@ body.site-entered .sports-panel{display:block!important}
 body.site-entered .dashboard-start-menu{display:none!important}
 
 
+/* The welcome overlay must never keep the app hidden after entry. */
+body.site-entered> :not(#entryScreen){visibility:visible!important}
+body.site-entered .topbar,body.site-entered .shell{visibility:visible!important;opacity:1!important}
+
 /* ENTER WEBSITE opens the combined live racing and sports dashboard. */
 body.site-entered .bookmaker-feed-panel,
 body.site-entered .sports-panel,
