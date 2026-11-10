@@ -930,15 +930,15 @@ async function getGlobalRaces() {
             last_update:updated,age_seconds:updated?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null,
             source_url:x.url||x.source_url||null,public_demo:true}]:[]};
       });
-      const rawStart=r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
+      const rawStart=r.jump_utc||r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const start=typeof rawStart==="number"?(rawStart>1000000000000?new Date(rawStart).toISOString():new Date(rawStart*1000).toISOString()):rawStart;
-      const venue=r.venue||r.track||r.meeting||"Track TBA";
+      const venue=r.course||r.venue||r.track||r.meeting||r.name||"Track TBA";
       const status=String(r.status||"scheduled").toLowerCase();
       const live=!!r.in_play||/live|in.?play|running/.test(status);
       return {race_id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_number:r.race_number??r.number??null,
         start_time:start,country:"Australia",status,in_play:live,
-        closed:/abandon|result|^off$|closed/.test(status),runners};
+        closed:/abandon|result|closed/.test(status),runners};
     }).filter(r=>r.start_time&&!r.closed&&r.runners.length);
     if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
       scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
