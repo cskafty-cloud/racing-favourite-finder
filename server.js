@@ -349,8 +349,9 @@ const RAPID_ODDS_KEY = process.env.RAPIDODDSAPI_API_KEY || "";
 const RAPID_ODDS_BASE = "https://api.rapidoddsapi.com";
 const RAPID_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","PickleBet","Dabble","Amused","Betmakers","GenWeb","AllBets","PuntersTech","BetCloud"];
 const RAPID_LIVE_SPORTS = ["AFL","NRL","NBA","NFL","MLB","WNBA"];
-let liveSportsCache={at:0,events:[],error:null,credits:null,bySport:{}};
+let liveSportsCache={at:0,events:[],error:null,credits:null,bySport:{},resultsAt:0,resultsBySport:{}};
 let liveSportsRefresh=null;
+let liveResultsRefresh=null;
 async function rapidOdds(pathname, params={}) {
  if(!RAPID_ODDS_KEY) throw new Error("RAPIDODDSAPI_API_KEY is missing in Railway variables.");
  const url=new URL(RAPID_ODDS_BASE+pathname);
@@ -365,56 +366,88 @@ async function rapidOdds(pathname, params={}) {
  if(!response.ok) throw new Error("RapidOddsAPI "+response.status+": "+(data.detail||data.error||"request failed"));
  return {data,remaining:response.headers.get("X-RateLimit-Remaining")};
 }
+function sportsTeamKey(v){return String(v||"").toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]/g,"");}
+function liveScoreSummary(score){
+ if(!score)return null;
+ const side=x=>x?Object.fromEntries(Object.entries(x).filter(([k,v])=>k!=="team"&&v!=null)):{};
+ return {home:side(score.home),away:side(score.away),periodState:score.period_state||[],totals:score.totals||null};
+}
 app.get("/api/live-sports",async(_req,res)=>{
  try{
   if(!RAPID_ODDS_KEY) return res.status(503).json({configured:false,error:"Add RAPIDODDSAPI_API_KEY to Railway and deploy."});
-  // One cached request per covered sport. Broad bookmaker coverage is expensive
-  // in credits, so refresh only every 15 minutes and never poll the provider per browser refresh.
+  // Odds are refreshed every 15 minutes. Results are checked every 2 minutes;
+  // RapidOddsAPI charges 1 credit per results request only when live games are returned.
   if(!liveSportsCache.at || Date.now()-liveSportsCache.at>15*60*1000){
    if(!liveSportsRefresh) liveSportsRefresh=(async()=>{
-    const bySport={}; const events=[];
+    const bySport={}; const oddsGames={};
     for(const sport of RAPID_LIVE_SPORTS){
      try{
       const result=await rapidOdds("/sports/"+encodeURIComponent(sport)+"/markets",{
        market_type:["head_to_head"],bookmaker:RAPID_BOOKMAKERS
       });
       bySport[sport]={ok:true,count:(result.data.games||[]).length};
-      for(const entry of result.data.games||[]){
-       const game=entry.game||{};
-       const start=Date.parse(game.commence_time||"");
-       if(!Number.isFinite(start)||start>Date.now()) continue;
-       const books=(entry.bookmakers||[]).map(book=>({
-        name:book.name,lastUpdate:book.last_update,
-        markets:(book.markets||[]).map(m=>({key:m.key,outcomes:(m.outcomes||[]).map(o=>({name:o.name,price:Number(o.price)}))}))
-       }));
-       const prices=books.flatMap(book=>book.markets.flatMap(m=>m.outcomes.map(o=>({...o,bookmaker:book.name,lastUpdate:book.lastUpdate}))))
-        .filter(o=>o.price>1);
-       const grouped=new Map();
-       for(const q of prices){if(!grouped.has(q.name))grouped.set(q.name,[]);grouped.get(q.name).push(q);}
-       const bookmakerFavourites=books.map(book=>{
-        const qs=book.markets.flatMap(m=>m.outcomes).filter(o=>Number(o.price)>1).sort((a,b)=>a.price-b.price);
-        return {bookmaker:book.name,favourite:qs[0]||null,lastUpdate:book.lastUpdate||null};
-       });
-       events.push({id:game.id||[sport,game.home_team,game.away_team,game.commence_time].join("|"),
-        sport,home:game.home_team,away:game.away_team,name:(game.away_team||"")+" @ "+(game.home_team||""),
-        commenceTime:game.commence_time,gameUrl:game.game_url||null,status:"STARTED — live status not independently confirmed",
-        bookmakers:books,bookmakerFavourites,quoteCount:prices.length});
-      }
-     }catch(err){bySport[sport]={ok:false,error:err.message};}
+      oddsGames[sport]=result.data.games||[];
+     }catch(err){bySport[sport]={ok:false,error:err.message};oddsGames[sport]=[];}
     }
-    liveSportsCache={at:Date.now(),events,bySport,error:Object.values(bySport).every(x=>!x.ok)?"No live odds returned from RapidOddsAPI for the selected sports.":null};
-    console.info("RAPIDODDS_LIVE_REFRESH",JSON.stringify({at:new Date(liveSportsCache.at).toISOString(),events:events.length,bySport}));
+    liveSportsCache={...liveSportsCache,at:Date.now(),bySport,oddsGames,error:Object.values(bySport).every(x=>!x.ok)?"No bookmaker odds returned from RapidOddsAPI for the selected sports.":null};
    })().finally(()=>{liveSportsRefresh=null;});
    await liveSportsRefresh;
   }
+  if(!liveSportsCache.resultsAt || Date.now()-liveSportsCache.resultsAt>120000){
+   if(!liveResultsRefresh) liveResultsRefresh=(async()=>{
+    const resultsBySport={};
+    for(const sport of ["AFL","NRL","MLB","WNBA"]){
+     try{
+      const result=await rapidOdds("/results/"+encodeURIComponent(sport),{status:"live",include:"scores"});
+      resultsBySport[sport]={ok:true,games:result.data.games||[]};
+     }catch(err){resultsBySport[sport]={ok:false,error:err.message,games:[]};}
+    }
+    liveSportsCache.resultsBySport=resultsBySport;
+    liveSportsCache.resultsAt=Date.now();
+    console.info("RAPIDODDS_LIVE_RESULTS",JSON.stringify({at:new Date(liveSportsCache.resultsAt).toISOString(),bySport:Object.fromEntries(Object.entries(resultsBySport).map(([k,v])=>[k,{ok:v.ok,count:v.games.length,error:v.error||null}]))}));
+   })().finally(()=>{liveResultsRefresh=null;});
+   await liveResultsRefresh;
+  }
+  const events=[];
+  const resultSports=liveSportsCache.resultsBySport||{};
+  for(const [sport,resultSet] of Object.entries(resultSports)){
+   if(!resultSet.ok)continue;
+   for(const entry of resultSet.games||[]){
+    const game=entry.game||{};
+    if(String(game.status||"").toUpperCase()!=="LIVE")continue;
+    const odds=(liveSportsCache.oddsGames?.[sport]||[]).find(item=>{
+     const g=item.game||{};
+     return sportsTeamKey(g.home_team)===sportsTeamKey(game.home_team)&&sportsTeamKey(g.away_team)===sportsTeamKey(game.away_team);
+    });
+    const books=(odds?.bookmakers||[]).map(book=>({
+     name:book.name,lastUpdate:book.last_update,
+     markets:(book.markets||[]).map(m=>({key:m.key,outcomes:(m.outcomes||[]).map(o=>({name:o.name,price:Number(o.price)}))}))
+    }));
+    const prices=books.flatMap(book=>book.markets.flatMap(m=>m.outcomes.map(o=>({...o,bookmaker:book.name,lastUpdate:book.lastUpdate})))).filter(o=>o.price>1);
+    const bookmakerFavourites=books.map(book=>{
+     const qs=book.markets.flatMap(m=>m.outcomes).filter(o=>Number(o.price)>1).sort((a,b)=>a.price-b.price);
+     return {bookmaker:book.name,favourite:qs[0]||null,lastUpdate:book.lastUpdate||null};
+    });
+    events.push({id:String(game.game_id||[sport,game.home_team,game.away_team].join("|")),sport,
+     home:game.home_team,away:game.away_team,name:(game.away_team||"")+" @ "+(game.home_team||""),
+     commenceTime:game.commence_time,gameUrl:odds?.game?.game_url||null,status:"LIVE",
+     score:liveScoreSummary(entry.score),lastUpdate:game.last_update||null,
+     bookmakers:books,bookmakerFavourites,quoteCount:prices.length});
+   }
+  }
+  const resultsErrors=Object.entries(resultSports).filter(([,v])=>!v.ok).map(([k,v])=>k+": "+v.error);
   res.set("Cache-Control","no-store");
-  res.json({configured:true,provider:"RapidOddsAPI",events:liveSportsCache.events,
-   sports:liveSportsCache.bySport,fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
-   ageSeconds:liveSportsCache.at?Math.round((Date.now()-liveSportsCache.at)/1000):null,error:liveSportsCache.error,
+  res.json({configured:true,provider:"RapidOddsAPI",events,
+   sports:liveSportsCache.bySport,resultsSports:Object.fromEntries(Object.entries(resultSports).map(([k,v])=>[k,{ok:v.ok,count:v.games.length,error:v.error||null}])),
+   fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
+   resultsFetchedAt:liveSportsCache.resultsAt?new Date(liveSportsCache.resultsAt).toISOString():null,
+   ageSeconds:liveSportsCache.resultsAt?Math.round((Date.now()-liveSportsCache.resultsAt)/1000):null,
+   error:events.length?null:(resultsErrors.length?"Live results feed warning: "+resultsErrors.join(" · "):"No confirmed in-play fixtures returned by the live results feed."),
    bookmakers:RAPID_BOOKMAKERS,
-   note:"All bookmaker quotes returned by RapidOddsAPI are shown. Started fixtures are not guaranteed to be in-play; live status and scores require a confirmed live results feed. Missing bookmaker quotes are not inferred."});
+   note:"Only fixtures marked LIVE by RapidOddsAPI Results are shown here. Scores come from the confirmed live results feed. Odds are shown only where the bookmaker returned a matching market; missing prices are not inferred. Live results are checked every 2 minutes."});
  }catch(err){res.status(503).json({error:err.message});}
 });
+
 
 // Sports catalogue is cached for six hours. Sports odds are fetched on demand
 // per selected sport and cached for 15 minutes to control provider credit use.
