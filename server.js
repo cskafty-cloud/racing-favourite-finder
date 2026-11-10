@@ -13,19 +13,27 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 let writeQueue = Promise.resolve();
 const lastMarketSignatures = new Map();
-const MARKET_HISTORY_LIMIT = 25000;
-const MARKET_HISTORY_DAYS = 30;
+// Snapshots were growing past 20k entries (every race, every ~20s), which pushed the
+// Node heap over its limit and crash-looped the service. Keep the archive small.
+const MARKET_HISTORY_LIMIT = 3000;
+const MARKET_HISTORY_DAYS = 3;
+const SNAPSHOT_MIN_INTERVAL_MS = 60000;
+const SNAPSHOT_WINDOW_MS = 90 * 60000;
+const lastSnapshotAt = new Map();
+let historyCache = null;
 
 app.use(express.static(path.join(__dirname, "public")));
 
 async function readHistory() {
+  if (historyCache) return historyCache;
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
     const value = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
     if (!Array.isArray(value.picks)) value.picks = [];
     if (!Array.isArray(value.marketSnapshots)) value.marketSnapshots = [];
-    return value;
-  } catch (e) { if (e.code === "ENOENT") return { picks: [], marketSnapshots: [] }; throw e; }
+    value.marketSnapshots = value.marketSnapshots.slice(-MARKET_HISTORY_LIMIT);
+    return (historyCache = value);
+  } catch (e) { if (e.code === "ENOENT") return (historyCache = { picks: [], marketSnapshots: [] }); throw e; }
 }
 async function saveHistory(history) {
   writeQueue = writeQueue.then(async () => {
@@ -120,8 +128,12 @@ async function recordMarketSnapshots(races, capturedAt) {
     const favourite = selectFavourite(race);
     const signature = JSON.stringify({runners, favourite});
     const id = raceId(race);
+    const startMs = Date.parse(startTimeOf(race));
+    if (Number.isFinite(startMs) && (startMs - Date.now() > SNAPSHOT_WINDOW_MS || startMs < Date.now() - 600000)) continue;
     if (lastMarketSignatures.get(id) === signature) continue;
+    if (Date.now() - (lastSnapshotAt.get(id) || 0) < SNAPSHOT_MIN_INTERVAL_MS) continue;
     lastMarketSignatures.set(id, signature);
+    lastSnapshotAt.set(id, Date.now());
     history.marketSnapshots.push({
       raceId:id, category:categoryOf(race), venue:venueOf(race),
       raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
@@ -197,7 +209,7 @@ function isSameRunner(pick, winner) {
 const ODDS_API_TOKEN = process.env.ODDS_DATA_API_TOKEN || "";
 async function oddsApi(pathname, params={}) {
   if (!ODDS_API_TOKEN) throw new Error("ODDS_DATA_API_TOKEN is not active in Railway.");
-  const url = new URL("https://api.odds-data-api.com" + pathname);
+  const url = new URL((process.env.ODDS_API_BASE || "https://api.b365api.com") + pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   url.searchParams.set("token",ODDS_API_TOKEN);
   let response;
@@ -223,13 +235,17 @@ function parseBet365Live(rows) {
   const home=teams.find(x=>String(x.OR)==="0")||teams[0]||{};
   const away=teams.find(x=>String(x.OR)==="1")||teams[1]||{};
   const markets=[]; let current=null;
+  let group="";
   for(const x of flat){
-    if(x.type==="MG"||x.type==="MA"){current={name:x.NA||"Market",suspended:String(x.SU)==="1",selections:[]};markets.push(current);}
-    else if(x.type==="PA"&&current) current.selections.push({name:x.NA,price:fractionalDecimal(x.OD),suspended:String(x.SU)==="1"});
+    if(x.type==="MG"){group=x.NA||"";}
+    else if(x.type==="MA"){current={name:x.NA||group||"Market",group,suspended:String(x.SU)==="1",selections:[]};markets.push(current);}
+    else if(x.type==="PA"&&current) current.selections.push({name:x.NA||x.HD||"Selection",price:fractionalDecimal(x.OD),suspended:String(x.SU)==="1"||current.suspended});
   }
-  const main=markets.find(m=>/full.?time result|match winner|money line/i.test(m.name))||markets.find(m=>m.selections.length>=2);
-  const valid=(main?.selections||[]).filter(x=>x.price>1&&!x.suspended);
-  const favourite=valid.sort((a,b)=>a.price-b.price)[0]||null;
+  const usable=markets.filter(m=>m.selections.length>=2);
+  const main=usable.find(m=>/full.?time result|match (winner|result|betting)|money ?line|to win|winner/i.test(m.name+" "+m.group))||usable[0];
+  // The favourite is the shortest-priced team/player; a draw is not a favourite.
+  const valid=(main?.selections||[]).filter(x=>x.price>1&&!x.suspended&&!/^draw$/i.test(x.name));
+  const favourite=[...valid].sort((a,b)=>a.price-b.price)[0]||null;
   return {id:ev.FI||null,name:ev.NA||[home.NA,away.NA].filter(Boolean).join(" v "),
     league:ev.CT||null,score:ev.SS||null,minute:ev.TM||null,second:ev.TS||null,
     status:"IN PLAY",updatedAt:ev.TU||null,home:home.NA||null,away:away.NA||null,
@@ -395,9 +411,16 @@ app.get("/api/sports", async (_req,res) => {
       note:"Upcoming sports fixtures and pre-match odds only. This provider does not supply in-play sports odds; fixtures leave the odds feed when they start."});
   } catch(err) { res.status(503).json({error:err.message}); }
 });
+async function ensureSportsCatalogue() {
+  if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 6*60*60*1000) {
+    const data = await provider("/v1/sports");
+    sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
+  }
+}
 app.get("/api/sports/:sportKey", async (req,res) => {
   const key = String(req.params.sportKey||"").toLowerCase();
   if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
+  try { await ensureSportsCatalogue(); } catch(err) { return res.status(503).json({error:err.message,sportKey:key}); }
   const known = sportsCatalogueCache.rows.some(x=>String(x.key).toLowerCase()===key);
   if (!known) return res.status(404).json({error:"Sport is not in the active provider catalogue. Refresh the sports list."});
   try {
