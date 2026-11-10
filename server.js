@@ -966,4 +966,35 @@ app.get("/api/history", async (_req,res) => {
   } catch (err) { res.status(500).json({error:err.message}); }
 });
 app.get("*",(_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.listen(PORT,"0.0.0.0",()=>console.log(`Racing Favourite Finder listening on ${PORT}`));
+// Keep the racing feed warm even when nobody has the dashboard open. The browser
+// still calls /api/races for display, while this server-side poll guarantees provider
+// requests and cache refreshes happen independently of browser traffic.
+async function refreshBackgroundRacingFeed() {
+  if (puntersEdgeRefresh) return puntersEdgeRefresh;
+  puntersEdgeRefresh = (async () => {
+    try {
+      const feed = await getGlobalRaces();
+      console.info("RACING_BACKGROUND_REFRESH", JSON.stringify({
+        source: feed.feedSource || "fallback",
+        races: (feed.races || []).length,
+        scheduleFetchedAt: feed.scheduleFetchedAt || null,
+        oddsFetchedAt: feed.oddsFetchedAt || null,
+        apiKeyConfigured: !!API_KEY,
+        errors: feed.feedErrors || []
+      }));
+    } catch (error) {
+      console.error("RACING_BACKGROUND_REFRESH_FAILED", error.message);
+    }
+  })().finally(() => { puntersEdgeRefresh = null; });
+  return puntersEdgeRefresh;
+}
+app.listen(PORT,"0.0.0.0",()=>{
+  console.log(`Racing Favourite Finder listening on ${PORT}`);
+  console.log("RACING_FEED_CONFIG", JSON.stringify({
+    puntersEdgeKeyConfigured: !!API_KEY,
+    providerPlan: PROVIDER_PLAN,
+    scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
+  }));
+  setTimeout(refreshBackgroundRacingFeed, 1500);
+  setInterval(refreshBackgroundRacingFeed, 60000);
+});
