@@ -403,7 +403,7 @@ async function loadSportOdds(key){
  state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);const resultSportId=Number(String(key).replace("oddsdata_",""));if(Number.isFinite(resultSportId)&&resultSportId>0)loadSportResults(resultSportId);
  $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"");
  renderSports();
- }catch(e){$("sportsNotice").textContent="Live fixtures are temporarily unavailable from the connected feed. The public sports widgets and bookmaker market links remain available below. "+e.message;}
+ }catch(e){$("sportsNotice").textContent="Live fixtures are temporarily unavailable from the connected feed. The public sports widgets and bookmaker market links remain on this page. "+e.message;}
 }
 async function loadAllSports(){
  const btn=$("loadAllSportsBtn");btn.disabled=true;state.sportEvents=[];state.sportsByKey={};renderSports();
@@ -499,7 +499,7 @@ async function loadRaces() {
     $("updatedAt").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     const books = (data.providerBookmakers || []).length;
     $("feedFreshness").textContent = state.feedMode === "public-widgets"
-      ? "Free public racing widgets are available below · imported prices appear only when a connected provider supplies verified current quotes · no sample odds are generated."
+      ? "Free live racing widgets are displayed above · imported prices appear only when a connected provider supplies verified current quotes · no sample odds are generated."
       : "Screen refresh: 60s · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
     $("notice").textContent = data.note || "Racing cards and prices appear only when a connected provider returns them. Free public feeds remain available below.";
     $("notice").classList.remove("hidden");
@@ -508,8 +508,8 @@ async function loadRaces() {
     state.feedMode = "public-widgets";
     $("feedStatus").textContent = "FREE PUBLIC FEEDS";
     $("updatedAt").textContent = new Date().toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    $("feedFreshness").textContent = "The imported race-card API is temporarily unavailable. Free public widgets remain available below; no odds are estimated.";
-    $("notice").textContent = "Use the free live public racing widget below for current fields and prices. Imported bookmaker race cards will return when a connected provider is available.";
+    $("feedFreshness").textContent = "The imported race-card API is temporarily unavailable. Free public widgets remain available on this page; no odds are estimated.";
+    $("notice").textContent = "Use the free live public racing board above for current fields and prices. Imported bookmaker race cards will return when a connected provider is available.";
     $("notice").classList.remove("hidden");
     render();
   } finally { state.loading = false; $("refreshBtn").disabled = false; }
