@@ -98,3 +98,21 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 .sports-panel{margin-top:25px;padding:20px;border:1px solid var(--line);border-radius:14px;background:#141c26}.sports-panel h2{font:600 24px "Space Grotesk";margin:0}.sports-catalogue{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.sport-chip{border:1px solid #354655;background:#111923;color:#c7d2dc;border-radius:20px;padding:8px 12px;cursor:pointer}.sport-event{padding:14px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:#101821}.sport-event small{display:block;color:var(--muted);margin-top:5px}.sport-favourite{margin-top:10px;color:var(--green)}
 
 .brand-logo{width:42px;height:42px;object-fit:cover;border-radius:9px;border:1px solid #36536a;box-shadow:0 0 14px #2e8ed655}.brand{gap:12px}
+
+.main-tabs{display:flex;gap:8px;margin:4px 0 20px;padding:5px;border:1px solid var(--line);background:#111923;border-radius:10px;width:max-content}
+.main-tab{border:0;background:transparent;color:#91a0af;padding:10px 16px;border-radius:7px;font-weight:700;cursor:pointer}
+.main-tab.active{background:#294334;color:#9be6b9}
+body.sports-mode .shell>.hero,body.sports-mode .shell>.stats,body.sports-mode .shell>#feedFreshness,body.sports-mode .shell>#notice,body.sports-mode .shell>.history-panel,body.sports-mode .shell>.toolbar,body.sports-mode .shell>.next-races-panel,body.sports-mode .shell>.coverage-panel,body.sports-mode .shell>.full-coverage-panel,body.sports-mode .shell>.all-races-heading,body.sports-mode .shell>#raceList{display:none!important}
+body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
+.sports-panel>.coverage-heading{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.sport-chip.selected{border-color:#7bd9a4;background:#1d3b2d;color:#a4edc1}
+.trend-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:22px 0 9px}
+.trend-heading h3{margin:0;font:600 17px "Space Grotesk"}
+.trend-heading span{font-size:10px;color:var(--muted)}
+.sports-trends{display:grid;gap:7px}
+.trend-alert{display:flex;gap:12px;align-items:center;padding:11px 13px;border:1px solid #594a2f;background:#211e18;border-radius:8px;font-size:11px}
+.trend-tag{font-size:9px;font-weight:800;letter-spacing:1px;color:#f0c978;min-width:82px}
+.trend-alert small{display:block;color:#a9b4be;margin-top:4px}
+.sport-book-favs{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px;font-size:10px;color:#9aa9b6}
+.sport-book-favs b{color:#e5edf3}
+@media(max-width:650px){.main-tabs{width:100%}.main-tab{flex:1;padding:10px 6px}.sports-panel>.coverage-heading,.trend-heading{align-items:flex-start;flex-direction:column}}
