@@ -921,7 +921,7 @@ async function getGlobalRaces() {
     if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   try {
-    const response=await fetch("https://moviodds.com/racing?code=all&near=100",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
+    const response=await fetch("https://moviodds.com/racing?code=all&near=100",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(20000)});
     const body=await response.text(); let payload;
     try { payload=JSON.parse(body); } catch { throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+")."); }
     if(!response.ok) throw new Error("MoviOdds "+response.status);
