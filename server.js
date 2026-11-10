@@ -23,8 +23,9 @@ async function readHistory() {
   try {
     const value = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
     if (!Array.isArray(value.picks)) value.picks = [];
+    if (!Array.isArray(value.marketSnapshots)) value.marketSnapshots = [];
     return value;
-  } catch (e) { if (e.code === "ENOENT") return { picks: [] }; throw e; }
+  } catch (e) { if (e.code === "ENOENT") return { picks: [], marketSnapshots: [] }; throw e; }
 }
 async function saveHistory(history) {
   writeQueue = writeQueue.then(async () => {
@@ -216,6 +217,10 @@ async function getGlobalRaces() {
           const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,greyhound" });
           pricedCache = { at: Date.now(), rows: rowsFrom(data) };
           providerErrors.odds = null;
+          try {
+            const recorded = await recordMarketSnapshots(pricedCache.rows, new Date(pricedCache.at).toISOString());
+            console.info("MARKET_HISTORY", JSON.stringify({capturedAt:new Date(pricedCache.at).toISOString(), added:recorded.added, retained:recorded.total}));
+          } catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
           const sample = pricedCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).slice(0,4).map(x=>({name:x.name||x.runner_name||x.horse_name||x.greyhound_name,quotes:runnerQuotes(x).slice(0,4).map(q=>({bookmaker:q.bookmaker||q.name||q.key,price:q.win_price??q.win??q.price}))}))}));
           console.info("FEED_CHECK odds", JSON.stringify({ ok:true, fetchedAt:new Date(pricedCache.at).toISOString(), races:pricedCache.rows.length, pricedRunners:pricedCache.rows.reduce((n,r)=>n+(r.runners||[]).filter(x=>runnerQuotes(x).length).length,0), sample }));
         } catch (err) { providerErrors.odds = err.message; console.error("FEED_CHECK odds", JSON.stringify({ok:false,error:err.message,at:new Date().toISOString()})); }
