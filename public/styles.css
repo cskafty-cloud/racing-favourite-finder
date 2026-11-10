@@ -280,3 +280,15 @@ body.site-entered .stats{display:grid!important}
 body.site-entered .toolbar{display:flex!important}
 body.site-entered .sports-panel{min-height:0}
 body.site-entered #bestTipsPanel{margin-top:24px}
+
+
+/* Direct-entry dashboard: keep race feed, sports feeds and daily tips visible together. */
+body.site-entered .main-tabs{display:flex!important}
+body.site-entered .sports-panel{display:block!important}
+body.site-entered .history-panel#bestTipsPanel{display:block!important}
+body.site-entered .racing-widgets-panel,
+body.site-entered .bookmaker-feed-panel,
+body.site-entered .toolbar,
+body.site-entered .stats,
+body.site-entered #feedFreshness{display:block!important}
+body.site-entered .dashboard-start-menu{display:none!important}
