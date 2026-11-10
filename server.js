@@ -896,7 +896,7 @@ async function getGlobalRaces() {
       note:"Free public Bet365-only racing prices supplied by independent provider Moviodds. Coverage depends on its public board; verify prices and jump times at the bookmaker."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
   } catch(error) { failures.push({feed:"MoviOdds public Bet365 preview",message:error.message}); }
-  if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
+  if(publicRaceRows.length)return {races:publicRaceRows,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),\n    oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),horizonHours:24,feedErrors:failures,\n    feedSource:"PuntersEdge public demo",scope:"Australia",\n    note:"Free no-key public preview: a limited sample of Australian races and bookmaker prices. It is not a complete national race card."};\n  if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
   throw new Error("No free public Australian racing snapshot is available at this refresh.");
 }
 
