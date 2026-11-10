@@ -87,11 +87,10 @@ function raceCard(r, live=false) {
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
   const country = r.country || "Country pending";
-  const marketState = r.inplay ? "IN PLAY" : (r.market_status || (r.tote_only ? "TOTE ONLY" : (fav ? "ODDS AVAILABLE" : "SCHEDULED · NO ODDS YET")));
+  const marketState = live ? "IN PLAY" : (r.market_status || (r.tote_only ? "TOTE ONLY" : (fav ? "ODDS AVAILABLE" : "SCHEDULED · NO ODDS YET")));
   const date = fmtDate(r.start_time);
   const time = fmtTime(r.start_time);
   const price = fav ? Number(fav.consensus).toFixed(2) : "—";
-  const bet365 = fav?.bet365 ? ` · Bet365 <b>$${Number(fav.bet365).toFixed(2)}</b>` : " · Bet365 quote unavailable";
   const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
   const runnerOdds = (r.runners || []).map(runner => {
     const quotes = runnerPrices(runner).map(q => ({
@@ -110,7 +109,7 @@ function raceCard(r, live=false) {
       <div class="race-time">${time}</div></div>
     <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
-    <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : esc(marketState)}</div>
+    <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
     <div class="bookmaker-favourites">${bookFavourites.length?bookFavourites.map(allBookFavouritePanel).join(""):'<div class="book-fav-missing">No current bookmaker win prices returned for this race.</div>'}</div>
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
