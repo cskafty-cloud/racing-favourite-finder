@@ -306,25 +306,31 @@ async function fetchKrokRacing(date) {
   for (const bookRow of sourceRows) {
     const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
-    const code = String(bookRow.race_type || "").toUpperCase();
-    const category = code === "G" ? "greyhound" : code === "H" ? "harness" : "horse";
+    const code = String(bookRow.race_type || "").trim().toUpperCase();
+    const category = code === "G" || /greyhound|dog/i.test(String(bookRow.race_type||"")) ? "greyhound"
+      : code === "H" || /harness|trotting|pacing/i.test(String(bookRow.race_type||"")) ? "harness" : "horse";
     for (const race of (bookRow.races || [])) {
       const number = race.race_number ?? race.race_no ?? race.number;
       const start = race.start_time || race.jump_time || race.startTime || race.commence_time || null;
       const id = String(race.race_id || race.id || [date,normalizeName(venue),code,number].join("-"));
       const key = id+"|"+category;
-      if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category,
-        venue,track:venue,race_number:number,start_time:start||date+"T00:00:00+10:00",country:"AU",runners:[]});
+      if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category==="greyhound"?"greyhound":"harness",
+        venue,track:venue,race_number:number,start_time:start||null,country:bookRow.jurisdiction||"AU",
+        status:race.status||"scheduled",closed:/closed|final|result|abandon/i.test(String(race.status||"")),
+        abandoned:/abandon/i.test(String(race.status||"")),captured_at:bookRow.captured_at||null,runners:[]});
       const target=grouped.get(key);
+      if (race.status && (!target.status || target.status==="scheduled")) target.status=race.status;
+      if (race.start_time && !target.start_time) target.start_time=race.start_time;
       for (const runner of (race.runners || [])) {
         const name=runner.name||runner.runner_name||"Runner";
         const number=runner.number??runner.runner_number??null;
         let existing=target.runners.find(x=>number!=null?String(x.number)===String(number):normalizeName(x.name)===normalizeName(name));
         if(!existing){existing={number,name,bookmakers:[]};target.runners.push(existing);}
-        const win=Number(runner.win??runner.win_price??runner.odds);
-        const place=Number(runner.place??runner.place_price);
+        const winRaw=runner.fixed_win??runner.win??runner.win_price??runner.odds;
+        const placeRaw=runner.fixed_place??runner.place??runner.place_price;
+        const win=Number(winRaw), place=Number(placeRaw);
         if(Number.isFinite(win)&&win>1) existing.bookmakers.push({bookmaker:book,name:book,win_price:win,
-          place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,last_update:runner.captured_at||runner.updated_at||null,
+          place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,last_update:runner.captured_at||runner.updated_at||bookRow.captured_at||null,
           url:runner.bet_link||null});
       }
     }
@@ -408,9 +414,9 @@ async function loadRapidRacing() {
   return {races,errors};
 }
 async function getGlobalRaces() {
-  // RapidOddsAPI provides separate thoroughbred and greyhound meeting/race
-  // endpoints. Prefer it for the live racing board; Krok's racing endpoint is
-  // a bookmaker-grouped daily snapshot and does not reliably expose live status.
+  // Krok Odds is the selected racing provider. Avoid RapidOddsAPI racing calls:
+  // this account's plan returns HTTP 403 for racing endpoints.
+  if (KROKODDS_API_KEY) return getKrokRaces();
   if (RAPID_ODDS_KEY) {
     if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
       if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
