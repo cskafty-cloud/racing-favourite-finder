@@ -1075,10 +1075,10 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
- const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"],["harness","harness-racing"]];
+ const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"]];
  const results=await Promise.allSettled(specs.map(([category,sport])=>
   publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport}).then(payload=>({category,sport,payload}))));
- const races=[],errors=[];
+ const races=[],errors=["harness-racing: no harness-racing category is exposed by the current no-key Sportsbet snapshot endpoint; official Sportsbet harness schedule remains linked"];
  for(let i=0;i<results.length;i++){
   const result=results[i],category=specs[i][0],sport=specs[i][1];
   if(result.status!=="fulfilled"){errors.push(sport+": "+result.reason.message);continue;}
@@ -1307,7 +1307,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Sportsbet-labelled runner quotes returned: "+sportsbetQuotes+"; Sportsbet public demo races: "+sportsbetDemoRaces.length+". Public demo snapshots are limited samples, not a full bookmaker card."});
+      note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Sportsbet exact public quotes: "+sportsbetQuotes+"; no-key Sportsbet race snapshots: "+sportsbetDemoRaces.length+". The public Sportsbet snapshot returned no full national card on the last check; the official horse, greyhound and harness schedule links remain available. No other bookmaker price is substituted."});
   } catch (err) {
     const raw=String(err.message||"");
     const safeWarnings=[];
@@ -1631,6 +1631,7 @@ async function refreshBackgroundRacingFeed() {
         apiKeyConfigured: !!API_KEY,
         sportsbetPublicDemoRaces:sportsbetRaceDemo.length,
         sportsbetPublicDemoQuotes:sportsbetRaceDemo.reduce((n,r)=>n+r.runners.filter(x=>x.bookmakers.some(q=>q.key==="sportsbet")).length,0),
+        sportsbetQuotesInCombinedFeed:(feed.races||[]).reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet").length,0),0),
         errors: feed.feedErrors || []
       }));
     } catch (error) {
