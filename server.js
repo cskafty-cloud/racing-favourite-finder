@@ -794,7 +794,7 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    res.json({races, providerBookmakers, mode:"feed", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
+    res.json({races, providerBookmakers, mode:String(feed.feedSource||"").toLowerCase().includes("demo")?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       note:feed.note||"Racing cards appear only when a connected provider returns them. Official public fields/results are linked separately below; no bookmaker prices are inferred."});
