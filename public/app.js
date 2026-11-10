@@ -245,14 +245,19 @@ function renderSports(){
  renderSportTrends();
 }
 
+function liveScoreText(side){
+ if(!side)return "—";
+ const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
+ return parts.join(" · ")||"—";
+}
 async function loadLiveSports(){
  const notice=$("liveSportsNotice"),list=$("liveSportsEvents");
  try{
   const r=await fetch("/api/live-sports"),d=await r.json();
   if(!r.ok)throw Error(d.error||"Live sports feed unavailable");
-  const fetched=d.fetchedAt?new Date(d.fetchedAt):null;
+  const fetched=d.resultsFetchedAt?new Date(d.resultsFetchedAt):null;
   const age=d.ageSeconds==null?"waiting":Math.round(d.ageSeconds/60)+"m old";
-  notice.textContent=(d.events.length+" started fixtures · "+(d.bookmakers||[]).length+" bookmaker feeds requested · snapshot "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+age+". "+(d.note||""));
+  notice.textContent=(d.events.length+" confirmed live fixtures · "+(d.bookmakers||[]).length+" bookmaker feeds requested · scores checked "+(fetched?fetched.toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}):"waiting")+" · "+age+". "+(d.note||""));
   list.innerHTML=d.events.length?d.events.map(e=>{
    const books=(e.bookmakerFavourites||[]).filter(x=>x.favourite);
    const favs=books.map(x=>'<span>'+esc(x.bookmaker)+': <b>'+esc(x.favourite.name)+' '+Number(x.favourite.price).toFixed(2)+'</b></span>').join("");
@@ -260,8 +265,10 @@ async function loadLiveSports(){
     const markets=(book.markets||[]).map(m=>'<div class="live-market"><b>'+esc(m.key||"Market")+'</b> '+(m.outcomes||[]).map(o=>esc(o.name)+' <strong>'+Number(o.price).toFixed(2)+'</strong>').join(" · ")+'</div>').join("");
     return '<div class="live-bookmaker"><b>'+esc(book.name)+'</b><small>'+(book.lastUpdate?"Updated "+esc(new Date(book.lastUpdate).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})):"Update time unavailable")+'</small>'+markets+'</div>';
    }).join("");
-   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.sport)+' · '+esc(e.status)+' · '+esc(fmtDate(e.commenceTime))+' '+esc(fmtTime(e.commenceTime))+'</small><div class="sport-book-favs">'+(favs||'<span>No bookmaker favourite prices returned.</span>')+'</div><details><summary>All bookmaker markets ('+(e.quoteCount||0)+' prices)</summary><div class="live-bookmakers">'+(all||"No quotes")+'</div></details></article>';
-  }).join(""):'<div class="empty">'+esc(d.error||"No started fixtures with bookmaker prices were returned. This does not mean no games are live; check provider coverage and selected sports.")+'</div>';
+   const score=e.score?'<div class="live-score"><b>'+esc(e.home)+': '+esc(liveScoreText(e.score.home))+'</b><br><b>'+esc(e.away)+': '+esc(liveScoreText(e.score.away))+'</b></div>':'<div class="live-score">Live score not supplied</div>';
+   const period=(e.score?.periodState||[]).filter(x=>x&&!x.completed).map(x=>"Period "+x.period+(x.half?" · "+x.half:"")).join(" · ");
+   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small><strong>LIVE</strong> · '+esc(e.sport)+' · '+esc(fmtDate(e.commenceTime))+' '+esc(fmtTime(e.commenceTime))+(period?" · "+esc(period):"")+'</small>'+score+'<div class="sport-book-favs">'+(favs||'<span>No bookmaker favourite prices returned for this fixture.</span>')+'</div><details><summary>All bookmaker markets ('+(e.quoteCount||0)+' prices)</summary><div class="live-bookmakers">'+(all||"No matching bookmaker odds returned")+'</div></details></article>';
+  }).join(""):'<div class="empty">'+esc(d.error||"No confirmed in-play fixtures are being returned by the live results feed right now.")+'</div>';
  }catch(e){notice.textContent=e.message;list.innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
 
