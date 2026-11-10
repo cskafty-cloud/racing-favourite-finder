@@ -301,7 +301,9 @@ async function fetchKrokRacing(date, raceType) {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
   url.searchParams.set("date",date);
-  // Request the documented API-tier page size. Krok enforces the account-tier cap\n  // (10 on Free, up to 500 on API) and reports truncation in response metadata.\n  url.searchParams.set("limit","500");
+  // Free tier allows 10 racing rows per request; split by code.
+  url.searchParams.set("race_type",raceType);
+  url.searchParams.set("limit","10");
   const response = await fetch(url,{headers:{"X-API-Key":KROKODDS_API_KEY},signal:AbortSignal.timeout(20000)});
   const body = await response.text();
   let payload;
