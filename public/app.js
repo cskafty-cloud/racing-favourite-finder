@@ -240,7 +240,15 @@ function renderSports(){
  const events=state.sportEvents.slice().filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
  $("sportsEvents").innerHTML=events.length?events.map(e=>{
   const f=sportFavourite(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),t=e.commence_time||"";
-  return '<article class="sport-event"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ MARKET FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><div class="sport-book-favs"><span>SPORTSBET: <b>'+(sb?esc(sb.name)+" $"+sb.price.toFixed(2):"No quote returned")+'</b></span><span>BET365: <b>'+(b365?esc(b365.name)+" $"+b365.price.toFixed(2):"No quote returned")+'</b></span></div></article>';
+  const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const allBooks=books.map(book=>{
+   const markets=(book.markets||[]).map(m=>{
+    const outcomes=(m.outcomes||[]).filter(o=>Number(o.price)>1).map(o=>esc(o.name)+" <strong>$"+Number(o.price).toFixed(2)+"</strong>"+(o.point!=null?" ("+esc(o.point)+")":"")).join(" · ");
+    return outcomes?'<div class="live-market"><small>'+esc(m.key||"Market")+'</small> '+outcomes+'</div>':"";
+   }).join("");
+   return '<div class="live-bookmaker"><b>'+esc(book.key||book.name||book.title||"Bookmaker")+'</b>'+(book.last_update?'<small>Updated '+esc(new Date(book.last_update).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}))+'</small>':"")+markets+'</div>';
+  }).join("");
+  return '<article class="sport-event"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ MARKET FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><div class="sport-book-favs"><span>SPORTSBET: <b>'+(sb?esc(sb.name)+" $"+sb.price.toFixed(2):"No quote returned")+'</b></span><span>BET365: <b>'+(b365?esc(b365.name)+" $"+b365.price.toFixed(2):"No quote returned")+'</b></span></div><details><summary>All bookmaker prices ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
  }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
  renderSportTrends();
 }
@@ -280,7 +288,7 @@ async function loadSportOdds(key){
  state.selectedSport=key;$("sportsNotice").textContent="Loading "+key+" fixtures…";
  try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
  state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);
- $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Last provider snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"});
+ $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"");
  renderSports();
  }catch(e){$("sportsNotice").textContent=e.message;}
 }
