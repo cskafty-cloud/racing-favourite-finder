@@ -408,21 +408,28 @@ async function loadRapidRacing() {
   return {races,errors};
 }
 async function getGlobalRaces() {
-  if (KROKODDS_API_KEY) return getKrokRaces();
-  if (!RAPID_ODDS_KEY) throw new Error("Add KROKODDS_API_KEY in Railway Variables to enable the free Krok Odds racing feed.");
-  if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
-    if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
-      const result=await loadRapidRacing();
-      rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
-      console.info("RAPIDODDS_RACING_FEED",JSON.stringify({fetchedAt:new Date(rapidRacingCache.at).toISOString(),
-        races:result.races.length,pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
-        runners:result.races.reduce((n,r)=>n+r.runners.length,0),errors:result.errors.slice(0,8)}));
-    })().finally(()=>{rapidRacingRefresh=null;});
-    await rapidRacingRefresh;
+  // RapidOddsAPI provides separate thoroughbred and greyhound meeting/race
+  // endpoints. Prefer it for the live racing board; Krok's racing endpoint is
+  // a bookmaker-grouped daily snapshot and does not reliably expose live status.
+  if (RAPID_ODDS_KEY) {
+    if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
+      if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
+        const result=await loadRapidRacing();
+        rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
+        console.info("RAPIDODDS_RACING_FEED",JSON.stringify({fetchedAt:new Date(rapidRacingCache.at).toISOString(),
+          races:result.races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,result.races.filter(r=>r.category===k).length])),
+          pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
+          runners:result.races.reduce((n,r)=>n+r.runners.length,0),errors:result.errors.slice(0,8)}));
+      })().finally(()=>{rapidRacingRefresh=null;});
+      await rapidRacingRefresh;
+    }
+    return {races:rapidRacingCache.races, scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
+      oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
+      feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})),
+      feedSource:"RapidOddsAPI Racing",scope:"Australia and New Zealand"};
   }
-  return {races:rapidRacingCache.races, scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
-    oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
-    feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message}))};
+  if (KROKODDS_API_KEY) return getKrokRaces();
+  throw new Error("Add RAPIDODDSAPI_API_KEY or KROKODDS_API_KEY in Railway Variables to enable racing feeds.");
 }
 
 app.get("/api/races", async (_req, res) => {
