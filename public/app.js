@@ -240,19 +240,29 @@ function renderSports(){
  const events=state.sportEvents.slice().filter(e=>!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
  $("sportsEvents").innerHTML=events.length?events.map(e=>{
   const f=sportFavourite(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),t=e.commence_time||"";
+  const startMs=t?new Date(t).getTime():NaN,mins=Number.isFinite(startMs)?Math.max(0,Math.floor((startMs-Date.now())/60000)):null;
+  const startsIn=mins===null?"Start time unavailable":mins<1?"Starting now":mins<60?"Starts in "+mins+" min": "Starts in "+Math.floor(mins/60)+"h "+(mins%60)+"m";
+  const startLabel=t?new Date(t).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true})+" AEST":"Start time TBA";
   const books=(e.bookmakers||[]).filter(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)));
+  const bookFavourites=books.map(book=>{
+   const market=(book.markets||[]).find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
+   const best=(market?.outcomes||[]).filter(o=>Number(o.price)>1).sort((a,b)=>Number(a.price)-Number(b.price))[0];
+   return best?'<span class="sport-book-fav"><b>'+esc(book.key||book.name||book.title||"Bookmaker")+'</b>: '+esc(best.name)+' <strong>$'+Number(best.price).toFixed(2)+'</strong></span>':"";
+  }).filter(Boolean).join("");
   const allBooks=books.map(book=>{
    const markets=(book.markets||[]).map(m=>{
-    const outcomes=(m.outcomes||[]).filter(o=>Number(o.price)>1).map(o=>esc(o.name)+" <strong>$"+Number(o.price).toFixed(2)+"</strong>"+(o.point!=null?" ("+esc(o.point)+")":"")).join(" · ");
-    return outcomes?'<div class="live-market"><small>'+esc(m.key||"Market")+'</small> '+outcomes+'</div>':"";
+    const outcomes=(m.outcomes||[]).filter(o=>Number(o.price)>1).map(o=>'<span class="sport-outcome">'+esc(o.name)+' <strong>$'+Number(o.price).toFixed(2)+'</strong>'+(o.point!=null?' ('+esc(o.point)+')':"")+'</span>').join(" · ");
+    return outcomes?'<div class="live-market"><small>'+esc(m.key||"Market")+'</small><div>'+outcomes+'</div></div>':"";
    }).join("");
-   return '<div class="live-bookmaker"><b>'+esc(book.key||book.name||book.title||"Bookmaker")+'</b>'+(book.last_update?'<small>Updated '+esc(new Date(book.last_update).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"}))+'</small>':"")+markets+'</div>';
+   return '<div class="live-bookmaker"><b>'+esc(book.key||book.name||book.title||"Bookmaker")+'</b>'+(book.last_update?'<small>Updated '+esc(new Date(book.last_update).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}))+' AEST</small>':"")+markets+'</div>';
   }).join("");
-  return '<article class="sport-event"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ MARKET FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><div class="sport-book-favs"><span>SPORTSBET: <b>'+(sb?esc(sb.name)+" $"+sb.price.toFixed(2):"No quote returned")+'</b></span><span>BET365: <b>'+(b365?esc(b365.name)+" $"+b365.price.toFixed(2):"No quote returned")+'</b></span></div><details><summary>All bookmaker prices ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
+  const marketFav=f?'<b>'+esc(f.name)+'</b> at <strong>$'+f.price.toFixed(2)+'</strong> (best market consensus)':'Waiting for bookmaker odds';
+  const sbText=sb?esc(sb.name)+' $'+sb.price.toFixed(2):"No Sportsbet quote returned";
+  const b365Text=b365?esc(b365.name)+' $'+b365.price.toFixed(2):"No Bet365 quote returned";
+  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">UPCOMING · PRE-MATCH</span></div><div class="sport-start-info"><b>START:</b> '+esc(startLabel)+' · '+esc(startsIn)+'</div><div class="sport-favourite">★ MARKET FAVOURITE TEAM: '+marketFav+'</div><div class="sport-book-favs"><span>SPORTSBET FAVOURITE TEAM: <b>'+sbText+'</b></span><span>BET365 FAVOURITE TEAM: <b>'+b365Text+'</b></span></div>'+(bookFavourites?'<details class="sport-all-favourites"><summary>Favourite team at each bookmaker ('+books.length+')</summary><div class="sport-book-favourites">'+bookFavourites+'</div></details>':"")+'<details><summary>All bookmaker prices and teams ('+books.length+' feeds)</summary><div class="live-bookmakers">'+(allBooks||"No bookmaker prices returned for this fixture.")+'</div></details></article>';
  }).join(""):'<div class="empty">No upcoming fixtures with returned odds for this sport. Select another sport or refresh later.</div>';
  renderSportTrends();
 }
-
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
