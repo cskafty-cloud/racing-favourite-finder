@@ -710,34 +710,59 @@ app.get("/api/sports/:sportKey", async (req,res) => {
         selectionKeys:raw[0]?.bookmakers?.[0]?.markets?.[0]?.selections?.[0]?Object.keys(raw[0].bookmakers[0].markets[0].selections[0]):[],
         eventSample:raw[0]||null
       }));
-      const events=raw.map((e,i)=>{
-        const markets=e.markets||e.odds||[];
-        const bookmakers=(e.bookmakers||[]).map((b,j)=>({
-          key:b.bookmaker_key||b.key||b.name||("book-"+j),
+      // Krok's feed is flat: each row is one event/bookmaker pair.
+      // Group rows into one event and preserve each bookmaker's own markets.
+      const eventMap=new Map();
+      const toMarkets=(source)=> (source||[]).map(m=>({
+        key:m.market_key||m.key||m.name||"h2h",
+        name:m.market_label||m.name||m.market_key||"Head to head",
+        outcomes:(m.selections||m.outcomes||[]).map(o=>({
+          name:o.name||o.selection||o.label||"Selection",
+          price:Number(o.odds??o.price??o.decimal_odds),
+          point:o.point??o.line??null,
+          suspended:!!o.suspended
+        })).filter(o=>Number.isFinite(o.price)&&o.price>1&&!o.suspended)
+      })).filter(m=>m.outcomes.length);
+      for(const [i,e] of raw.entries()){
+        const home=e.home_team||e.home||e.team_home||null;
+        const away=e.away_team||e.away||e.team_away||null;
+        const start=e.start_time||e.commence_time||e.event_start||null;
+        const eventName=e.event||e.name||[home,away].filter(Boolean).join(" v ")||"Unknown event";
+        const identity=[e.sport_slug||key,e.league_slug||e.competition||"",sportsTeamKey(home||eventName),sportsTeamKey(away||""),start||""].join("|");
+        const eventId=String(e.event_id||e.id||identity);
+        const groupKey=identity.replace(/\|+$/,"")||eventId;
+        if(!eventMap.has(groupKey)) eventMap.set(groupKey,{
+          ...e,id:eventId,home_team:home,away_team:away,event:eventName,
+          commence_time:start,bookmakers:[],_source:"Krok Odds"
+        });
+        const target=eventMap.get(groupKey);
+        const bookName=e.bookmaker||e.bookmaker_name||e.bookmaker_key||"Unknown bookmaker";
+        const bookKey=String(e.bookmaker_key||e.bookmaker||e.bookmaker_name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+        let markets=toMarkets(e.markets||e.odds||[]);
+        if(!markets.length&&(e.selections||e.outcomes||[]).length)
+          markets=toMarkets([{key:"h2h",name:"Head to head",selections:e.selections||e.outcomes}]);
+        // Also tolerate the nested response shape without losing its provider identity.
+        const nested=(e.bookmakers||[]).map((b,j)=>({
+          key:String(b.bookmaker_key||b.key||b.name||("book-"+j)).toLowerCase().replace(/[^a-z0-9]/g,""),
           name:b.bookmaker||b.bookmaker_name||b.name||b.bookmaker_key||"Bookmaker",
-          title:b.bookmaker||b.bookmaker_name||b.name||b.bookmaker_key||"Bookmaker",
           last_update:b.captured_at||b.last_update||e.captured_at||null,
-          markets:(b.markets||[]).map(m=>({
-            key:m.market_key||m.key||m.name||"h2h",
-            name:m.market_label||m.name||m.market_key||"Head to head",
-            outcomes:(m.selections||m.outcomes||[]).map(o=>({
-              name:o.name||o.selection||o.label||"Selection",
-              price:Number(o.odds??o.price??o.decimal_odds),
-              point:o.point??null
-            })).filter(o=>Number.isFinite(o.price)&&o.price>1)
-          }))
+          markets:toMarkets(b.markets||[])
         }));
-        const directSelections=e.selections||e.outcomes||[];
-        if(!bookmakers.length&&directSelections.length) bookmakers.push({key:"krok",name:"Krok Odds",title:"Krok Odds",
-          last_update:e.captured_at||null,markets:[{key:"h2h",name:"Head to head",outcomes:directSelections.map(o=>({
-            name:o.name||o.selection||o.label||"Selection",price:Number(o.odds??o.price??o.decimal_odds)
-          })).filter(o=>Number.isFinite(o.price)&&o.price>1)}]});
-        return {...e,id:String(e.event_id||e.id||[key,i,e.start_time||e.commence_time].join("-")),
-          home_team:e.home_team||e.home||e.team_home||null,
-          away_team:e.away_team||e.away||e.team_away||null,
-          commence_time:e.start_time||e.commence_time||e.event_start||null,
-          bookmakers,_source:"Krok Odds"};
-      });
+        const incoming=[...(markets.length?[{key:bookKey,name:bookName,last_update:e.captured_at||null,markets}]:[]),...nested];
+        for(const b of incoming){
+          if(!b.key||!b.markets.length) continue;
+          const prior=target.bookmakers.findIndex(x=>x.key===b.key);
+          if(prior<0) target.bookmakers.push(b);
+          else {
+            const merged=new Map(target.bookmakers[prior].markets.map(m=>[m.key,m]));
+            for(const m of b.markets) merged.set(m.key,m);
+            target.bookmakers[prior]={...target.bookmakers[prior],...b,markets:[...merged.values()]};
+          }
+        }
+      }
+      const events=[...eventMap.values()].map(e=>({...e,
+        in_play:!!e.in_play,status:e.in_play?"IN PLAY":"UPCOMING"
+      }));
       cached={at:Date.now(),rows:events,meta:result.payload.meta||null,creditsRemaining:result.creditsRemaining};
       sportsOddsCache.set(key,cached);
       console.info("KROK_SPORT_ODDS",JSON.stringify({sport:key,events:events.length,
