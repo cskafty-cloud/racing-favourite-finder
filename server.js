@@ -934,8 +934,17 @@ async function getGlobalRaces() {
   if (API_KEY && process.env.PUBLIC_ONLY_FEEDS !== "true") {
     try {
       const primary=await loadPuntersEdgeRaces();
-      if (primary.races?.length) return primary;
-      failures.push({feed:"PuntersEdge",message:"Schedule and next-to-go endpoints returned no races."});
+      const quotaBlocked=(primary.feedErrors||[]).some(x=>/\\b402\\b|quota|credit limit/i.test(typeof x==="string"?x:(x.message||"")));
+      const oddsAge=primary.oddsFetchedAt?Date.now()-Date.parse(primary.oddsFetchedAt):Infinity;
+      // A cached board must not masquerade as live after the provider has run out
+      // of credits. During a 402 cooldown, keep the primary only while its odds
+      // snapshot is genuinely fresh; otherwise continue to Krok/MoviOdds previews.
+      if (primary.races?.length && (!quotaBlocked || oddsAge<=180000)) return primary;
+      if (quotaBlocked) {
+        failures.push({feed:"PuntersEdge",message:"HTTP 402 quota exhausted; cached odds are older than 3 minutes, so using alternate public/connected feeds instead."});
+      } else {
+        failures.push({feed:"PuntersEdge",message:"Schedule and next-to-go endpoints returned no races."});
+      }
     } catch(error) {
       console.error("PUNTERS_EDGE_PRIMARY_FAILED",error.message);
       failures.push({feed:"PuntersEdge",message:error.message});
