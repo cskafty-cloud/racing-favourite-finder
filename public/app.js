@@ -1,4 +1,4 @@
-const state = { races: [], filter: "all", search: "", sort: "time", loading: false };
+const state = { races: [], filter: "all", search: "", sort: "time", loading: false, sports: [], selectedSport: null, sportEvents: [] };
 const $ = id => document.getElementById(id);
 const fmtTime = value => {
   if (!value) return "Time TBA";
@@ -42,6 +42,7 @@ function marketFavourite(race) {
 }
 function categoryOf(r) {
   const c = String(r.category || r.code || r.race_type || "").toLowerCase();
+  if (c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
   return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
 }
 function filteredRaces() {
@@ -77,7 +78,7 @@ function raceCard(r, live=false) {
     return `<div class="odds-runner"><span class="odds-runner-name">${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner")}</span><div class="bookmaker-prices">${quotes.map(q=>`<span class="bookmaker-quote"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong>${q.url && /^https?:\/\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open book ↗</a>` : ""}</span>`).join("")}</div></div>`;
   }).filter(Boolean).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
-    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":"🐕 GREYHOUND RACING"}</div>
+    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":type==="harness"?"🏇 HARNESS RACING":"🐕 GREYHOUND RACING"}</div>
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
@@ -203,11 +204,24 @@ function renderFullCoverage(rows) {
     return '<details class="full-race-row" '+(live?"open":"")+'><summary><span><b>'+esc(venue)+' R'+esc(number)+'</b><small>'+esc(categoryOf(r))+' · '+esc(r.country||"Country n/a")+' · '+esc(fmtDate(r.start_time))+' '+esc(fmtTime(r.start_time))+(live?' · LIVE NOW':'')+'</small></span><strong>'+raceQuoteCount+' quotes · '+(r.runners||[]).length+' runners</strong><span class="detail-chevron">⌄</span></summary><div class="full-race-runners">'+(all||'<div class="no-odds">No runners supplied by the provider for this race yet.</div>')+'</div></details>';
   }).join("") : '<div class="empty">No races returned by the provider.</div>';
 }
+function sportFavourite(event){
+ const prices=new Map();
+ for(const b of event.bookmakers||[]) for(const m of b.markets||[]) if(["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())) for(const o of m.outcomes||[]){const p=Number(o.price);if(p>1){if(!prices.has(o.name))prices.set(o.name,[]);prices.get(o.name).push(p);}}
+ return [...prices.entries()].map(([name,v])=>{v.sort((a,b)=>a-b);return {name,price:v[Math.floor((v.length-1)/2)],books:v.length};}).sort((a,b)=>a.price-b.price)[0]||null;
+}
+function renderSports(){
+ $("sportsCatalogue").innerHTML=state.sports.map(s=>'<button class="sport-chip" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
+ $("sportsEvents").innerHTML=state.sportEvents.length?state.sportEvents.map(e=>{const f=sportFavourite(e),t=e.commence_time||"",home=e.home_team||"",away=e.away_team||"";return '<article class="sport-event"><b>'+esc(away)+' @ '+esc(home)+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div></article>';}).join(""):'<div class="empty">Choose a sport above to load upcoming fixtures.</div>';
+}
+async function loadSports(){try{const r=await fetch("/api/sports"),d=await r.json();if(!r.ok)throw Error(d.error||"Sports feed unavailable");state.sports=d.sports||[];$("sportsNotice").textContent=d.note||"Pre-match only; no in-play sports feed.";renderSports();}catch(e){$("sportsNotice").textContent=e.message;}}
+async function loadSportOdds(key){state.selectedSport=key;try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");state.sportEvents=d.events||[];renderSports();}catch(e){$("sportsEvents").textContent=e.message;}}
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
+  const harness = state.races.filter(r=>categoryOf(r)==="harness").length;
   $("raceCount").textContent = state.races.length;
   $("horseCount").textContent = horses;
-  $("dogCount").textContent = state.races.length-horses;
+  $("dogCount").textContent = state.races.filter(r=>categoryOf(r)==="greyhound").length;
+  $("harnessCount").textContent = harness;
   const rows = filteredRaces();
   renderCoverage(rows);
   renderLiveNow(rows);
@@ -251,6 +265,7 @@ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>
 $("search").addEventListener("input",e=>{state.search=e.target.value;render();});
 $("sort").addEventListener("change",e=>{state.sort=e.target.value;render();});
 $("refreshBtn").addEventListener("click",loadRaces);
+$("sportsCatalogue").addEventListener("click",e=>{const b=e.target.closest("[data-sport]");if(b)loadSportOdds(b.dataset.sport);});
 async function loadHistory() {
   try {
     const res = await fetch("/api/history");
@@ -304,6 +319,7 @@ $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
 loadRaces();
+loadSports();
 loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
