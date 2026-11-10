@@ -330,28 +330,38 @@ let liveSportsRefresh=null;
 app.get("/api/live-sports",async(_req,res)=>{
  try{
   if(!ODDS_API_TOKEN)return res.status(503).json({configured:false,error:"Add ODDS_DATA_API_TOKEN to Railway and deploy it."});
-  if(Date.now()-liveSportsCache.at>5000){
+  // Refresh at 30 seconds and cap detail lookups to 20 events. This keeps
+  // the list + detail polling below the provider's documented 3,600/hour limit.
+  if(!liveSportsCache.at || Date.now()-liveSportsCache.at>30000){
    if(!liveSportsRefresh)liveSportsRefresh=(async()=>{
     try{
-     const list=await oddsApi("/v3/events/inplay",{});
-     const fixtures=(list.data.results||[]).filter(e=>e.bet365_id).slice(0,25);
+     // sport_id is optional on Bet365 InPlay Filter. Unlike /v3/events/inplay,
+     // this endpoint returns the all-sports Bet365 in-play list and FI ids.
+     const list=await oddsApi("/v1/bet365/inplay_filter",{skip_esports:1});
+     const fixtures=(list.data.results||[]).filter(e=>e.id).slice(0,20);
      const details=await Promise.all(fixtures.map(async e=>{
       try{
-       const d=await oddsApi("/v1/bet365/event",{FI:e.bet365_id});
+       const d=await oddsApi("/v1/bet365/event",{FI:e.id});
        return parseBet365Live(d.data.results);
-      }catch(err){return {id:e.bet365_id,name:[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",league:e.league?.name||null,score:e.ss||null,minute:e.timer?.tm||null,status:"IN PLAY",error:err.message,bookmaker:"bet365"};}
+      }catch(err){
+       return {id:e.id,name:[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",
+        league:e.league?.name||null,score:e.ss||null,minute:null,status:"IN PLAY",
+        error:err.message,bookmaker:"bet365"};
+      }
      }));
-     liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining};
-    }catch(err){liveSportsCache={...liveSportsCache,error:err.message};}
+     liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining,
+      totalInPlay:list.data.results?.length||0};
+    }catch(err){liveSportsCache={...liveSportsCache,at:Date.now(),error:err.message};}
    })().finally(()=>{liveSportsRefresh=null;});
    await liveSportsRefresh;
   }
   res.set("Cache-Control","no-store");
   res.json({configured:true,provider:"Odds Data API / bet365",events:liveSportsCache.events,
+   totalInPlay:liveSportsCache.totalInPlay??null,
    fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
    ageSeconds:liveSportsCache.at?Math.round((Date.now()-liveSportsCache.at)/1000):null,
    rateLimitRemaining:liveSportsCache.rateLimitRemaining,error:liveSportsCache.error,
-   note:"Live scores and bet365 in-play prices only where returned. Sportsbet in-play prices are not provided by this connection."});
+   note:"Bet365 in-play scores and prices where returned. Up to 20 events are detailed per refresh; data is cached for 30 seconds. Sportsbet in-play prices are not provided by this connection."});
  }catch(err){res.status(503).json({error:err.message});}
 });
 
