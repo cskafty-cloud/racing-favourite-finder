@@ -279,6 +279,63 @@ function providerRetryDelay(error) {
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
 const RAPID_RACING_CODES = ["thoroughbred","harness","greyhound"];
+const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
+const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
+let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null};
+async function fetchKrokRacing(date) {
+  if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
+  const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
+  url.searchParams.set("date",date);
+  url.searchParams.set("limit","10");
+  const response = await fetch(url,{headers:{"X-API-Key":KROKODDS_API_KEY},signal:AbortSignal.timeout(20000)});
+  const body = await response.text();
+  let payload;
+  try { payload=JSON.parse(body); } catch { throw new Error("Krok Odds returned invalid JSON (HTTP "+response.status+")."); }
+  if (!response.ok || payload.success === false) throw new Error("Krok Odds "+response.status+": "+(payload.error||"request failed"));
+  const grouped = new Map();
+  for (const bookRow of (Array.isArray(payload.data)?payload.data:[])) {
+    const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
+    const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
+    const code = String(bookRow.race_type || "").toUpperCase();
+    const category = code === "G" ? "greyhound" : code === "H" ? "harness" : "horse";
+    for (const race of (bookRow.races || [])) {
+      const number = race.race_number ?? race.race_no ?? race.number;
+      const start = race.start_time || race.jump_time || race.startTime || race.commence_time || null;
+      const id = String(race.race_id || race.id || [date,normalizeName(venue),code,number].join("-"));
+      const key = id+"|"+category;
+      if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category,
+        venue,track:venue,race_number:number,start_time:start||date+"T00:00:00+10:00",country:"AU",runners:[]});
+      const target=grouped.get(key);
+      for (const runner of (race.runners || [])) {
+        const name=runner.name||runner.runner_name||"Runner";
+        const number=runner.number??runner.runner_number??null;
+        let existing=target.runners.find(x=>number!=null?String(x.number)===String(number):normalizeName(x.name)===normalizeName(name));
+        if(!existing){existing={number,name,bookmakers:[]};target.runners.push(existing);}
+        const win=Number(runner.win??runner.win_price??runner.odds);
+        const place=Number(runner.place??runner.place_price);
+        if(Number.isFinite(win)&&win>1) existing.bookmakers.push({bookmaker:book,name:book,win_price:win,
+          place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,last_update:runner.captured_at||runner.updated_at||null,
+          url:runner.bet_link||null});
+      }
+    }
+  }
+  return {races:[...grouped.values()],meta:payload.meta||null,
+    creditsRemaining:response.headers.get("X-Credits-Remaining")};
+}
+async function getKrokRaces() {
+  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Brisbane",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  if(!krokRacingCache.at || Date.now()-krokRacingCache.at>=300000) {
+    const result=await fetchKrokRacing(today);
+    krokRacingCache={at:Date.now(),races:result.races,meta:result.meta,creditsRemaining:result.creditsRemaining};
+    console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
+      races:result.races.length,pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
+      runners:result.races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:result.creditsRemaining}));
+  }
+  return {races:krokRacingCache.races,scheduleFetchedAt:new Date(krokRacingCache.at).toISOString(),
+    oddsFetchedAt:new Date(krokRacingCache.at).toISOString(),horizonHours:24,
+    feedErrors:[],feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining};
+}
+
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
 let rapidRacingCache = { at:0, races:[], errors:[] };
 let rapidRacingRefresh = null;
@@ -341,7 +398,8 @@ async function loadRapidRacing() {
   return {races,errors};
 }
 async function getGlobalRaces() {
-  if (!RAPID_ODDS_KEY) throw new Error("Add RAPIDODDSAPI_API_KEY in Railway Variables to enable the RapidOddsAPI racing feed.");
+  if (KROKODDS_API_KEY) return getKrokRaces();
+  if (!RAPID_ODDS_KEY) throw new Error("Add KROKODDS_API_KEY in Railway Variables to enable the free Krok Odds racing feed.");
   if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
     if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
       const result=await loadRapidRacing();
@@ -384,9 +442,9 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    res.json({races, providerBookmakers, mode:"live", feedSource:"RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
+    res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:"RapidOddsAPI Racing", feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
+      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?"Krok Odds Free": "RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
       note:"Australian and New Zealand thoroughbred, harness and greyhound races. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
