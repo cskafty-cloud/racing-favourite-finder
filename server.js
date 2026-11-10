@@ -1069,7 +1069,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
   runners,sportsbet_url:sourceUrl,sportsbet_public:true,updated_at:item.updated_at||updatedAt||null};
 }
 async function loadSportsbetPublicRaceDemos(){
- if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<60000)return sportsbetRacingDemoCache.races;
+ if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
  const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"],["harness","harness-racing"]];
  const results=await Promise.allSettled(specs.map(([category,sport])=>
   publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport}).then(payload=>({category,sport,payload}))));
@@ -1617,12 +1617,15 @@ async function refreshBackgroundRacingFeed() {
   puntersEdgeRefresh = (async () => {
     try {
       const feed = await getGlobalRaces();
+      let sportsbetRaceDemo=[];try{sportsbetRaceDemo=await loadSportsbetPublicRaceDemos();}catch(error){console.warn("SPORTSBET_PUBLIC_RACING_DEMO_BACKGROUND_FAILED",error.message);}
       console.info("RACING_BACKGROUND_REFRESH", JSON.stringify({
         source: feed.feedSource || "fallback",
         races: (feed.races || []).length,
         scheduleFetchedAt: feed.scheduleFetchedAt || null,
         oddsFetchedAt: feed.oddsFetchedAt || null,
         apiKeyConfigured: !!API_KEY,
+        sportsbetPublicDemoRaces:sportsbetRaceDemo.length,
+        sportsbetPublicDemoQuotes:sportsbetRaceDemo.reduce((n,r)=>n+r.runners.filter(x=>x.bookmakers.some(q=>q.key==="sportsbet")).length,0),
         errors: feed.feedErrors || []
       }));
     } catch (error) {
