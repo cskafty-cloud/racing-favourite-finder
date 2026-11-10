@@ -73,16 +73,10 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · quote age unavailable":" · "+Math.round(Number(favourite.age))+"s old")
     : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">
-  const heading=favourite&&favourite.isFallback?"Sportsbet estimated favourite · market proxy":esc(bookmaker)+" public-feed favourite";
-  const priceCaption=favourite&&favourite.isFallback?'<div class="book-fav-age">Indicative market consensus · not Sportsbet odds</div>':"";
-  return '<div class="book-fav"><div class="book-fav-label">'+heading+'</div>'+details+priceCaption+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
-}
-+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed via MoviOdds":"Sportsbet fixed-win public quote"))+(favourite.age==null?"":" · "+Math.round(Number(favourite.age))+"s old")+freshness+'</div>'+(favourite.isFallback?'<div class="book-fav-missing">Estimate only: this is the overall market consensus, not a Sportsbet fixed-win price. Open Sportsbet to verify its live quote.</div>':"")
-    : '<div class="book-fav-missing">No '+esc(bookmaker)+'-labelled public runner price or market estimate is available for this race.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' public-feed favourite</div>'+details+
-    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price; no other bookmaker odds are being passed off as Sportsbet.</div>':"")
+    : '<div class="book-fav-missing">Sportsbet fixed-win price unavailable from the connected public feed. No other bookmaker odds are substituted.</div>';
+  const heading=favourite&&favourite.isFallback?"Sportsbet favourite · estimated market proxy":esc(bookmaker)+" fixed-win favourite";
+  return '<div class="book-fav"><div class="book-fav-label">'+heading+'</div>'+details+'<a class="bookmaker-market-link" href="'+esc(url||BOOKMAKER_URLS[key])+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
 function overallMarketFavouritePanel(favourite) {
   const details = favourite
@@ -575,8 +569,8 @@ function render() {
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
-    const bet365RaceFav=bookmakerFavourite(r,"bet365"),sportsbetRaceFav=bookmakerFavourite(r,"sportsbet");
-     const bookFavHtml='<div class="race-bookmaker-favourites"><b>All returned bookmaker favourites · public prices source-labelled</b>'+bookFavourites.map(allBookFavouritePanel).join("")+(!bet365RaceFav?raceBookmakerPanel("Bet365",null,fav):"")+(!sportsbetRaceFav?raceBookmakerPanel("Sportsbet",null,fav):"")+'</div>';
+    const bet365RaceFav=bookmakerFavourite(r,"bet365"),sportsbetRaceFav=sportsbetDisplayFavourite(r);
+     const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bookmaker favourites · prices and estimates clearly source-labelled</b>'+bookFavourites.map(allBookFavouritePanel).join("")+(!bet365RaceFav?raceBookmakerPanel("Bet365",null,fav):"")+raceBookmakerPanel("Sportsbet",sportsbetRaceFav,fav)+'</div>';
     const typeLabel=type==="horse"?"🐎 HORSE RACING":type==="greyhound"?"🐕 GREYHOUND RACING":"🏇 HARNESS RACING";
     return '<article class="race-list-card '+(isLive?"is-live":"")+'"><div class="race-list-card-head"><div><div class="race-type">'+typeLabel+'</div><h3>'+esc(venue)+' · R'+esc(number)+'</h3><div class="race-meta">'+esc(date)+' · '+esc(time)+'</div>'+(publicDetails?'<div class="race-meta race-public-details">'+publicDetails+'</div>':"")+'</div><span class="race-status">'+(isLive?"LIVE NOW":"UPCOMING")+'</span></div>'+favPanel+bookFavHtml+'<div class="race-runners-ranked"><div class="race-runners-heading">ALL RUNNERS · RANKED LOWEST FIXED ODDS FIRST</div>'+(runnerRows||'<div class="empty compact-empty">No runners supplied by the feed yet.</div>')+'</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are separate from bookmaker fixed odds and are not used to rank this list.</span></div></article>';
   };
