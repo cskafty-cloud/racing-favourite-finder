@@ -10,20 +10,22 @@ const fmtDate = value => {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",timeZone:"Australia/Brisbane"});
 };
-function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => Number(b.win_price ?? b.win ?? b.price) > 1 && !b.stale && Number(b.age_seconds ?? 0) < 180); }
+function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => Number(b.win_price ?? b.win ?? b.price) > 1); }
 function bookmakerFavourite(race, wantedKey) {
+  const aliases = { sportsbet:["sportsbet","sportsbetau","sportsbetcomau"], bet365:["bet365","bet365au","bet365comau"] };
+  const accepted = aliases[wantedKey] || [wantedKey];
   const candidates = (race.runners || []).map(runner => {
-    const quote = runnerPrices(runner).find(q => String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"") === wantedKey);
+    const quote = runnerPrices(runner).find(q => accepted.includes(String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"")));
     if (!quote) return null;
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
       number:runner.number ?? runner.runner_number ?? null,
       price:Number(quote.win_price ?? quote.win ?? quote.price),
-      age:quote.age_seconds};
+      age:quote.age_seconds, stale:!!quote.stale};
   }).filter(x => x && Number.isFinite(x.price) && x.price > 1);
   return candidates.sort((a,b)=>a.price-b.price)[0] || null;
 }
 function favouritePanel(label, favourite) {
-  return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(favourite.age) ? "Quote age "+Math.round(favourite.age)+"s" : "Live feed quote"}</div>` : `<div class="book-fav-missing">No current quote for this race</div>`}</div>`;
+  return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">No current quote for this race</div>`}</div>`;
 }
 function marketFavourite(race) {
   const runners = (race.runners || []).map(r => {
@@ -105,34 +107,45 @@ function possibleRaceGaps(rows) {
 }
 function normalizeText(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
 function renderCoverage(rows) {
-  const missing=[];
-  let sportsbetMissing=0,bet365Missing=0,bothMissing=0;
-  for(const r of rows){
-    const sb=bookmakerFavourite(r,"sportsbet"), b365=bookmakerFavourite(r,"bet365");
-    if(!sb || !b365) {
-      if(!sb)sportsbetMissing++;
-      if(!b365)bet365Missing++;
-      if(!sb&&!b365)bothMissing++;
-      missing.push({race:r,sb,b365});
+  const allRows = state.races;
+  const catalogue = new Map();
+  for (const race of allRows) for (const runner of race.runners || []) {
+    for (const q of rawRunnerQuotes(runner)) {
+      const key = normalizeText(q.key || q.name);
+      if (key && !catalogue.has(key)) catalogue.set(key, q.name);
     }
   }
+  const bookmakerKeys = [...catalogue.keys()];
+  const missing=[];
+  let sportsbetMissing=0,bet365Missing=0,bothMissing=0,missingSitePairs=0;
+  for(const r of rows){
+    const sb=bookmakerFavourite(r,"sportsbet"), b365=bookmakerFavourite(r,"bet365");
+    const present=new Set();
+    for (const runner of r.runners || []) for (const q of rawRunnerQuotes(runner)) present.add(normalizeText(q.key || q.name));
+    const absent=bookmakerKeys.filter(k=>!present.has(k));
+    missingSitePairs += absent.length;
+    if(!sb)sportsbetMissing++;
+    if(!b365)bet365Missing++;
+    if(!sb&&!b365)bothMissing++;
+    if(absent.length || !sb || !b365) missing.push({race:r,sb,b365,absent});
+  }
   const gaps=possibleRaceGaps(rows);
-  $("coverageStats").innerHTML = `<div><b>${sportsbetMissing}</b><span>Missing Sportsbet</span></div><div><b>${bet365Missing}</b><span>Missing bet365</span></div><div><b>${bothMissing}</b><span>Missing both</span></div><div><b>${gaps.length}</b><span>Possible race-number gaps</span></div>`;
+  $("coverageStats").innerHTML = `<div><b>${sportsbetMissing}</b><span>Missing Sportsbet</span></div><div><b>${bet365Missing}</b><span>Missing bet365</span></div><div><b>${bothMissing}</b><span>Missing both</span></div><div><b>${missingSitePairs}</b><span>Missing bookmaker/race pairs</span></div>`;
   const quoteRows=missing.map(x=>{
     const r=x.race, venue=r.venue||r.track_name||r.venue_canonical||"Unknown track";
     const no=r.race_number ? "R"+r.race_number : "Race";
-    const absent=[!x.sb?"Sportsbet":"",!x.b365?"bet365":""].filter(Boolean).join(" + ");
-    return `<div class="coverage-row"><span><b>${esc(venue)} ${esc(no)}</b><small>${esc(categoryOf(r))} · ${esc(fmtDate(r.start_time))} · ${esc(fmtTime(r.start_time))}</small></span><strong>${esc(absent)} missing</strong></div>`;
+    const details=x.absent.length ? x.absent.map(k=>catalogue.get(k)).join(", ") : "None of the discovered provider sites missing";
+    return `<div class="coverage-row"><span><b>${esc(venue)} ${esc(no)}</b><small>${esc(categoryOf(r))} · ${esc(fmtDate(r.start_time))} · ${esc(fmtTime(r.start_time))}</small></span><strong>${esc(details)}${x.absent.length?" missing":" · Sportsbet/bet365 checked"}</strong></div>`;
   }).join("");
   const gapRows=gaps.map(g=>`<div class="coverage-row"><span><b>${esc(g.venue)} R${g.missing}</b><small>${esc(g.category)} · ${esc(g.date)}</small></span><strong>Not returned by feed</strong></div>`).join("");
-  $("coverageList").innerHTML=(quoteRows||'<div class="coverage-empty">All listed races currently have Sportsbet and bet365 quotes.</div>')+
+  $("coverageList").innerHTML=(quoteRows||'<div class="coverage-empty">Every discovered provider bookmaker has quotes in each matching race.</div>')+
     (gapRows ? '<div class="coverage-subheading">Possible missing race numbers</div>'+gapRows : '<div class="coverage-empty">No race-number gaps detected among returned races.</div>');
 }
-
 
 function rawRunnerQuotes(runner) {
   return (runner.bookmakers || runner.odds || []).map(q => ({
     name:q.bookmaker || q.name || q.key || "Bookmaker",
+    key:q.key || q.bookmaker || q.name || "Bookmaker",
     price:Number(q.win_price ?? q.win ?? q.price),
     age:q.age_seconds ?? null,
     stale:!!q.stale,
