@@ -44,6 +44,18 @@ async function saveHistory(history) {
   });
   return writeQueue;
 }
+let demoRacingCache = { at: 0, rows: [] };
+async function demoRacingFeed() {
+  if (demoRacingCache.at && Date.now() - demoRacingCache.at < 25000) return demoRacingCache.rows;
+  const response = await fetch(BASE + "/v1/demo/racing/next-to-go", { signal: AbortSignal.timeout(12000) });
+  const body = await response.text();
+  if (!response.ok) throw new Error("Public racing demo feed " + response.status + ": " + body.slice(0, 240));
+  const payload = JSON.parse(body);
+  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload.races) ? payload.races : []);
+  if (!rows.length) throw new Error("Public racing demo feed returned no races.");
+  demoRacingCache = { at: Date.now(), rows };
+  return rows;
+}
 async function provider(pathname, params = {}) {
   if (!API_KEY) throw new Error("Add PUNTERSEDGE_API_KEY to the server environment to enable the authenticated live feed.");
   const url = new URL(BASE + pathname);
@@ -274,7 +286,19 @@ async function getGlobalRaces() {
           scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
           providerErrors.schedule = null;
           console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
-        } catch (err) { providerErrors.schedule = err.message; providerRetryAt.schedule = Date.now() + providerRetryDelay(err.message); console.error("FEED_CHECK schedule", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.schedule).toISOString(),error:err.message,at:new Date().toISOString()})); }
+        } catch (err) {
+          providerErrors.schedule = err.message;
+          providerRetryAt.schedule = Date.now() + providerRetryDelay(err.message);
+          try {
+            const rows = await demoRacingFeed();
+            scheduleCache = { at: Date.now(), rows, horizonHours: 0 };
+            providerErrors.schedule = null;
+            console.warn("FEED_FALLBACK schedule", JSON.stringify({source:"PuntersEdge public demo",races:rows.length,at:new Date(scheduleCache.at).toISOString(),primaryError:err.message}));
+          } catch (fallbackError) {
+            providerErrors.schedule = err.message + " | fallback: " + fallbackError.message;
+            console.error("FEED_CHECK schedule", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.schedule).toISOString(),error:providerErrors.schedule,at:new Date().toISOString()}));
+          }
+        }
       })());
       if (now - pricedCache.at >= 15000 && now >= providerRetryAt.odds) tasks.push((async () => {
         try {
@@ -287,7 +311,21 @@ async function getGlobalRaces() {
           } catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
           const sample = pricedCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).slice(0,4).map(x=>({name:x.name||x.runner_name||x.horse_name||x.greyhound_name,quotes:runnerQuotes(x).slice(0,4).map(q=>({bookmaker:q.bookmaker||q.name||q.key,price:q.win_price??q.win??q.price}))}))}));
           console.info("FEED_CHECK odds", JSON.stringify({ ok:true, fetchedAt:new Date(pricedCache.at).toISOString(), races:pricedCache.rows.length, pricedRunners:pricedCache.rows.reduce((n,r)=>n+(r.runners||[]).filter(x=>runnerQuotes(x).length).length,0), sample }));
-        } catch (err) { providerErrors.odds = err.message; providerRetryAt.odds = Date.now() + providerRetryDelay(err.message); console.error("FEED_CHECK odds", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.odds).toISOString(),error:err.message,at:new Date().toISOString()})); }
+        } catch (err) {
+          providerErrors.odds = err.message;
+          providerRetryAt.odds = Date.now() + providerRetryDelay(err.message);
+          try {
+            const rows = await demoRacingFeed();
+            pricedCache = { at: Date.now(), rows };
+            providerErrors.odds = null;
+            console.warn("FEED_FALLBACK odds", JSON.stringify({source:"PuntersEdge public demo",races:rows.length,at:new Date(pricedCache.at).toISOString(),primaryError:err.message}));
+            try { await recordMarketSnapshots(pricedCache.rows, new Date(pricedCache.at).toISOString()); }
+            catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
+          } catch (fallbackError) {
+            providerErrors.odds = err.message + " | fallback: " + fallbackError.message;
+            console.error("FEED_CHECK odds", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.odds).toISOString(),error:providerErrors.odds,at:new Date().toISOString()}));
+          }
+        }
       })());
       await Promise.all(tasks);
     })().finally(() => { refreshInFlight = null; });
