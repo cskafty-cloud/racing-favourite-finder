@@ -180,8 +180,8 @@ async function publicDemoRequest(pathname, params={}) {
 }
 const PUBLIC_DEMO_SPORTS = {
   oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",oddsdata_9:"boxing",
-  oddsdata_12:"american-football",oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",
-  oddsdata_16:"baseball",oddsdata_17:"ice-hockey",oddsdata_18:"basketball",oddsdata_19:"rugby-league",
+  oddsdata_12:"nfl",oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",
+  oddsdata_16:"mlb",oddsdata_17:"nhl",oddsdata_18:"nba",oddsdata_19:"nrl",
   oddsdata_36:"afl",oddsdata_66:"bowls",oddsdata_75:"gaelic-sports",oddsdata_78:"handball",
   oddsdata_83:"futsal",oddsdata_90:"floorball",oddsdata_91:"volleyball",oddsdata_92:"table-tennis",
   oddsdata_94:"badminton",oddsdata_95:"beach-volleyball",oddsdata_107:"squash",oddsdata_110:"water-polo",
