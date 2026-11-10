@@ -578,8 +578,7 @@ $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
 loadRaces();
-loadSports();
-loadLiveSports();
+loadSports().then(loadLiveSports);
 loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
