@@ -138,7 +138,7 @@ function marketFavourite(race) {
   const second=runners[1],gap=second?Math.max(0,(1/fav.consensus-1/second.consensus)/(1/fav.consensus)):0;
   fav.gapPct=+(gap*100).toFixed(1);
   fav.signalScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
-  fav.signalLabel=fav.quoteCount===1?"LIMITED MARKET DATA · ONE PRICE SOURCE":fav.quoteCount>=3&&fav.signalScore>=65?"STRONG SIGNAL":fav.signalScore>=45?"CAUTION":"LIMITED MARKET DATA · FEW PRICE SOURCES";
+  fav.signalLabel="MARKET FAVOURITE";
   return fav;
 }
 // Best available display fallback for the Sportsbet panel:
@@ -382,14 +382,14 @@ function renderTopTips() {
   const b365=bookmakerFavourite(r,"bet365");
   bet365Picks.push({kind:"RACING",category,event,selection:b365?(b365.number?b365.number+". ":"")+b365.name:"No verified Bet365 favourite",odds:b365?b365.price:null,time,source:b365?"Bet365-labelled public quote":"No current Bet365 quote returned",score:0,quotes:b365?1:0,signal:b365?"PRICE RETURNED":"PRICE UNAVAILABLE"});
   const fav=marketFavourite(r);
-  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"LIMITED MARKET DATA"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
+  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:"MARKET FAVOURITE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
   racePicks.push(tip);if(fav)pricedTips.push(tip);
  }
  for(const e of state.sportEvents||[]){
   const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
   const ranks=sportRankings(e);if(!ranks.length)continue;
   const f=ranks[0],books=f.books||0;
-  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:books>=2?"MULTI-QUOTE SIGNAL":"SINGLE-SOURCE · LIMITED MARKET DATA"};
+  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:"MARKET FAVOURITE"};
   sportPicks.push(tip);pricedTips.push(tip);
  }
  const today=new Date().toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"});
