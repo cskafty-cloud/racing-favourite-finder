@@ -51,9 +51,7 @@ function bookmakerFavourite(race, wantedKey) {
       const af=a.stale===true||(aa!=null&&aa>=180),bf=b.stale===true||(bb!=null&&bb>=180);
       return Number(af)-Number(bf);
     })[0];
-    // A bookmaker-specific favourite must be a fresh quote from that exact book.
-    // Never let a stale Sportsbet-labelled sample masquerade as a current price.
-    if (!quote || quote.stale===true) return null;
+    if (!quote) return null;
     const age=quoteAgeSeconds(quote),stale=quote.stale===true||(age!=null&&age>=180);
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
       number:runner.number ?? runner.runner_number ?? runner.box ?? null,
@@ -143,6 +141,34 @@ function marketFavourite(race) {
   fav.signalLabel=fav.quoteCount===1?"LOW CONFIDENCE · ONE BOOKMAKER":fav.quoteCount>=3&&fav.signalScore>=65?"STRONG SIGNAL":fav.signalScore>=45?"CAUTION":"LOW CONFIDENCE · LIMITED QUOTES";
   return fav;
 }
+// Best available display fallback for the Sportsbet panel:
+// 1) exact Sportsbet quote (fresh, then stale); 2) fresh overall market median;
+// 3) stale overall market median. The source is always labelled honestly.
+function sportsbetDisplayFavourite(race) {
+ const exact=bookmakerFavourite(race,"sportsbet");
+ if(exact)return {...exact,displaySource:exact.stale?"Sportsbet-labelled stale public quote":"Sportsbet-labelled public quote",isFallback:false};
+ const freshMarket=marketFavourite(race);
+ if(freshMarket)return {name:freshMarket.name,number:freshMarket.number,price:freshMarket.consensus,
+   age:null,stale:false,quoteCount:freshMarket.quoteCount,displaySource:"Overall market median proxy · Sportsbet price unavailable",
+   url:BOOKMAKER_URLS.sportsbet,isFallback:true};
+ const median=values=>{const x=values.slice().sort((a,b)=>a-b);return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null;};
+ const rows=(race.runners||[]).map(r=>{
+   const seen=new Set(),qs=fixedRunnerPrices(r).filter(q=>{
+     const k=normaliseBookmakerKey(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"");
+     const p=Number(q.win_price??q.win??q.price);
+     if(!k||seen.has(k)||!Number.isFinite(p)||p<=1)return false;
+     seen.add(k);return true;
+   });
+   const p=median(qs.map(q=>Number(q.win_price??q.win??q.price)));
+   return p==null?null:{runner:r,price:p,quotes:qs};
+ }).filter(Boolean).sort((a,b)=>a.price-b.price);
+ const best=rows[0];if(!best)return null;
+ const ages=best.quotes.map(quoteAgeSeconds).filter(x=>x!=null);
+ return {name:best.runner.name||best.runner.runner_name||best.runner.horse_name||best.runner.greyhound_name||"Runner",
+   number:best.runner.number??best.runner.runner_number??best.runner.box??null,price:best.price,
+   age:ages.length?Math.max(...ages):null,stale:true,quoteCount:best.quotes.length,
+   displaySource:"Stale overall market median proxy · Sportsbet price unavailable",isFallback:true,url:BOOKMAKER_URLS.sportsbet};
+}
 function categoryOf(r) {
   const c = String(r.race_type || r.raceType || r.race_code || r.code || r.category || r.sport || r.type || "").toLowerCase().trim().replace(/[ _-]+/g,"");
   if (c === "h" || c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
@@ -161,7 +187,7 @@ function filteredRaces() {
 function raceCard(r, live=false) {
   const fav = marketFavourite(r);
   const bet365Fav = bookmakerFavourite(r,"bet365");
-  const sportsbetFav = bookmakerFavourite(r,"sportsbet");
+  const sportsbetFav = sportsbetDisplayFavourite(r);
   const bookFavourites = allBookmakerFavourites(r);
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
@@ -350,8 +376,8 @@ function renderTopTips() {
  const sportsbetPicks=[],bet365Picks=[],racePicks=[],sportPicks=[],pricedTips=[],sportsbetPriced=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
-  const sb=bookmakerFavourite(r,"sportsbet");
-  const sbPick={kind:"RACING",category,event,selection:sb?(sb.number?sb.number+". ":"")+sb.name:"No verified Sportsbet favourite",odds:sb?sb.price:null,time,source:sb?"Sportsbet-labelled public quote":"No current Sportsbet quote returned",score:0,quotes:sb?1:0,signal:sb?"SPORTSBET FAVOURITE · SINGLE SOURCE":"PRICE UNAVAILABLE"};
+  const sb=sportsbetDisplayFavourite(r);
+  const sbPick={kind:"RACING",category,event,selection:sb?(sb.number?sb.number+". ":"")+sb.name:"No priced favourite available",odds:sb?sb.price:null,time,source:sb?sb.displaySource:"No public Sportsbet or overall-market price returned",score:sb?(sb.quoteCount||1):0,quotes:sb?(sb.quoteCount||1):0,signal:sb?(sb.isFallback?"FALLBACK · VERIFY PRICE":"SPORTSBET PRICE · "+(sb.stale?"STALE":"PUBLIC")):"PRICE UNAVAILABLE"};
   sportsbetPicks.push(sbPick);if(sb)sportsbetPriced.push(sbPick);
   const b365=bookmakerFavourite(r,"bet365");
   bet365Picks.push({kind:"RACING",category,event,selection:b365?(b365.number?b365.number+". ":"")+b365.name:"No verified Bet365 favourite",odds:b365?b365.price:null,time,source:b365?"Bet365-labelled public quote":"No current Bet365 quote returned",score:0,quotes:b365?1:0,signal:b365?"PRICE RETURNED":"PRICE UNAVAILABLE"});
@@ -376,9 +402,9 @@ function renderTopTips() {
  const card=(t,i,label)=>'<article class="sport-event"><div class="sport-event-heading"><b>#'+(i+1)+' · '+esc(t.selection)+'</b><span class="sport-upcoming-label">'+esc(label||t.kind||"RACING")+'</span></div><div>'+esc(t.event)+' · '+esc(t.category||"")+' · '+esc(t.time?fmtDate(t.time)+" "+fmtTime(t.time):"Time TBA")+'</div><div class="sport-favourite">Odds: <strong>'+(Number.isFinite(Number(t.odds))&&Number(t.odds)>1?'$'+Number(t.odds).toFixed(2):"Unavailable")+'</strong> · '+(t.quotes||0)+' quote'+((t.quotes||0)===1?"":"s")+' · signal '+(t.score||0)+'/100 · '+esc(t.signal||"")+'</div><small>'+esc(t.source||"Public snapshot")+' · market indicator only, not a prediction or guaranteed winner.</small></article>';
  const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
  el.innerHTML=section("BEST OF THE DAY · RACING + SPORTS","Top 10 priced favourites across today's returned horse, greyhound, harness and sports markets (Brisbane time). Ranked by available bookmaker agreement, price spread and separation from the next selection. This is a market-strength signal, not a prediction.",bestDay,"No fresh priced race or sports favourites are available for today's shortlist.")
- +section("SPORTSBET BEST OF THE DAY","Today's returned Sportsbet-only racing favourites, ranked by shortest fresh Sportsbet price. This is a bookmaker-price list, not a confidence or winner prediction.",sportsbetBestOfDay,"No fresh Sportsbet-labelled racing prices are available for today's races.")
- +section("SPORTSBET TOP TIPS · ALL RACES","Top 20 returned Sportsbet-only racing favourites, ranked by shortest fresh Sportsbet price. Every selection uses a Sportsbet-labelled quote only; no Bet365 or overall-market substitution.",sportsbetTopTips,"No fresh Sportsbet-labelled prices are available in the public racing sample.")
- +section("SPORTSBET FAVOURITES · EVERY RACE","Separate Sportsbet-labelled favourite for every returned upcoming/live race. Missing or stale quotes remain unavailable; another bookmaker is never substituted.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
+ +section("SPORTSBET BEST OF THE DAY","Best available runner for every returned race. Exact Sportsbet quote is preferred; if missing, the overall market median is used and clearly marked as a proxy. Check the Sportsbet site before relying on a fallback.",sportsbetBestOfDay,"No usable Sportsbet or overall-market runner prices were returned for today's races.")
+ +section("SPORTSBET TOP TIPS · ALL RACES","Top 20 best-available racing favourites. Exact Sportsbet quotes are preferred, then overall-market median proxies; stale quotes are marked. A proxy is not a Sportsbet price.",sportsbetTopTips,"No usable Sportsbet or overall-market prices are available in the public racing sample.")
+ +section("SPORTSBET FAVOURITES · EVERY RACE","Best available favourite for every returned race: Sportsbet quote first, then overall-market median proxy. Stale prices and proxies are explicitly labelled.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
  +section("BET365 FAVOURITES · EVERY RACE","Separate Bet365-labelled favourite for every returned upcoming/live race. Only Bet365-labelled prices are shown.",bet365Picks,"No upcoming races were returned by the racing feed.")
  +section("TOP TIPS · ALL RACES + SPORTS","Top 20 priced market favourites across all returned horse, greyhound, harness and sports events. Selections are ranked by the number of quotes, price agreement and market separation.",topTips,"No priced favourites are available from the current public feeds.")
  +section("RACE FAVOURITES · EVERY RACE","Market favourite for each returned race, including races awaiting prices.",racePicks,"No upcoming races were returned by the racing feed.")
