@@ -848,8 +848,8 @@ app.get("/api/live-sports",async(_req,res)=>{
  try{
   if(!ODDS_API_TOKEN)return res.status(503).json({configured:false,error:"Bet365 data feed token is not configured."});
   if(!bet365LiveCache.at||Date.now()-bet365LiveCache.at>60000){
-   const liveIds=new Set([1,3,12,13,16,17,18,19,36]);
-   const sports=ODDS_DATA_SPORTS.filter(x=>liveIds.has(x.id));
+   // Check every supported team/player sport for live fixtures. Racing is handled by the separate racing feed because the event API does not expose race runners as team fixtures.
+   const sports=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id));
    const settled=await Promise.allSettled(sports.map(async sport=>{
     const response=await oddsApi("/v3/events/inplay",{sport_id:sport.id});
     const rows=response.data.results||[];
@@ -878,7 +878,7 @@ app.get("/api/live-sports",async(_req,res)=>{
    sports:[],bookmakers:[],resultsFetchedAt:new Date(bet365LiveCache.at).toISOString(),
    ageSeconds:Math.round((Date.now()-bet365LiveCache.at)/1000),
    error:bet365LiveCache.events.length?null:(bet365LiveCache.errors.join(" · ")||"No confirmed in-play events returned."),
-   note:"Confirmed in-play event status and score text only where Bet365 supplies it. This live panel checks nine major sports; use the full catalogue for upcoming fixtures in other sports. No Sportsbet odds are imported."});
+   note:"Checks every supported team/player sport in the connected Bet365 data catalogue for confirmed in-play fixtures and score text. Horse racing and greyhounds are shown in the separate racing feed because this event API does not expose race-runner markets. Sportsbet is an external market link only; no Sportsbet prices are imported."});
  }catch(err){res.status(503).json({error:err.message,provider:"Odds Data API / Bet365"});}
 });
 
