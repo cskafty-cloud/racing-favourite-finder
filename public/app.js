@@ -155,10 +155,10 @@ async function loadRaces() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
-    $("feedStatus").textContent = data.mode === "live" ? "LIVE FEED" : "FEED OFFLINE";
+    $("feedStatus").textContent = data.mode === "live" ? (data.feedErrors?.length ? "LIVE FEED · PARTIAL" : "LIVE FEED") : "FEED OFFLINE";
     $("updatedAt").textContent = new Date(data.fetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     $("feedFreshness").textContent = `Screen refresh: 5s (display only) · bookmaker price updates vary by feed; check quote age · provider schedule: ${data.horizonHours || 24}h (${esc(data.providerPlan || "free")} plan) · last odds fetch ${data.oddsFetchedAt ? new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"} · schedule fetch ${data.scheduleFetchedAt ? new Date(data.scheduleFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"}`;
-    $("notice").textContent = data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.";
+    $("notice").textContent = (data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.") + (data.feedErrors?.length ? " Feed warning: " + data.feedErrors.map(x => x.feed + ": " + x.message).join(" · ") : "");
     $("notice").classList.remove("hidden");
     render();
   } catch (err) {
