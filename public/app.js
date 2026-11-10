@@ -28,17 +28,25 @@ function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
 function marketFavourite(race) {
-  const runners = (race.runners || []).map(r => {
-    const quotes = runnerPrices(r);
-    if (!quotes.length) return null;
-    const prices = quotes.map(q => Number(q.win_price ?? q.win ?? q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
-    if (!prices.length) return null;
-    const median = prices[Math.floor((prices.length-1)/2)];
-    const b365 = quotes.find(q => String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"") === "bet365");
-    const b365Price = b365 ? Number(b365.win_price ?? b365.win ?? b365.price) : null;
-    return {...r, consensus: b365Price || median, bet365: b365Price, quoteCount: quotes.length, priceSource: b365Price ? "Bet365" : "market median"};
-  }).filter(Boolean);
-  return runners.sort((a,b)=>a.consensus-b.consensus)[0] || null;
+  const median=values=>{const x=values.slice().sort((a,b)=>a-b);return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null;};
+  const runners=(race.runners||[]).map(r=>{
+    const seen=new Set();
+    const quotes=runnerPrices(r).filter(q=>{
+      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=Number(q.age_seconds);
+      if(!key||seen.has(key)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
+      seen.add(key);return true;
+    });
+    const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
+    const consensus=median(prices);if(consensus==null)return null;
+    const spread=prices.length>1?(Math.max(...prices)-Math.min(...prices))/consensus:1;
+    return {...r,consensus,quoteCount:quotes.length,spreadPct:+(spread*100).toFixed(1),priceSource:"multi-bookmaker median"};
+  }).filter(Boolean).sort((x,y)=>x.consensus-y.consensus);
+  const fav=runners[0];if(!fav)return null;
+  const second=runners[1],gap=second?Math.max(0,(1/fav.consensus-1/second.consensus)/(1/fav.consensus)):0;
+  fav.gapPct=+(gap*100).toFixed(1);
+  fav.signalScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
+  fav.signalLabel=fav.quoteCount>=3&&fav.signalScore>=65?"STRONG SIGNAL":fav.signalScore>=45?"CAUTION":"NO BET · WEAK SIGNAL";
+  return fav;
 }
 function categoryOf(r) {
   const c = String(r.category || r.code || r.race_type || "").toLowerCase();
@@ -82,7 +90,7 @@ function raceCard(r, live=false) {
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ RACE FAVOURITE · HIGHLIGHTED</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} bookmaker quote${fav.quoteCount===1?"":"s"} · ${esc(fav.priceSource)}${fav.quoteCount===1?" · LIMITED DATA":fav.quoteCount===2?" · CHECK CONSENSUS":""}</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : esc(marketState)}</div>
     <div class="bookmaker-favourites">${favouritePanel("SPORTSBET FAVOURITE",sportsbetFav)}${favouritePanel("BET365 FAVOURITE",bet365Fav)}</div>
@@ -406,7 +414,7 @@ async function loadMarketHistory() {
     $("marketHistoryRows").innerHTML = rows.length ? rows.map(x => {
       const fav = x.favourite;
       const when = new Date(x.capturedAt).toLocaleString("en-AU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Australia/Brisbane"});
-      const price = fav ? "$"+Number(fav.price).toFixed(2)+" · "+esc(fav.priceSource) : "Waiting for odds";
+      const price = fav ? "$"+Number(fav.price).toFixed(2)+" · "+esc(fav.priceSource)+" · "+esc(fav.signalLabel||"") : "Waiting for odds";
       const runners = (x.runners || []).length;
       return `<div class="history-row"><div><b>${esc(x.venue)} ${x.raceNumber ? "R"+esc(x.raceNumber) : ""}</b><div class="muted">${x.category==="horse"?"Horse":"Greyhound"} · ${esc(when)}</div></div><div>${fav ? esc(fav.name) : "No favourite yet"}<div class="muted">${price}</div></div><div>${x.quoteCount} bookmaker quotes<div class="muted">${runners} runners recorded</div></div><div><span class="pending">${x.status==="priced"?"SNAPSHOT":"WAITING"}</span></div></div>`;
     }).join("") : '<div class="empty">No market changes captured yet. The archive fills as the live feed updates.</div>';
