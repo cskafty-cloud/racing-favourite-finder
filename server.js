@@ -922,7 +922,7 @@ async function getGlobalRaces() {
     const raw=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,venue:r.venue||r.track||m.track||m.name})));
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
-      const category=/greyhound|dog/.test(code)?"greyhound":/harness|trots|pacing/.test(code)?"harness":"horse";
+      const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
       const runners=(r.runners||[]).map(x=>{
         const price=Number(x.win_odds??x.fixed_win??x.win_price??x.odds),updated=x.updated_at||r.updated_at||payload.server_time||null;
         return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||"Runner",
