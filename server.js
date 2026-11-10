@@ -335,7 +335,7 @@ async function fetchKrokRacing(date, raceType) {
       const id = String(race.race_id || race.id || [date,normalizeName(venue),code,number].join("-"));
       const key = id+"|"+category;
       if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category==="greyhound"?"greyhound":"harness",
-        venue,track:venue,race_number:number,start_time:start||null,country:/^[A-Z]{2}$/i.test(String(bookRow.jurisdiction||""))?String(bookRow.jurisdiction).toUpperCase():null,
+        venue,track:venue,race_number:number,start_time:start||null,country:"Australia",
         status:race.status||race.market_status||race.event_status||(race.in_play||race.inplay||race.is_live?"in_play":"scheduled"),
         in_play:!!(race.in_play||race.inplay||race.is_live||/in[ _-]?play|live|running/i.test(String(race.status||race.market_status||race.event_status||""))),
         closed:/closed|final|result|abandon/i.test(String(race.status||race.market_status||race.event_status||"")),
@@ -536,8 +536,8 @@ app.get("/api/races", async (_req, res) => {
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
     res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?(feed.meta?.tier||"Krok Odds tier not reported"):"RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
-      note:"Thoroughbred, harness and greyhound races supplied by the connected provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
+      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?(feed.meta?.tier||"Krok Odds tier not reported"):"RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
+      note:"Australian thoroughbred, greyhound and harness race cards supplied by Krok Odds. This list shows all races returned by the connected feed, including races waiting for bookmaker prices. Coverage is limited by the provider feed and free-tier request cap; it cannot guarantee every meeting or race in Australia."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
