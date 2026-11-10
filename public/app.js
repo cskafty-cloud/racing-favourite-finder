@@ -67,9 +67,10 @@ function marketFavourite(race) {
   return fav;
 }
 function categoryOf(r) {
-  const c = String(r.category || r.code || r.race_type || "").toLowerCase();
-  if (c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
-  return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
+  const c = String(r.race_type || r.raceType || r.race_code || r.code || r.category || r.sport || r.type || "").toLowerCase().trim().replace(/[ _-]+/g,"");
+  if (c === "h" || c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
+  if (c === "g" || c.includes("grey") || c.includes("dog")) return "greyhound";
+  return "horse";
 }
 function filteredRaces() {
   let rows = state.races.filter(r => state.filter === "all" || categoryOf(r) === state.filter);
@@ -82,6 +83,7 @@ function filteredRaces() {
 }
 function raceCard(r, live=false) {
   const fav = marketFavourite(r);
+  const bet365Fav = bookmakerFavourite(r,"bet365");
   const bookFavourites = allBookmakerFavourites(r);
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
@@ -110,7 +112,7 @@ function raceCard(r, live=false) {
     <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${bookFavourites.length?bookFavourites.map(allBookFavouritePanel).join(""):'<div class="book-fav-missing">No current bookmaker win prices returned for this race.</div>'}</div>
+    <div class="bookmaker-favourites">${favouritePanel("Bet365 favourite",bet365Fav)}${bookFavourites.length?bookFavourites.map(allBookFavouritePanel).join(""):'<div class="book-fav-missing">No current bookmaker win prices returned for this race. Bet365 is shown only when the connected free feed supplies its quote.</div>'}</div>
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
 }
