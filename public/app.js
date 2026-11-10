@@ -214,7 +214,7 @@ function renderSports(){
  $("sportsEvents").innerHTML=state.sportEvents.length?state.sportEvents.map(e=>{const f=sportFavourite(e),t=e.commence_time||"",home=e.home_team||"",away=e.away_team||"";return '<article class="sport-event"><b>'+esc(away)+' @ '+esc(home)+'</b><small>'+esc(fmtDate(t))+' '+esc(fmtTime(t))+'</small><div class="sport-favourite">★ FAVOURITE: <b>'+(f?esc(f.name):"Waiting for odds")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div></article>';}).join(""):'<div class="empty">Choose a sport above to load upcoming fixtures.</div>';
 }
 async function loadSports(){try{const r=await fetch("/api/sports"),d=await r.json();if(!r.ok)throw Error(d.error||"Sports feed unavailable");state.sports=d.sports||[];$("sportsNotice").textContent=d.note||"Pre-match only; no in-play sports feed.";renderSports();}catch(e){$("sportsNotice").textContent=e.message;}}
-async function loadSportOdds(key){state.selectedSport=key;try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");state.sportEvents=d.events||[];renderSports();}catch(e){$("sportsEvents").textContent=e.message;}}
+async function loadSportOdds(key){state.selectedSport=key;try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;state.sportEvents=d.events||[];renderSports();}catch(e){$("sportsEvents").textContent=e.message;}}
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
   const harness = state.races.filter(r=>categoryOf(r)==="harness").length;
@@ -324,5 +324,6 @@ loadHistory();
 loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
 setInterval(loadRaces,5000);
+setInterval(()=>{if(state.selectedSport)loadSportOdds(state.selectedSport);},5000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
