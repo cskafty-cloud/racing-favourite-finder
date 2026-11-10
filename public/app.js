@@ -64,6 +64,8 @@ function filteredRaces() {
 }
 function raceCard(r, live=false) {
   const fav = marketFavourite(r);
+  const sportsbetFav = bookmakerFavourite(r,"sportsbet");
+  const bet365Fav = bookmakerFavourite(r,"bet365");
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
@@ -72,17 +74,30 @@ function raceCard(r, live=false) {
   const date = fmtDate(r.start_time);
   const time = fmtTime(r.start_time);
   const price = fav ? Number(fav.consensus).toFixed(2) : "—";
+  const bet365 = fav?.bet365 ? ` · Bet365 <b>$${Number(fav.bet365).toFixed(2)}</b>` : " · Bet365 quote unavailable";
   const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
+  const runnerOdds = (r.runners || []).map(runner => {
+    const quotes = runnerPrices(runner).map(q => ({
+      name: q.bookmaker || q.bookmaker_name || q.name || q.site || q.key || "Bookmaker",
+      price: Number(q.win_price ?? q.win ?? q.price), url: q.source_link || q.source_url || null
+    })).filter(q => Number.isFinite(q.price) && q.price > 1)
+      .sort((a,b)=>a.price-b.price);
+    if (!quotes.length) return "";
+    return `<div class="odds-runner"><span class="odds-runner-name">${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner")}</span><div class="bookmaker-prices">${quotes.map(q=>`<span class="bookmaker-quote"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong>${q.url && /^https?:\/\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open book ↗</a>` : ""}</span>`).join("")}</div></div>`;
+  }).filter(Boolean).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
     <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":type==="harness"?"🏇 HARNESS RACING":"🐕 GREYHOUND RACING"}</div>
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds · no selection made</div>`}</div>
-    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">INDICATIVE MARKET PRICE · READ ONLY</div></div>
+    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${fav ? bet365 : "No quote"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? (mins===0?"STARTING NOW":`IN ${mins} MIN`) : esc(marketState)}</div>
+    <div class="bookmaker-favourites">${favouritePanel("SPORTSBET FAVOURITE",sportsbetFav)}${favouritePanel("BET365 FAVOURITE",bet365Fav)}</div>
+    <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>${runnerOdds ? "All available runners and sites" : "No bookmaker quotes available"}</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
 }
+
 function possibleRaceGaps(rows) {
   const groups = new Map();
   for (const r of rows) {
