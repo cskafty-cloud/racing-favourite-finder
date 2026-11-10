@@ -204,3 +204,16 @@ body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
 .main-tabs{display:flex!important}
 .sports-panel{display:none!important}
 body.sports-mode .sports-panel{display:block!important}
+
+/* Free provider-hosted live racing widgets: displayed in-place, never scraped or cached. */
+.public-racing-sources{display:block!important}
+.racing-widgets-panel{display:block;margin:22px 0;padding:18px;border:1px solid var(--line);border-radius:14px;background:#141c26}
+.racing-widgets-panel h2{font:600 24px "Space Grotesk";margin:0}
+.racing-widget-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.racing-widget-card{min-width:0;padding:12px;border:1px solid #304252;border-radius:10px;background:#101821;overflow:hidden}
+.racing-widget-card h3{font:600 15px "Space Grotesk";margin:0 0 10px}
+.racing-widget-card iframe{display:block;width:100%;border:0;border-radius:7px;background:#101821}
+.widget-credit{font:12px/1.4 system-ui,sans-serif;margin:6px 0 0;color:#a9b6c2}
+.widget-credit a{color:#a9dfba;text-decoration:underline}
+body.sports-mode .public-racing-sources,body.sports-mode .racing-widgets-panel{display:none!important}
+@media(max-width:900px){.racing-widget-grid{grid-template-columns:1fr}.racing-widget-card iframe{height:420px}}
