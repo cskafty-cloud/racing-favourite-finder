@@ -152,8 +152,14 @@
         document.body.classList.add("site-entered");
         screen.classList.add("entry-screen-exit");
         var menu=document.getElementById("dashboardStartMenu");
-        if(menu){menu.classList.add("menu-visible");menu.scrollIntoView({behavior:"smooth",block:"start"});}
-        window.setTimeout(function(){screen.remove();},550);
+        if(menu)menu.remove();
+        window.setTimeout(function(){
+          screen.remove();
+          var load=document.getElementById("loadAllSportsBtn");
+          if(load&&!load.disabled)load.click();
+          var dashboard=document.querySelector(".shell");
+          if(dashboard)dashboard.scrollIntoView({behavior:"smooth",block:"start"});
+        },550);
       });
       document.addEventListener("click",function(event){
         var choice=event.target.closest("[data-start-action]");if(!choice)return;
