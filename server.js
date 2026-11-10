@@ -1372,16 +1372,16 @@ app.post("/api/history/sync", async (_req,res) => {
     const history = await readHistory();
     const pending = history.picks.filter(p => p.status === "pending");
     let settled = 0, unmatched = 0, checked = 0;
-    for (let i=0; i<pending.length; i+=50) {
-      const batch = pending.slice(i,i+50);
-      const ids = batch.map(p=>p.raceId).filter(id=>id && !String(id).startsWith("betfair-"));
-      if (!ids.length) { unmatched += batch.length; continue; }
+    if (pending.length) {
+      // Use the recent official Australian results window so public-preview race IDs
+      // can still be matched safely by venue, code, race number and local date.
       const results = rowsFrom(await provider("/v1/racing/results", {
-        race_id:ids.join(","), country:"AU", status:"final", limit:200
+        hours_back:168, country:"AU", status:"final", limit:200
       }));
-      checked += results.length;
+      checked = results.length;
+      const matched = new Set();
       for (const result of results) {
-        const pick = findMatchingPick(batch,result);
+        const pick = findMatchingPick(pending,result);
         if (!pick) continue;
         const winner = winnerFromResult(result);
         if (!winner || !winner.name) continue;
@@ -1389,10 +1389,10 @@ app.post("/api/history/sync", async (_req,res) => {
         pick.winnerName = winner.name;
         pick.favouriteWon = isSameRunner(pick,winner);
         pick.resultedAt = result.resulted_at || new Date().toISOString();
+        matched.add(pick);
         settled++;
       }
-      const matched = new Set(results.map(r=>findMatchingPick(batch,r)).filter(Boolean));
-      unmatched += batch.filter(p=>!matched.has(p)).length;
+      unmatched = pending.filter(p=>!matched.has(p)).length;
     }
     if (settled) await saveHistory(history);
     res.set("Cache-Control","no-store");
