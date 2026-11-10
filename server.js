@@ -955,9 +955,24 @@ function parseSportsbetRacePage(html,url){
   for(let k=0;k<starts.length;k++){
    const st=starts[k],en=starts[k+1]??Math.min(lines.length,st+35),h=lines[st],rm=h.match(/^(\\d+)\\.\\s+(.+?)\\s+\\((\\d+)\\)$/);if(!rm)continue;
    const block=lines.slice(st+1,en);if(block.some(x=>/^Scratched\\b/i.test(x)))continue;
-   const speed=block.findIndex(x=>/Early Speed:/i.test(x));if(speed<0)continue;
-   const nums=[];for(const line of block.slice(speed+1)){const vals=(line.match(/\\d+(?:\\.\\d{1,2})?/g)||[]).map(Number).filter(n=>n>1&&n<1000);if(vals.length)nums.push(vals);if(nums.length>=2)break;}
-   const price=nums.length>1?nums[1][0]:null;if(!Number.isFinite(price)||price<=1)continue;
+   // Sportsbet's current public race card places the fixed win/placed prices
+   // after the trainer row (not after an "Early Speed" label). Read the
+   // numeric-only odds cells and select the win price immediately before the
+   // final place-price cell. This handles fluctuating-price columns as well.
+   const trainer=block.findIndex(x=>/^T:/i.test(x));
+   const speed=block.findIndex(x=>/Early Speed:/i.test(x));
+   const oddsStart=trainer>=0?trainer+1:(speed>=0?speed+1:0);
+   const oddsValues=[];
+   for(const line of block.slice(oddsStart)){
+    if(/^(?:Fav|EW|Scratched|\$?\d+(?:\\.\\d{1,2})?\\s*(?:Fav|EW))$/i.test(line)) {
+      const match=line.match(/\\d+\\.\\d{1,2}/);if(match)oddsValues.push(Number(match[0]));continue;
+    }
+    if(!/^\\s*\\$?\\d+(?:\\.\\d{1,2})?(?:\\s+\\$?\\d+(?:\\.\\d{1,2})?)*\\s*$/.test(line))continue;
+    const vals=(line.match(/\\d+\\.\\d{1,2}/g)||[]).map(Number).filter(n=>n>1&&n<1000);
+    oddsValues.push(...vals);
+   }
+   const price=oddsValues.length>=2?oddsValues[oddsValues.length-2]:(oddsValues[0]||null);
+   if(!Number.isFinite(price)||price<=1)continue;
    runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,last_update:new Date().toISOString(),age_seconds:0,stale:false,public_demo:true,source_url:url,event_url:url}]});
   }
  }
