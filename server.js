@@ -340,7 +340,7 @@ function isSameRunner(pick, winner) {
 const ODDS_API_TOKEN = process.env.ODDS_DATA_API_TOKEN || "";
 async function oddsApi(pathname, params={}) {
   if (!ODDS_API_TOKEN) throw new Error("ODDS_DATA_API_TOKEN is not active in Railway.");
-  const url = new URL((process.env.ODDS_API_BASE || "https://api.b365api.com") + pathname);
+  const url = new URL((process.env.ODDS_API_BASE || "https://api.odds-data-api.com") + pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   url.searchParams.set("token",ODDS_API_TOKEN);
   let response;
@@ -381,6 +381,69 @@ function parseBet365Live(rows) {
     league:ev.CT||null,score:ev.SS||null,minute:ev.TM||null,second:ev.TS||null,
     status:"IN PLAY",updatedAt:ev.TU||null,home:home.NA||null,away:away.NA||null,
     favourite,markets,bookmaker:"bet365"};
+}
+
+
+const ODDS_DATA_SPORTS = [
+ [1,"Soccer"],[2,"Horse Racing"],[3,"Cricket"],[4,"Greyhounds"],[8,"Rugby Union"],[9,"Boxing"],
+ [12,"American Football"],[13,"Tennis"],[14,"Snooker"],[15,"Darts"],[16,"Baseball"],[17,"Ice Hockey"],
+ [18,"Basketball"],[19,"Rugby League"],[36,"Australian Rules"],[66,"Bowls"],[75,"Gaelic Sports"],
+ [78,"Handball"],[83,"Futsal"],[90,"Floorball"],[91,"Volleyball"],[92,"Table Tennis"],[94,"Badminton"],
+ [95,"Beach Volleyball"],[107,"Squash"],[110,"Water Polo"],[151,"E-sports"],[162,"MMA/UFC"]
+].map(([id,title])=>({id,title,key:"oddsdata_"+id,provider:"Odds Data API / Bet365"}));
+const oddsDataSportCache = new Map();
+function oddsDataEvent(raw,sport) {
+ const status=String(raw.time_status??"0");
+ const live=status==="1"||status==="7"||status==="10";
+ const epoch=Number(raw.time);
+ const start=Number.isFinite(epoch)&&epoch>0?new Date(epoch*1000).toISOString():null;
+ return {id:String(raw.id||raw.bet365_id||""),sport_id:String(sport.id),sport_name:sport.title,
+  league:raw.league?.name||"",home_team:raw.home?.name||raw.home_team||"Team TBA",
+  away_team:raw.away?.name||raw.away_team||"Team TBA",commence_time:start,
+  in_play:live,status:live?"LIVE":(status==="2"?"TIME TBA":"UPCOMING"),
+  score:raw.ss||null,timer:raw.timer||null,scores:raw.scores||null,
+  bookmakers:[],_source:"Odds Data API / Bet365"};
+}
+function oddsDataMarketOutcomes(row,event) {
+ const outcomes=[];
+ const pairs=[["home_od",event.home_team],["draw_od","Draw"],["away_od",event.away_team],
+  ["over_od","Over"],["under_od","Under"],["yes_od","Yes"],["no_od","No"]];
+ for(const [field,name] of pairs){const p=Number(row?.[field]);if(Number.isFinite(p)&&p>1)outcomes.push({name,price:p});}
+ return outcomes;
+}
+async function loadOddsDataSport(sport) {
+ const prior=oddsDataSportCache.get(sport.key);
+ if(prior&&Date.now()-prior.at<8*60*1000)return prior;
+ const [upcomingResult,inplayResult]=await Promise.allSettled([
+  oddsApi("/v3/events/upcoming",{sport_id:sport.id,page:1,skip_esports:1}),
+  oddsApi("/v3/events/inplay",{sport_id:sport.id})
+ ]);
+ const errors=[];
+ const upcoming=upcomingResult.status==="fulfilled"?(upcomingResult.value.data.results||[]):[];
+ const inplay=inplayResult.status==="fulfilled"?(inplayResult.value.data.results||[]):[];
+ if(upcomingResult.status==="rejected")errors.push("Upcoming: "+upcomingResult.reason.message);
+ if(inplayResult.status==="rejected")errors.push("Live: "+inplayResult.reason.message);
+ const byId=new Map();
+ for(const item of [...inplay,...upcoming]){const event=oddsDataEvent(item,sport);if(event.id)byId.set(event.id,event);}
+ const events=[...byId.values()].sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
+ if(!events.length&&errors.length)throw new Error(errors.join(" · "));
+ const priced=events.slice(0,6);
+ const summaries=await Promise.allSettled(priced.map(e=>oddsApi("/v2/event/odds/summary",{event_id:e.id})));
+ summaries.forEach((result,index)=>{
+  if(result.status!=="fulfilled"){errors.push("Odds "+priced[index].id+": "+result.reason.message);return;}
+  const e=priced[index],root=result.value.data.results||{},bet365=root.Bet365||root.bet365||{};
+  const snapshots=bet365.odds?.end||bet365.odds?.kickoff||bet365.odds?.start||{};
+  const markets=[];
+  for(const [marketKey,marketRow] of Object.entries(snapshots)){
+   const outcomes=oddsDataMarketOutcomes(marketRow,e);
+   if(outcomes.length)markets.push({key:/_1$/.test(marketKey)?"h2h":marketKey,name:marketKey,outcomes});
+  }
+  if(markets.length)e.bookmakers=[{key:"bet365",name:"Bet365",last_update:new Date().toISOString(),markets}];
+ });
+ const result={at:Date.now(),rows:events,errors,provider:"Odds Data API / Bet365"};
+ oddsDataSportCache.set(sport.key,result);
+ console.info("ODDS_DATA_SPORT",JSON.stringify({sport:sport.title,id:sport.id,events:events.length,live:events.filter(x=>x.in_play).length,priced:events.filter(x=>x.bookmakers.length).length,errors:errors.length}));
+ return result;
 }
 
 app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:"delayed-read-only", storage:DATA_DIR}));
@@ -705,6 +768,15 @@ async function getGlobalRaces() {
       failures.push({feed:"Krok Odds",message:error.message});
     }
   }
+
+  // Last-resort public preview only; this is not a complete bookmaker board.
+  try {
+    const demo=await demoRacingFeed();
+    if(demo.length) return {races:demo,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),
+      oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),horizonHours:24,
+      feedErrors:failures,feedSource:"PuntersEdge public demo · limited preview",scope:"Australia",
+      note:"Limited public preview feed. It may omit races, runners and bookmaker quotes; it is not a complete live odds feed. Full coverage requires a licensed API plan with display rights."};
+  } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
   throw new Error("No Australian racing feed API key is configured in Railway.");
 }
@@ -899,6 +971,11 @@ app.get("/api/live-sports",async(_req,res)=>{
 let sportsCatalogueCache = { at:0, rows:[], meta:null };
 const sportsOddsCache = new Map();
 app.get("/api/sports", async (_req,res) => {
+  if(ODDS_API_TOKEN) {
+    return res.json({sports:ODDS_DATA_SPORTS.map(s=>({key:s.key,title:s.title,name:s.title,category:"Sports",event_count:0,provider:s.provider,active:true})),
+      fetchedAt:new Date().toISOString(),provider:"Odds Data API / Bet365",refreshSeconds:60,liveInPlayAvailable:true,
+      note:"28 sports are loaded from the connected Bet365 data API. Upcoming fixtures and live scores are separate; bookmaker prices are shown where the provider returns them. Prices are Bet365-only, not a multi-bookmaker consensus."});
+  }
   try {
     if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 300000) {
       const result = await krokRequest("/odds-feed/sports");
@@ -975,6 +1052,17 @@ function mergeRapidOdds(baseEvents,rapidGames){
  return events;
 }
 app.get("/api/sports/:sportKey", async (req,res) => {
+  const oddsSport=ODDS_DATA_SPORTS.find(x=>x.key===String(req.params.sportKey||"").toLowerCase());
+  if(oddsSport) {
+    try {
+      const data=await loadOddsDataSport(oddsSport);
+      res.set("Cache-Control","no-store");
+      return res.json({sport:{key:oddsSport.key,title:oddsSport.title},events:data.rows,
+        fetchedAt:new Date(data.at).toISOString(),provider:data.provider,providerErrors:data.errors,
+        refreshSeconds:60,liveInPlayAvailable:true,
+        note:"Fixtures and live scores from the Bet365 data feed. Bet365 odds are attached to up to six events per sport per refresh; no missing prices are estimated."});
+    } catch(err) { return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365"}); }
+  }
   const key=String(req.params.sportKey||"").toLowerCase();
   if(!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
   try {
