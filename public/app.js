@@ -195,6 +195,24 @@ async function loadHistory() {
     }).join("") : '<div class="empty">No saved picks yet. Keep the live dashboard running to record upcoming favourites.</div>';
   } catch (e) { $("historyRows").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+async function loadMarketHistory() {
+  try {
+    const res = await fetch("/api/market-history");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Market history unavailable");
+    $("marketRaces").textContent = data.racesTracked ?? 0;
+    $("marketSnapshots").textContent = data.total ?? 0;
+    $("marketCaptured").textContent = data.capturedAt ? new Date(data.capturedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "Waiting";
+    const rows = (data.snapshots || []).slice(0,15);
+    $("marketHistoryRows").innerHTML = rows.length ? rows.map(x => {
+      const fav = x.favourite;
+      const when = new Date(x.capturedAt).toLocaleString("en-AU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Australia/Brisbane"});
+      const price = fav ? "$"+Number(fav.price).toFixed(2)+" · "+esc(fav.priceSource) : "Waiting for odds";
+      const runners = (x.runners || []).length;
+      return `<div class="history-row"><div><b>${esc(x.venue)} ${x.raceNumber ? "R"+esc(x.raceNumber) : ""}</b><div class="muted">${x.category==="horse"?"Horse":"Greyhound"} · ${esc(when)}</div></div><div>${fav ? esc(fav.name) : "No favourite yet"}<div class="muted">${price}</div></div><div>${x.quoteCount} bookmaker quotes<div class="muted">${runners} runners recorded</div></div><div><span class="pending">${x.status==="priced"?"SNAPSHOT":"WAITING"}</span></div></div>`;
+    }).join("") : '<div class="empty">No market changes captured yet. The archive fills as the live feed updates.</div>';
+  } catch (e) { $("marketHistoryRows").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
 async function syncHistory() {
   const btn = $("syncHistoryBtn"); btn.disabled = true; btn.textContent = "Updating…";
   try {
@@ -211,6 +229,8 @@ function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",
 tick(); setInterval(tick,1000);
 loadRaces();
 loadHistory();
+loadMarketHistory();
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
 setInterval(loadRaces,5000);
+setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
