@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell, dialog } = require("electron");
+const path = require("node:path");
 
 const APP_URL = "https://racing-favourite-finder-production.up.railway.app";
 let win;
@@ -10,6 +11,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 680,
     title: "Racing Favourite Finder",
+    icon: path.join(__dirname, "icon.ico"),
     backgroundColor: "#080d18",
     autoHideMenuBar: true,
     webPreferences: {
