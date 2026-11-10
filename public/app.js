@@ -77,7 +77,7 @@ function raceCard(r, live=false) {
   const bet365 = fav?.bet365 ? ` · Bet365 <b>$${Number(fav.bet365).toFixed(2)}</b>` : " · Bet365 quote unavailable";
   const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
   const runnerOdds = (r.runners || []).map(runner => {
-    const quotes = runnerPrices(runner).map(q => ({
+    const quotes = runnerPrices(runner).filter(q => { const k=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""); return ["sportsbet","sportsbetau","sportsbetcomau","bet365","bet365au","bet365comau"].includes(k); }).map(q => ({
       name: q.bookmaker || q.bookmaker_name || q.name || q.site || q.key || "Bookmaker",
       price: Number(q.win_price ?? q.win ?? q.price), url: q.source_link || q.source_url || null
     })).filter(q => Number.isFinite(q.price) && q.price > 1)
@@ -329,25 +329,18 @@ function setMainView(view){
  if(state.sportsMode)loadSports();
 }
 function render() {
-  const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
-  const harness = state.races.filter(r=>categoryOf(r)==="harness").length;
-  $("raceCount").textContent = state.races.length;
-  $("horseCount").textContent = horses;
-  $("dogCount").textContent = state.races.filter(r=>categoryOf(r)==="greyhound").length;
-  $("harnessCount").textContent = harness;
-  const rows = filteredRaces();
-  renderCoverage(rows);
-  renderLiveNow(rows);
-  renderFullCoverage(rows);
-  const now = Date.now(), cutoff = now + 30*60*1000;
-  const live = rows.filter(r => {
-    const t = new Date(r.start_time).getTime();
-    return Number.isFinite(t) && t >= now && t <= cutoff;
-  });
-  const later = rows.filter(r => !live.includes(r));
-  $("nextRaceCount").textContent = live.length;
-  $("nextRaceList").innerHTML = live.length ? live.map(r=>raceCard(r,true)).join("") : '<div class="empty compact-empty">No horse or greyhound races scheduled to start in the next 30 minutes. This section refreshes automatically.</div>';
-  $("raceList").innerHTML = later.length ? later.map(r=>raceCard(r,false)).join("") : (rows.length ? '<div class="empty">All matching races are shown in the next 30 minutes section above.</div>' : `<div class="empty">${state.races.length ? "No races match your search." : "No races returned. Refresh or connect your racing data API key."}</div>`);
+   const rows = filteredRaces();
+   const now = Date.now();
+   const upcoming = rows.filter(r => {
+     const t = new Date(r.start_time).getTime();
+     return isExplicitlyLive(r) || (Number.isFinite(t) && t >= now);
+   });
+   $("raceCount").textContent = upcoming.length;
+   $("horseCount").textContent = upcoming.filter(r=>categoryOf(r)==="horse").length;
+   $("dogCount").textContent = upcoming.filter(r=>categoryOf(r)==="greyhound").length;
+   $("harnessCount").textContent = upcoming.filter(r=>categoryOf(r)==="harness").length;
+   $("raceList").innerHTML = upcoming.length ? upcoming.map(r=>raceCard(r,isExplicitlyLive(r))).join("") :
+     '<div class="empty">No upcoming races were returned by the connected bookmaker data feed. Check again shortly.</div>';
 }
 function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 async function loadRaces() {
