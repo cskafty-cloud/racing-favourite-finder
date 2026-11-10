@@ -520,7 +520,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?(feed.meta?.tier||"Krok Odds tier not reported"):"RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
-      note:"Australian and New Zealand thoroughbred, harness and greyhound races. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
+      note:"Thoroughbred, harness and greyhound races supplied by the connected provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
