@@ -72,3 +72,25 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid 
 
 .bet-link{display:inline-block;margin-left:5px;color:#e9c47b;font-size:9px;text-decoration:none;border-bottom:1px solid #8d7549}
 .bet-link:hover{color:#fff0c7}
+
+.live-now-panel{border-color:#3c775b}
+.full-coverage-panel{margin:24px 0;padding:20px;border:1px solid #385064;background:linear-gradient(145deg,#172330,#111923);border-radius:14px}
+.full-coverage-panel h2{font:600 21px "Space Grotesk";margin:0}
+.bookmaker-universe{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0}
+.bookmaker-universe-title{width:100%;font-size:9px;letter-spacing:1.3px;color:#8ea2b2;font-weight:700;margin-bottom:4px}
+.bookmaker-chip{border:1px solid #385064;background:#101a23;color:#c4d2dc;border-radius:20px;padding:5px 9px;font-size:10px}
+.full-coverage-list{display:grid;gap:8px;margin-top:14px}
+.full-race-row{border:1px solid #304252;background:#101a23;border-radius:9px;overflow:hidden}
+.full-race-row summary{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:15px;padding:13px 14px;cursor:pointer;list-style:none}
+.full-race-row summary::-webkit-details-marker{display:none}
+.full-race-row summary span:first-child{display:flex;flex-direction:column;gap:5px}
+.full-race-row summary b{font:600 13px "Space Grotesk";color:#e6eef4}
+.full-race-row summary small{font-size:10px;color:#8497a7;text-transform:capitalize}
+.full-race-row summary strong{font-size:10px;color:#e8c477}
+.detail-chevron{color:#8295a5}
+.full-race-runners{padding:0 14px 12px}
+.full-runner{display:grid;grid-template-columns:minmax(130px,180px) 1fr;gap:10px;padding:10px 0;border-top:1px solid #293946}
+.full-runner-name{font-size:11px;font-weight:700;color:#dbe6ed;padding-top:5px}
+.bookmaker-quote small{font-size:9px;color:#8495a3}
+.stale-quote{opacity:.62;border-style:dashed}
+@media(max-width:700px){.full-coverage-panel{padding:14px}.full-race-row summary{grid-template-columns:1fr auto}.detail-chevron{display:none}.full-runner{grid-template-columns:1fr;gap:5px}}
