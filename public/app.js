@@ -56,8 +56,8 @@ function raceBookmakerPanel(bookmaker, favourite) {
     : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & next-to-jump · horses, greyhounds and harness ↗</a>';
   const runner=favourite ? (favourite.number!=null?favourite.number+". ":"")+favourite.name : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">Public preview · quote age not supplied</div>'
-    : '<div class="book-fav-missing">No verified current '+esc(bookmaker)+' price available. Favourite not confirmed.</div>';
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?'Public preview · quote age not supplied':'Quote age '+Math.round(Number(favourite.age))+'s')+'</div>'
+    : '<div class="book-fav-missing">No current '+esc(bookmaker)+' price returned by the public feed. Favourite not confirmed.</div>';
   return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
