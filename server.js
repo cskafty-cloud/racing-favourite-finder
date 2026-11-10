@@ -5,6 +5,14 @@ const fs = require("fs/promises");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// This application is permanently display-only: it may read odds/results but must never place bets.
+const AUTO_BETTING_ENABLED = false;
+app.use((req, res, next) => {
+  if (!AUTO_BETTING_ENABLED && req.path.startsWith("/api/") && ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+    return res.status(403).json({ ok:false, error:"Bet placement and account actions are disabled. This is a read-only odds display." });
+  }
+  next();
+});
 const API_KEY = process.env.PUNTERSEDGE_API_KEY || "";
 const BETFAIR_APP_KEY = process.env.BETFAIR_APP_KEY || "";
 const BETFAIR_SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
@@ -625,7 +633,7 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:"delayed-read-only", storage:DATA_DIR}));
+app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:"delayed-read-only", storage:DATA_DIR}));
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
