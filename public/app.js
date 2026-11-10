@@ -609,7 +609,7 @@ window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();return;}
   dashboardFeedsStarted=true;
   loadRaces();
-  loadSports().then(()=>{loadLiveSports();loadAllSports();});
+  loadSports().then(loadLiveSports);
   loadHistory();
   loadMarketHistory();
 };
