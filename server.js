@@ -6,6 +6,111 @@ const fs = require("fs/promises");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.PUNTERSEDGE_API_KEY || "";
+const BETFAIR_APP_KEY = process.env.BETFAIR_APP_KEY || "";
+const BETFAIR_SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
+const BETFAIR_RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1";
+let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
+let betfairRacingRefresh = null;
+async function betfairRpc(method, params) {
+  if (!BETFAIR_APP_KEY || !BETFAIR_SESSION_TOKEN) throw new Error("Betfair delayed app key or session token is missing in Railway.");
+  const response = await fetch(BETFAIR_RPC_URL, {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "X-Application":BETFAIR_APP_KEY,
+      "X-Authentication":BETFAIR_SESSION_TOKEN,
+      "Accept":"application/json"
+    },
+    body:JSON.stringify([{jsonrpc:"2.0",method:"SportsAPING/v1.0/"+method,params,id:1}]),
+    signal:AbortSignal.timeout(20000)
+  });
+  const body = await response.text();
+  let payload;
+  try { payload=JSON.parse(body); } catch { throw new Error("Betfair returned invalid JSON (HTTP "+response.status+")."); }
+  const item=Array.isArray(payload)?payload[0]:payload;
+  if (!response.ok || item?.error || item?.result == null) {
+    const detail=item?.error?.data?. APINGException?.errorCode || item?.error?.data?.errorCode ||
+      item?.error?.message || "request failed";
+    throw new Error("Betfair "+(response.status||"API")+": "+detail);
+  }
+  return item.result;
+}
+function betfairCategory(eventTypeName, eventName, marketName) {
+  const value=[eventTypeName,eventName,marketName].join(" ").toLowerCase();
+  if (/greyhound/.test(value)) return "greyhound";
+  if (/harness|trotting|pacing/.test(value)) return "harness";
+  return "horse";
+}
+async function loadBetfairRaces() {
+  const eventTypes=await betfairRpc("listEventTypes",{filter:{marketCountries:["AU"]}});
+  const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:x.eventType.name}));
+  const racingTypes=types.filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
+  if (!racingTypes.length) throw new Error("Betfair returned no Australian horse, greyhound or harness event types.");
+  const from=new Date(), to=new Date(Date.now()+24*60*60*1000);
+  const catalogueGroups=await Promise.all(racingTypes.map(async type=>{
+    const markets=await betfairRpc("listMarketCatalogue",{
+      filter:{eventTypeIds:[type.id],marketCountries:["AU"],marketTypeCodes:["WIN"],
+        marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
+      marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
+      sort:"FIRST_TO_START",maxResults:"200"
+    });
+    return {type,markets:markets||[]};
+  }));
+  const all=catalogueGroups.flatMap(group=>group.markets.map(m=>({...m,_eventTypeName:group.type.name})));
+  const books=[];
+  for(let i=0;i<all.length;i+=40) {
+    const batch=all.slice(i,i+40);
+    const result=await betfairRpc("listMarketBook",{
+      marketIds:batch.map(m=>m.marketId),
+      priceProjection:{priceData:["EX_BEST_OFFERS"],virtualise:true}
+    });
+    books.push(...(result||[]));
+  }
+  const bookById=new Map(books.map(b=>[b.marketId,b]));
+  const capturedAt=new Date().toISOString();
+  const races=all.map(m=>{
+    const book=bookById.get(m.marketId);
+    if(!book) return null;
+    const eventName=m.event?.name||"Unknown track";
+    const marketName=m.marketName||"Win";
+    const category=betfairCategory(m._eventTypeName,eventName,marketName);
+    const raceNumberMatch=(eventName+" "+marketName).match(/(?:race|r)\s*(\d+)/i);
+    const runners=(m.runners||[]).map(r=>{
+      const priced=(book.runners||[]).find(x=>x.selectionId===r.selectionId);
+      const back=priced?.ex?.availableToBack||[];
+      const lay=priced?.ex?.availableToLay||[];
+      const quote=back[0]?.price||lay[0]?.price||null;
+      if(!quote||!Number.isFinite(Number(quote))||Number(quote)<=1||priced?.status==="REMOVED") return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[]};
+      return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[{
+        bookmaker:"Betfair Exchange (delayed)",name:"Betfair Exchange (delayed)",key:"betfair",
+        win_price:Number(quote),age_seconds:0,last_update:capturedAt,source:"Betfair Exchange"
+      }]};
+    });
+    return {race_id:"betfair-"+m.marketId,id:"betfair-"+m.marketId,category,
+      code:category==="horse"?"thoroughbred":category,venue:eventName,track:eventName,
+      race_number:raceNumberMatch?Number(raceNumberMatch[1]):null,
+      start_time:m.marketStartTime,country:"Australia",status:book.status==="OPEN"?(book.inplay?"in_play":"scheduled"):String(book.status||"scheduled").toLowerCase(),
+      in_play:!!book.inplay,closed:book.status!=="OPEN",captured_at:capturedAt,
+      market_id:m.marketId,market_name:marketName,runners};
+  }).filter(r=>r&&!r.closed&&r.runners.length);
+  return {races,eventTypes:types};
+}
+async function getBetfairRaces() {
+  if(!betfairRacingCache.at||Date.now()-betfairRacingCache.at>=30000) {
+    if(!betfairRacingRefresh) betfairRacingRefresh=(async()=>{
+      const result=await loadBetfairRaces();
+      betfairRacingCache={at:Date.now(),races:result.races,eventTypes:result.eventTypes,error:null};
+      console.info("BETFAIR_RACING_FEED",JSON.stringify({at:new Date(betfairRacingCache.at).toISOString(),
+        races:result.races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,result.races.filter(r=>r.category===k).length])),
+        pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length}));
+    })().catch(error=>{betfairRacingCache.error=error.message;throw error;}).finally(()=>{betfairRacingRefresh=null;});
+    await betfairRacingRefresh;
+  }
+  return {races:betfairRacingCache.races,scheduleFetchedAt:new Date(betfairRacingCache.at).toISOString(),
+    oddsFetchedAt:new Date(betfairRacingCache.at).toISOString(),horizonHours:24,
+    feedErrors:[],feedSource:"Betfair Exchange Delayed API",scope:"Australia",
+    note:"Australian racing markets and exchange prices from Betfair's delayed application key. Prices are delayed and may not represent current bookmaker odds. Display-only integration; no betting actions are enabled."};
+}
 const PROVIDER_PLAN = String(process.env.PUNTERSEDGE_PLAN || "free").toLowerCase();
 const SCHEDULE_HORIZON_HOURS = PROVIDER_PLAN === "standard" ? 48 : (["plus","premium","pro","enterprise"].includes(PROVIDER_PLAN) ? 168 : 24);
 const BASE = "https://api.puntersedge.online";
@@ -277,7 +382,7 @@ function parseBet365Live(rows) {
     favourite,markets,bookmaker:"bet365"};
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, storage:DATA_DIR}));
+app.get("/api/health", (_req,res) => res.json({ok:true, liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:"delayed-read-only", storage:DATA_DIR}));
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
@@ -539,6 +644,18 @@ async function getGlobalRaces() {
     } catch(error) {
       console.error("PUNTERS_EDGE_PRIMARY_FAILED",error.message);
       failures.push({feed:"PuntersEdge",message:error.message});
+    }
+  }
+  // Betfair delayed Exchange data is the no-cost read-only fallback.
+  // It is queried only for catalogue and market prices; no order endpoints are used.
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN) {
+    try {
+      const fallback=await getBetfairRaces();
+      if (fallback.races?.length) return {...fallback,feedErrors:failures};
+      failures.push({feed:"Betfair",message:"No Australian racing markets returned in the next 24 hours."});
+    } catch(error) {
+      console.error("BETFAIR_RACING_FAILED",error.message);
+      failures.push({feed:"Betfair",message:error.message});
     }
   }
   // Try RapidOdds before Krok: Krok free-tier requests are limited and may be
