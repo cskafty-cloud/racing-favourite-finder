@@ -66,7 +66,7 @@ function favouritePanel(label, favourite) {
 }
 const BOOKMAKER_URLS={bet365:"https://www.bet365.com.au/",sportsbet:"https://www.sportsbet.com.au/horse-racing/australia-nz/betting"};
 function bookmakerKeyForLink(q){const raw=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,"");if(raw.includes("sportsbet"))return "sportsbet";if(raw.includes("bet365"))return "bet365";return "";}
-function allBookmakerFavourites(race) { const books=new Map(); for(const runner of race.runners||[]) for(const q of fixedRunnerPrices(runner)) { const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q); if(!key||!Number.isFinite(price)||price<=1||q.stale===true||age==null||age>=180) continue; const current=books.get(key); if(!current||price<current.price) books.set(key,{key,bookmaker:key==="bet365"?"Bet365":"Sportsbet",name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??null,price,age,url:q.event_url||q.market_url||q.url||BOOKMAKER_URLS[key]}); } return [...books.values()].sort((a,b)=>a.bookmaker.localeCompare(b.bookmaker)); }
+function allBookmakerFavourites(race) { const books=new Map(); for(const runner of race.runners||[]) for(const q of fixedRunnerPrices(runner)) { const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q); if(!key||!Number.isFinite(price)||price<=1||q.stale===true||(age==null?q.public_demo!==true:age>=180)) continue; const current=books.get(key); if(!current||price<current.price) books.set(key,{key,bookmaker:key==="bet365"?"Bet365":"Sportsbet",name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??null,price,age,url:q.event_url||q.market_url||q.url||BOOKMAKER_URLS[key]}); } return [...books.values()].sort((a,b)=>a.bookmaker.localeCompare(b.bookmaker)); }
 function allBookFavouritePanel(f) {
   const runner=(f.number!=null?f.number+". ":"")+f.name;
   const age=f.age==null?"Quote age unavailable":"Quote age "+Math.round(f.age)+"s";
@@ -79,7 +79,7 @@ function marketFavourite(race) {
     const seen=new Set();
     const quotes=fixedRunnerPrices(r).filter(q=>{
       const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=quoteAgeSeconds(q);
-      if(!key||seen.has(key)||q.stale===true||age==null||age>=180)return false;
+      if(!key||seen.has(key)||q.stale===true||(age==null?q.public_demo!==true:age>=180))return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
@@ -399,7 +399,7 @@ async function loadSports(){
 }
 async function loadSportOdds(key){
  state.selectedSport=key;$("sportsNotice").textContent="Loading "+key+" fixtures…";
- try{const r=await fetch("/api/sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
+ try{const r=await fetch("/api/public-sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
  state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);const resultSportId=Number(String(key).replace("oddsdata_",""));if(Number.isFinite(resultSportId)&&resultSportId>0)loadSportResults(resultSportId);
  $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"");
  renderSports();
@@ -411,7 +411,7 @@ async function loadAllSports(){
   let failed=0;
   for(const s of state.sports){
    state.selectedSport=s.key;$("sportsNotice").textContent="Loading upcoming "+(s.title||s.key)+"…";
-   const r=await fetch("/api/sports/"+encodeURIComponent(s.key)+"?mode=all"),d=await r.json();
+   const r=await fetch("/api/public-sports/"+encodeURIComponent(s.key)+"?mode=all"),d=await r.json();
    if(!r.ok){failed++;continue;}
    const events=(d.events||[]).filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
    state.sportsByKey[s.key]=events;recordSportTrends(s.key,events);
@@ -495,7 +495,7 @@ async function loadRaces() {
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
     state.feedMode = data.mode || "live";
-    $("feedStatus").textContent = state.feedMode === "public-widgets" ? "FREE PUBLIC FEEDS" : (data.feedErrors && data.feedErrors.length ? "LIVE FEED · PARTIAL" : "LIVE FEED");
+    $("feedStatus").textContent = state.feedMode === "public-widgets" ? "PUBLIC WIDGETS" : state.feedMode === "demo" ? "FREE PUBLIC DEMO · NO KEY" : (data.feedErrors && data.feedErrors.length ? "LIVE FEED · PARTIAL" : "LIVE FEED");
     $("updatedAt").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     const books = (data.providerBookmakers || []).length;
     $("feedFreshness").textContent = state.feedMode === "public-widgets"
