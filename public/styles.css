@@ -262,3 +262,8 @@ body.entry-pending> :not(#entryScreen){visibility:hidden}
 .start-menu-foot{margin:15px 0 0;color:#8294a2;font-size:11px}
 @keyframes startMenuIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:620px){.start-menu-grid{grid-template-columns:1fr}.start-menu-card{min-height:150px}}
+
+
+/* The entry button opens the complete dashboard, with racing and sports visible together. */
+body.site-entered .sports-panel{display:block!important}
+body.site-entered .dashboard-start-menu{display:none!important}
