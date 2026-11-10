@@ -1025,7 +1025,7 @@ async function getGlobalRaces() {
   const failures=[];
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
   // through to the already-configured alternate providers rather than stopping.
-  if (API_KEY && process.env.PUBLIC_ONLY_FEEDS !== "true") {
+  if (API_KEY) { // use the already-configured key for actual Sportsbet-labelled racing quotes
     try {
       const primary=await loadPuntersEdgeRaces();
       const quotaBlocked=(primary.feedErrors||[]).some(x=>/\\b402\\b|quota|credit limit/i.test(typeof x==="string"?x:(x.message||"")));
@@ -1194,8 +1194,11 @@ function dedupeRaces(input) {
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
-    let sportsbetRaces=[];try{sportsbetRaces=await loadSportsbetPublicRaces();}catch(e){console.warn("SPORTSBET_PUBLIC_FEED_FAILED",e.message);}
-    const races = dedupeRaces([...(feed.races||[]),...sportsbetRaces]);
+    // Use Sportsbet-labelled prices supplied by the connected racing feed. Direct
+    // Sportsbet HTML is blocked from Railway (HTTP 403), so do not pretend that
+    // scraping succeeded or substitute another bookmaker.
+    const races = dedupeRaces(feed.races||[]);
+    const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
     const history = await readHistory();
