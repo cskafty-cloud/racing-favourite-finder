@@ -44,33 +44,38 @@ function bookmakerMatches(value,wantedKey) {
 }
 function bookmakerFavourite(race, wantedKey) {
   const candidates = (race.runners || []).map(runner => {
-    const quote = fixedRunnerPrices(runner).find(q => {
-      const age=quoteAgeSeconds(q);
-      return [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => bookmakerMatches(value,wantedKey))
-        && q.stale!==true && (age==null?q.public_demo===true:age<180);
-    });
-    if (!quote) return null;
+    const quote = fixedRunnerPrices(runner).filter(q =>
+      [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => bookmakerMatches(value,wantedKey))
+    ).sort((a,b)=>{
+      const aa=quoteAgeSeconds(a),bb=quoteAgeSeconds(b);
+      const af=a.stale===true||(aa!=null&&aa>=180),bf=b.stale===true||(bb!=null&&bb>=180);
+      return Number(af)-Number(bf);
+    })[0];
+    if (!quote || quote.stale===true && quote.public_demo!==true) return null;
+    const age=quoteAgeSeconds(quote),stale=quote.stale===true||(age!=null&&age>=180);
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
-      number:runner.number ?? runner.runner_number ?? null,
+      number:runner.number ?? runner.runner_number ?? runner.box ?? null,
       price:Number(quote.win_price ?? quote.win ?? quote.price),
-      age:quoteAgeSeconds(quote), stale:false, verified:quote.public_demo!==true,
-      url:quote.event_url||quote.market_url||quote.url||BOOKMAKER_URLS[wantedKey]};
-  }).filter(x => x && Number.isFinite(x.price) && x.price > 1);
-  return candidates.sort((a,b)=>a.price-b.price)[0] || null;
+      age,stale,suspended:quote.suspended===true||runner.suspended===true,
+      scratched:runner.scratched===true,verified:quote.public_demo!==true,
+      url:quote.event_url||quote.market_url||quote.url||quote.source_url||BOOKMAKER_URLS[wantedKey]};
+  }).filter(x => x && !x.scratched && Number.isFinite(x.price) && x.price > 1);
+  return candidates.sort((a,b)=>Number(a.stale)-Number(b.stale)||Number(a.suspended)-Number(b.suspended)||a.price-b.price)[0] || null;
 }
 function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
   const key=bookmaker.toLowerCase();
   const url=favourite&&favourite.url?favourite.url:BOOKMAKER_URLS[key];
   const extra=key==="bet365"
-    ? '<a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Bet365 live racing information ↗</a>'
-    : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & next-to-jump · horses, greyhounds and harness ↗</a>';
+    ? '<a class="bookmaker-market-link" href="https://moviodds.com/racing?code=all&near=200" target="_blank" rel="noopener noreferrer">View public Bet365 racing board ↗</a><a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Open Bet365 racing ↗</a>'
+    : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Open Sportsbet racing ↗</a>';
   const runner=favourite?(favourite.number!=null?favourite.number+". ":"")+favourite.name:"";
+  const freshness=favourite
+    ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · quote age unavailable":" · "+Math.round(Number(favourite.age))+"s old")
+    : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?"Public preview · quote age unavailable":"Quote age "+Math.round(Number(favourite.age))+"s")+' · '+(favourite.verified===false?"public preview":"latest returned quote")+'</div>'
-    : overallFavourite
-      ? '<div class="book-fav-missing">No separate '+esc(bookmaker)+' quote was returned. Overall market favourite: <b>'+esc((overallFavourite.number!=null?overallFavourite.number+". ":"")+overallFavourite.name)+'</b> at <b>$'+Number(overallFavourite.consensus).toFixed(2)+'</b> · not a '+esc(bookmaker)+' price.</div>'
-      : '<div class="book-fav-missing">No current verified '+esc(bookmaker)+' quote returned for this race.</div>';
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+(key==="bet365"?"Bet365 public racing feed via MoviOdds":"Sportsbet-labelled public quote")+(favourite.age==null?"":" · "+Math.round(Number(favourite.age))+"s old")+freshness+'</div>'
+    : '<div class="book-fav-missing">No Bet365-labelled public runner price was returned for this race. The overall market price is deliberately not substituted.</div>';
+  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' public-feed favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
 function favouritePanel(label, favourite) {
@@ -499,7 +504,7 @@ function render() {
       const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
-    const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bookmaker favourites · verified quotes only</b>'+raceBookmakerPanel("Bet365",bookmakerFavourite(r,"bet365"),fav)+raceBookmakerPanel("Sportsbet",bookmakerFavourite(r,"sportsbet"),fav)+'</div>';
+    const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bet365 & Sportsbet public prices · source-labelled</b>'+raceBookmakerPanel("Bet365",bookmakerFavourite(r,"bet365"),fav)+raceBookmakerPanel("Sportsbet",bookmakerFavourite(r,"sportsbet"),fav)+'</div>';
     const typeLabel=type==="horse"?"🐎 HORSE RACING":type==="greyhound"?"🐕 GREYHOUND RACING":"🏇 HARNESS RACING";
     return '<article class="race-list-card '+(isLive?"is-live":"")+'"><div class="race-list-card-head"><div><div class="race-type">'+typeLabel+'</div><h3>'+esc(venue)+' · R'+esc(number)+'</h3><div class="race-meta">'+esc(date)+' · '+esc(time)+'</div>'+(publicDetails?'<div class="race-meta race-public-details">'+publicDetails+'</div>':"")+'</div><span class="race-status">'+(isLive?"LIVE NOW":"UPCOMING")+'</span></div>'+favPanel+bookFavHtml+'<div class="race-runners-ranked"><div class="race-runners-heading">ALL RUNNERS · RANKED LOWEST FIXED ODDS FIRST</div>'+(runnerRows||'<div class="empty compact-empty">No runners supplied by the feed yet.</div>')+'</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are separate from bookmaker fixed odds and are not used to rank this list.</span></div></article>';
   };
