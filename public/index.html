@@ -156,7 +156,14 @@
         window.setTimeout(function(){
           screen.remove();
           var load=document.getElementById("loadAllSportsBtn");
-          if(load&&!load.disabled)load.click();
+          if(load){
+            var attempts=0;
+            var timer=window.setInterval(function(){
+              attempts++;
+              if(!load.disabled&&load.offsetParent!==null){window.clearInterval(timer);load.click();}
+              if(attempts>=40)window.clearInterval(timer);
+            },300);
+          }
           var dashboard=document.querySelector(".shell");
           if(dashboard)dashboard.scrollIntoView({behavior:"smooth",block:"start"});
         },550);
