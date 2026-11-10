@@ -5,10 +5,43 @@
   "description": "Australian horse and greyhound racing market-favourite dashboard",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "desktop:dev": "electron .",
+    "desktop:dist": "electron-builder --win portable"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2"
+  },
+  "main": "desktop/main.js",
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "au.com.racingfavouritefinder.desktop",
+    "productName": "Racing Favourite Finder",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Racing-Favourite-Finder-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Racing-Favourite-Finder-${version}-Windows.${ext}"
+    }
   }
 }
