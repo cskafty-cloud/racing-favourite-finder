@@ -889,10 +889,10 @@ async function loadPuntersEdgeRaces() {
 }
 function isAustralianRace(race) {
   const country=String(race.country||race.country_code||race.region||"").trim().toLowerCase();
-  if (/^(au|aus|australia|australian)(\\b|$)/.test(country)) return true;
-  if (country && !/^(unknown|n\\/?a|not supplied|unspecified)$/.test(country)) return false;
+  if (/^(au|aus|australia|australian)(\b|$)/.test(country)) return true;
+  if (country && !/^(unknown|n\/?a|not supplied|country not supplied|unspecified)$/.test(country)) return false;
   const venue=String(race.venue||race.track||race.course||"").toLowerCase();
-  return !/\\b(zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\\b/.test(venue);
+  return !/\b(zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\b/.test(venue);
 }
 
 async function getGlobalRaces() {
