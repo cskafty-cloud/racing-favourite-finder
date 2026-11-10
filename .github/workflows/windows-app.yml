@@ -1,0 +1,38 @@
+name: Build public Windows desktop app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'package.json'
+      - '.github/workflows/windows-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Build portable Windows executable
+        run: npm run desktop:dist
+      - name: Publish public GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: desktop-v1.0.${{ github.run_number }}
+          name: Racing Favourite Finder for Windows v1.0.${{ github.run_number }}
+          artifacts: release/*.exe
+          artifactErrorsFailBuild: true
+          generateReleaseNotes: true
+          makeLatest: true
