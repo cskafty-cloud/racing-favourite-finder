@@ -149,39 +149,17 @@
       var screen=document.getElementById("entryScreen");
       if(!button||!screen)return;
       button.addEventListener("click",function(){
+        /* Reveal the already-loading combined dashboard; do not leave entry-pending hiding the page. */
+        document.body.classList.remove("entry-pending");
         document.body.classList.add("site-entered");
         screen.classList.add("entry-screen-exit");
         var menu=document.getElementById("dashboardStartMenu");
         if(menu)menu.remove();
         window.setTimeout(function(){
           screen.remove();
-          var load=document.getElementById("loadAllSportsBtn");
-          if(load){
-            var attempts=0;
-            var timer=window.setInterval(function(){
-              attempts++;
-              if(!load.disabled&&load.offsetParent!==null){window.clearInterval(timer);load.click();}
-              if(attempts>=40)window.clearInterval(timer);
-            },300);
-          }
           var dashboard=document.querySelector(".shell");
           if(dashboard)dashboard.scrollIntoView({behavior:"smooth",block:"start"});
         },550);
-      });
-      document.addEventListener("click",function(event){
-        var choice=event.target.closest("[data-start-action]");if(!choice)return;
-        var action=choice.getAttribute("data-start-action");
-        var menu=document.getElementById("dashboardStartMenu");if(menu)menu.classList.remove("menu-visible");
-        var view=action==="sports"?"sports":"racing";
-        var tab=document.querySelector('.main-tab[data-view="'+view+'"]');if(tab)tab.click();
-        if(action==="races"){
-          var all=document.querySelector('.tab[data-filter="all"]');if(all)all.click();
-          var list=document.getElementById("raceList");if(list)list.scrollIntoView({behavior:"smooth",block:"start"});
-        }else{
-          var load=document.getElementById("loadAllSportsBtn");
-          if(load){var attempts=0;var timer=setInterval(function(){attempts++;if(!load.disabled&&load.offsetParent!==null){clearInterval(timer);load.click();}if(attempts>=20)clearInterval(timer);},300);}
-          var sports=document.querySelector(".live-sports-panel");if(sports)sports.scrollIntoView({behavior:"smooth",block:"start"});
-        }
       });
     })();
   </script>
