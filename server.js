@@ -722,43 +722,8 @@ async function getGlobalRaces() {
       failures.push({feed:"Betfair AU service",message:error.message});
     }
   }
-  // Betfair delayed Exchange data is the no-cost read-only fallback.
-  // It is queried only for catalogue and market prices; no order endpoints are used.
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN) {
-    try {
-      const fallback=await getBetfairRaces();
-      if (fallback.races?.length) return {...fallback,feedErrors:failures};
-      failures.push({feed:"Betfair",message:"No Australian racing markets returned in the next 24 hours."});
-    } catch(error) {
-      console.error("BETFAIR_RACING_FAILED",error.message);
-      failures.push({feed:"Betfair",message:error.message});
-    }
-  }
-  // Try RapidOdds before Krok: Krok free-tier requests are limited and may be
-  // exhausted, while RapidOdds can provide the meeting schedule and race markets.
-  if (RAPID_ODDS_KEY) {
-    try {
-      if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
-        if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
-          const result=await loadRapidRacing();
-          rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
-        })().finally(()=>{rapidRacingRefresh=null;});
-        await rapidRacingRefresh;
-      }
-      if (rapidRacingCache.races.length) return {
-        races:rapidRacingCache.races,
-        scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
-        oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),
-        horizonHours:24,
-        feedErrors:[...failures,...rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message}))],
-        feedSource:"RapidOddsAPI Australian Racing",scope:"Australia"
-      };
-      failures.push({feed:"RapidOddsAPI",message:"No Australian races returned for the requested meetings."},
-        ...rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})));
-    } catch(error) {
-      failures.push({feed:"RapidOddsAPI",message:error.message});
-    }
-  }
+  // No exhausted or plan-restricted odds providers are polled. Public racing
+  // information is linked in the dashboard; this demo is labelled as a preview.
   // Last-resort public preview only; this is not a complete bookmaker board.
   try {
     const demo=await demoRacingFeed();
