@@ -340,18 +340,33 @@ function isSameRunner(pick, winner) {
 
 
 const ODDS_API_TOKEN = process.env.ODDS_DATA_API_TOKEN || "";
+let oddsDataApiRetryAt=0;
+let oddsDataApiLastError="";
 async function oddsApi(pathname, params={}) {
   if (!ODDS_API_TOKEN) throw new Error("ODDS_DATA_API_TOKEN is not active in Railway.");
+  if(Date.now()<oddsDataApiRetryAt) throw new Error("Sports odds provider paused after its previous access/limit response: "+oddsDataApiLastError);
   const url = new URL((process.env.ODDS_API_BASE || "https://api.odds-data-api.com") + pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   url.searchParams.set("token",ODDS_API_TOKEN);
   let response;
   try { response = await fetch(url,{signal:AbortSignal.timeout(12000)}); }
-  catch (err) { throw new Error("Odds Data API connection failed: "+(err.cause?.code||err.name||err.message)); }
+  catch (err) {
+    oddsDataApiLastError="network connection unavailable";
+    oddsDataApiRetryAt=Date.now()+60*1000;
+    throw new Error("Odds Data API connection failed: "+(err.cause?.code||err.name||err.message));
+  }
   const body = await response.text();
   let data;
   try { data = JSON.parse(body); } catch { throw new Error("Odds Data API returned invalid JSON (HTTP "+response.status+")."); }
-  if (!response.ok || data.success !== 1) throw new Error("Odds Data API: "+(data.error||response.status)+(data.error_detail?" · "+data.error_detail:""));
+  if (!response.ok || data.success !== 1) {
+    const message="Odds Data API: "+(data.error||response.status)+(data.error_detail?" · "+data.error_detail:"");
+    if(response.status===401||response.status===403||response.status===429||/rate limit|quota|credit limit|unauthori[sz]ed|forbidden/i.test(message)) {
+      oddsDataApiLastError=message;
+      oddsDataApiRetryAt=Date.now()+6*60*60*1000;
+    }
+    throw new Error(message);
+  }
+  oddsDataApiRetryAt=0;oddsDataApiLastError="";
   return {data, headers: {remaining:response.headers.get("X-RateLimit-Remaining"), reset:response.headers.get("X-RateLimit-Reset")}};
 }
 function fractionalDecimal(value) {
@@ -1046,7 +1061,7 @@ app.get("/api/sports/:sportKey", async (req,res) => {
       return res.json({sport:{key:oddsSport.key,title:oddsSport.title},events:data.rows,
         fetchedAt:new Date(data.at).toISOString(),provider:data.provider,providerErrors:data.errors,
         refreshSeconds:60,liveInPlayAvailable:true,
-        note:"Fixtures and live scores from the Bet365 data feed. Bet365 odds are attached to up to six events per sport per refresh; no missing prices are estimated."});
+        note:"Fixtures and live scores from the Bet365 data feed. Bookmaker prices are checked for up to "+(bulk?2:6)+" events per sport per refresh; no missing prices are estimated."});
     } catch(err) { return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365"}); }
   }
   return res.status(404).json({error:"Sport is not in the connected Bet365 sports catalogue."});
