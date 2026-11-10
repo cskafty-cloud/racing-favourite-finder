@@ -320,15 +320,17 @@ async function fetchKrokRacing(date) {
     const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
     const code = String(bookRow.race_type || "").trim().toUpperCase();
+    const venueText = String(venue).toLowerCase();
     const category = code === "G" || /greyhound|dog/i.test(String(bookRow.race_type||"")) ? "greyhound"
-      : code === "H" || /harness|trotting|pacing/i.test(String(bookRow.race_type||"")) ? "harness" : "horse";
+      : code === "H" || /harness|trotting|pacing/i.test(String(bookRow.race_type||"")) ||
+        /gloucester park|menangle|sulky|addington|alexandra park|ballarat harness|kilmore harness|bendigo harness|albion park harness/.test(venueText) ? "harness" : "horse";
     for (const race of (bookRow.races || [])) {
       const number = race.race_number ?? race.race_no ?? race.number;
       const start = race.start_time || race.jump_time || race.startTime || race.commence_time || null;
       const id = String(race.race_id || race.id || [date,normalizeName(venue),code,number].join("-"));
       const key = id+"|"+category;
       if (!grouped.has(key)) grouped.set(key,{race_id:id,id,category,code:category==="horse"?"thoroughbred":category==="greyhound"?"greyhound":"harness",
-        venue,track:venue,race_number:number,start_time:start||null,country:bookRow.jurisdiction||"AU",
+        venue,track:venue,race_number:number,start_time:start||null,country:/^[A-Z]{2}$/i.test(String(bookRow.jurisdiction||""))?String(bookRow.jurisdiction).toUpperCase():null,
         status:race.status||"scheduled",closed:/closed|final|result|abandon/i.test(String(race.status||"")),
         abandoned:/abandon/i.test(String(race.status||"")),captured_at:bookRow.captured_at||null,runners:[]});
       const target=grouped.get(key);
