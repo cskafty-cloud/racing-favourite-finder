@@ -221,7 +221,7 @@ const PUBLIC_DEMO_SPORTS = {
 };
 function publicDemoItems(payload) {
   if(Array.isArray(payload)) return payload;
-  for(const key of ["items","events","results","data","matches"]) if(Array.isArray(payload?.[key])) return payload[key];
+  for(const key of ["items","events","results","data","matches","races","meetings"]) if(Array.isArray(payload?.[key])) return payload[key];
   return [];
 }
 const PUNTERS_EDGE_BOOK_SPORTS = {
@@ -1021,6 +1021,75 @@ async function loadSportsbetPublicRaces(){
  })().catch(e=>{sportsbetPublicCache.refresh=null;console.warn("SPORTSBET_PUBLIC_FEED_FAILED",e.message);return sportsbetPublicCache.races;});
  return sportsbetPublicCache.refresh;
 }
+
+let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
+function sportsbetDemoPrice(runner){
+ const fixed=runner.fixed_odds||runner.fixedOdds||runner.fixed||{};
+ const direct=runner.win_price??runner.fixed_win_price??runner.fixed_win??runner.win_odds??
+  runner.decimal_odds??runner.winPrice??fixed.win??fixed.win_price??fixed.returnWin??fixed.decimal??null;
+ if(direct!=null&&Number.isFinite(Number(direct))&&Number(direct)>1)return Number(direct);
+ const markets=Array.isArray(runner.markets)?runner.markets:[];
+ for(const market of markets){
+  if(!/win|winner/i.test(String(market.name||market.key||market.market_name||"")))continue;
+  const outcomes=market.outcomes||market.selections||[];
+  for(const outcome of outcomes){const price=Number(outcome.price??outcome.odds??outcome.decimal);if(price>1)return price;}
+ }
+ const prices=Array.isArray(runner.prices)?runner.prices:[];
+ for(const price of prices){
+  if(!/win|fixed/i.test(String(price.market||price.market_name||price.type||"win")))continue;
+  const n=Number(price.price??price.odds??price.decimal);if(n>1)return n;
+ }
+ return null;
+}
+function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
+ const venueRaw=item.venue||item.track_name||item.track||item.meeting_name||item.meeting||item.event_name||item.event||item.name||"Sportsbet meeting";
+ const venue=typeof venueRaw==="object"?(venueRaw.name||venueRaw.venue||"Sportsbet meeting"):String(venueRaw);
+ const title=String(item.race_name||item.name||item.event_name||"");
+ const raceNumber=Number(item.race_number??item.raceNo??item.race??item.number??(title.match(/\bR(?:ace)?\s*([0-9]+)\b/i)||[])[1]);
+ const start=item.start_time||item.commence_time||item.startTime||item.jump_time||item.race_start_time||item.startTimeUtc||null;
+ const rawRunners=item.runners||item.selections||item.participants||item.horses||item.dogs||[];
+ const runners=(Array.isArray(rawRunners)?rawRunners:[]).map(r=>{
+  const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
+  if(!name)return null;
+  const price=sportsbetDemoPrice(r);
+  const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
+  const bookmakers=price? [{key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
+   last_update:r.updated_at||r.last_update||item.updated_at||updatedAt||null,
+   age_seconds:r.age_seconds??null,stale:r.stale===true,public_demo:true,
+   source_url:sourceUrl,event_url:sourceUrl}]:[];
+  return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
+ }).filter(Boolean);
+ const id=String(item.id||item.race_id||item.event_id||["sportsbet",category,venue,raceNumber,start].join("-"));
+ return {id,race_id:id,category,code:category,venue,track:venue,race_number:Number.isFinite(raceNumber)&&raceNumber>0?raceNumber:null,
+  start_time:start,country:"Australia",status:item.status||"scheduled",in_play:item.in_play===true||item.inPlay===true,
+  runners,sportsbet_url:sourceUrl,sportsbet_public:true,updated_at:item.updated_at||updatedAt||null};
+}
+async function loadSportsbetPublicRaceDemos(){
+ if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<60000)return sportsbetRacingDemoCache.races;
+ const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"],["harness","harness-racing"]];
+ const results=await Promise.allSettled(specs.map(([category,sport])=>
+  publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport}).then(payload=>({category,sport,payload}))));
+ const races=[],errors=[];
+ for(let i=0;i<results.length;i++){
+  const result=results[i],category=specs[i][0],sport=specs[i][1];
+  if(result.status!=="fulfilled"){errors.push(sport+": "+result.reason.message);continue;}
+  const payload=result.value.payload,items=publicDemoItems(payload);
+  if(payload.has_data===false)errors.push(sport+": no public Sportsbet snapshot returned");
+  const sourceUrl=category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":
+   category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":
+   "https://www.sportsbet.com.au/racing-schedule/harness/today";
+  for(const item of items){
+   const race=normalizeSportsbetDemoRace(item,category,sourceUrl,payload.updated_at||payload.fetched_at||null);
+   if(race.race_number||race.runners.length)races.push(race);
+  }
+ }
+ sportsbetRacingDemoCache={at:Date.now(),races,errors};
+ console.info("SPORTSBET_PUBLIC_RACING_DEMO",JSON.stringify({raceItems:races.length,
+  pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.some(q=>q.key==="sportsbet"))).length,
+  runnerQuotes:races.reduce((n,r)=>n+r.runners.filter(x=>x.bookmakers.some(q=>q.key==="sportsbet")).length,0),errors}));
+ return races;
+}
+
 async function getGlobalRaces() {
   const failures=[];
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
@@ -1194,10 +1263,12 @@ function dedupeRaces(input) {
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
-    // Use Sportsbet-labelled prices supplied by the connected racing feed. Direct
-    // Sportsbet HTML is blocked from Railway (HTTP 403), so do not pretend that
-    // scraping succeeded or substitute another bookmaker.
-    const races = dedupeRaces(feed.races||[]);
+    // Sportsbet's own HTML blocks Railway (HTTP 403). Use the provider's public,
+    // no-key Sportsbet bookmaker snapshots for horse, greyhound and harness racing.
+    // They are deliberately merged with the broad public race board; only exact
+    // Sportsbet-labelled runner quotes are shown as Sportsbet prices.
+    let sportsbetDemoRaces=[];try{sportsbetDemoRaces=await loadSportsbetPublicRaceDemos();}catch(e){console.warn("SPORTSBET_PUBLIC_RACING_DEMO_FAILED",e.message);}
+    const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]);
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
@@ -1227,7 +1298,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:(feed.note||"Australian racing schedule and runner prices from the connected feed.")+" Sportsbet-labelled runner quotes returned: "+sportsbetQuotes+". Direct Sportsbet page scraping is blocked from this server; no other bookmaker prices are substituted."});
+      note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Sportsbet-labelled runner quotes returned: "+sportsbetQuotes+"; Sportsbet public demo races: "+sportsbetDemoRaces.length+". Public demo snapshots are limited samples, not a full bookmaker card."});
   } catch (err) {
     const raw=String(err.message||"");
     const safeWarnings=[];
