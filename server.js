@@ -939,6 +939,43 @@ function isAustralianRace(race) {
   return !/\b(zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\b/.test(venue);
 }
 
+
+let sportsbetPublicCache={at:0,races:[],refresh:null};
+function sportsbetDecodeHtml(value){return String(value||"").replace(/&nbsp;|&#160;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">");}
+function sportsbetHtmlLines(html){return sportsbetDecodeHtml(String(html||"").replace(/<[^>]*>/g,"\\n")).split(/\\r?\\n/).map(x=>x.replace(/\\s+/g," ").trim()).filter(Boolean);}
+async function sportsbetFetch(url){const r=await fetch(url,{headers:{Accept:"text/html,application/xhtml+xml","User-Agent":"Mozilla/5.0 (compatible; RacingFavouriteFinder/1.0)"},signal:AbortSignal.timeout(7000)});if(!r.ok)throw new Error("Sportsbet public page HTTP "+r.status);return r.text();}
+function parseSportsbetRacePage(html,url){
+ const lines=sportsbetHtmlLines(html),p=new URL(url).pathname.toLowerCase(),cat=p.includes("greyhound-racing")?"greyhound":p.includes("harness-racing")?"harness":"horse";
+ const m=p.match(/race-(\\d+)-(\\d+)/),raceNumber=m?Number(m[1]):null;
+ const title=sportsbetDecodeHtml((String(html).split("<title")[1]||"").split(">")[1]?.split("</title>")[0]||"");
+ const venue=title.replace(/\\s*(?:Race|R)\\s*\\d+.*$/i,"").replace(/\\s*\\|.*$/,"").trim()||p.split("/").filter(Boolean).slice(-2,-1)[0]?.replace(/-/g," ")||"Sportsbet meeting";
+ const header=lines.findIndex(x=>/^Runner$/i.test(x)),runners=[];
+ if(header>=0){
+  const starts=[];for(let i=header+1;i<lines.length;i++)if(/^\\d+\\.\\s+.+\\(\\d+\\)$/.test(lines[i]))starts.push(i);
+  for(let k=0;k<starts.length;k++){
+   const st=starts[k],en=starts[k+1]??Math.min(lines.length,st+35),h=lines[st],rm=h.match(/^(\\d+)\\.\\s+(.+?)\\s+\\((\\d+)\\)$/);if(!rm)continue;
+   const block=lines.slice(st+1,en);if(block.some(x=>/^Scratched\\b/i.test(x)))continue;
+   const speed=block.findIndex(x=>/Early Speed:/i.test(x));if(speed<0)continue;
+   const nums=[];for(const line of block.slice(speed+1)){const vals=(line.match(/\\d+(?:\\.\\d{1,2})?/g)||[]).map(Number).filter(n=>n>1&&n<1000);if(vals.length)nums.push(vals);if(nums.length>=2)break;}
+   const price=nums.length>1?nums[1][0]:null;if(!Number.isFinite(price)||price<=1)continue;
+   runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,last_update:new Date().toISOString(),age_seconds:0,stale:false,public_demo:true,source_url:url,event_url:url}]});
+  }
+ }
+ let startTime=null;for(const line of lines){const tm=line.match(/(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{1,2}):(\\d{2})/);if(tm){const dt=new Date(Date.parse(tm[2]+" "+tm[1]+" "+new Date().getFullYear()));dt.setHours(Number(tm[3]),Number(tm[4]),0,0);startTime=dt.toISOString();break;}}
+ const rid=m?m[2]:p.split("-").pop();return {id:"sportsbet-"+rid,race_id:"sportsbet-"+rid,category:cat,code:cat,venue,track:venue,race_number:raceNumber,start_time:startTime,country:"Australia",status:"scheduled",in_play:false,runners,sportsbet_url:url,sportsbet_public:true,updated_at:new Date().toISOString()};
+}
+async function loadSportsbetPublicRaces(){
+ if(sportsbetPublicCache.at&&Date.now()-sportsbetPublicCache.at<45000)return sportsbetPublicCache.races;
+ if(sportsbetPublicCache.refresh)return sportsbetPublicCache.refresh;
+ sportsbetPublicCache.refresh=(async()=>{
+  const html=await sportsbetFetch("https://www.sportsbet.com.au/next-races"),hrefs=[];
+  for(const a of html.matchAll(/href=["']([^"']+)["']/gi)){const raw=sportsbetDecodeHtml(a[1]);if(raw.includes("-racing/")&&/race-\\d+-\\d+/i.test(raw))hrefs.push(new URL(raw,"https://www.sportsbet.com.au").toString());}
+  const urls=[...new Set(hrefs)].slice(0,90),races=[];let cursor=0;
+  await Promise.all(Array.from({length:12},async()=>{while(cursor<urls.length){const url=urls[cursor++];try{const page=await sportsbetFetch(url),race=parseSportsbetRacePage(page,url);if(race.race_number)races.push(race);}catch(e){}}}));
+  sportsbetPublicCache={at:Date.now(),races,refresh:null};console.log("SPORTSBET_PUBLIC_RACING_REFRESH",JSON.stringify({racePages:urls.length,races:races.length,priced:races.filter(x=>x.runners.length).length}));return races;
+ })().catch(e=>{sportsbetPublicCache.refresh=null;console.warn("SPORTSBET_PUBLIC_FEED_FAILED",e.message);return sportsbetPublicCache.races;});
+ return sportsbetPublicCache.refresh;
+}
 async function getGlobalRaces() {
   const failures=[];
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
@@ -1112,7 +1149,8 @@ function dedupeRaces(input) {
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
-    const races = dedupeRaces(feed.races);
+    let sportsbetRaces=[];try{sportsbetRaces=await loadSportsbetPublicRaces();}catch(e){console.warn("SPORTSBET_PUBLIC_FEED_FAILED",e.message);}
+    const races = dedupeRaces([...(feed.races||[]),...sportsbetRaces]);
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
     const history = await readHistory();
@@ -1141,7 +1179,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:feed.note||"Racing cards appear only when a connected provider returns them. Official public fields/results are linked separately below; no bookmaker prices are inferred."});
+      note:(feed.note||"Race cards combine public market feeds with Sportsbet's public next-races card and runner prices where available.")+" Sportsbet public race pages loaded: "+sportsbetRaces.length+"."});
   } catch (err) {
     const raw=String(err.message||"");
     const safeWarnings=[];
