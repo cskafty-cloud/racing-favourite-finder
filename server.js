@@ -852,7 +852,7 @@ async function getGlobalRaces() {
   const failures=[];
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
   // through to the already-configured alternate providers rather than stopping.
-  if (API_KEY) {
+  if (API_KEY && process.env.PUBLIC_ONLY_FEEDS !== "true") {
     try {
       const primary=await loadPuntersEdgeRaces();
       if (primary.races?.length) return primary;
@@ -864,7 +864,7 @@ async function getGlobalRaces() {
   }
   // Krok Odds is a separately configured racing provider. It is queried only
   // after the primary feed fails and is cached for 60 seconds by getKrokRaces().
-  if (KROKODDS_API_KEY) {
+  if (KROKODDS_API_KEY && process.env.PUBLIC_ONLY_FEEDS !== "true") {
     try {
       const alternate=await getKrokRaces();
       if (alternate.races?.length) {
@@ -880,7 +880,7 @@ async function getGlobalRaces() {
   // Use the direct, read-only Betfair Exchange API integration before the
   // optional external proxy URL. This path was implemented but previously
   // never called by the production racing feed selector.
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()>=betfairRetryAt) {
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
       if (exchange.races?.length) return {...exchange,feedErrors:failures,
@@ -891,10 +891,10 @@ async function getGlobalRaces() {
       betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
       failures.push({feed:"Betfair Exchange",message:error.message});
     }
-  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()<betfairRetryAt) {
+  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairRetryAt) {
     failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
   }
-  if (BETFAIR_FEED_URL && Date.now()>=betfairFeedRetryAt) {
+  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
@@ -905,7 +905,7 @@ async function getGlobalRaces() {
       failures.push({feed:"Betfair feed adapter",message:error.message});
       betfairFeedRetryAt=Date.now()+6*60*60*1000;
     }
-  } else if (BETFAIR_FEED_URL && Date.now()<betfairFeedRetryAt) {
+  } else if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairFeedRetryAt) {
     failures.push({feed:"Betfair feed adapter",message:"Connection temporarily paused after the previous network failure."});
   }
   // Combine the public multi-bookmaker teaser with an independent Bet365-only racing board.
