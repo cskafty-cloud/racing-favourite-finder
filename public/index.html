@@ -28,6 +28,14 @@
   </header>
   <main class="shell">
     <section class="hero"><div><div class="eyebrow">AUSTRALIAN RACING · LIVE & UPCOMING</div><h1>Australian <em>Race List</em></h1><p class="sub">One simple live and upcoming list for thoroughbred horse, greyhound and harness races across Australia.</p></div><button id="refreshBtn" class="refresh-btn"><span>↻</span> Refresh now</button></section>
+    <section id="dashboardStartMenu" class="dashboard-start-menu" aria-label="Choose what to view">
+      <div class="start-menu-heading"><div class="eyebrow">RACING FAVOURITE FINDER</div><h2>Choose your feed</h2><p class="sub">Open all returned race cards or load upcoming and live fixtures across the sports catalogue.</p></div>
+      <div class="start-menu-grid">
+        <button type="button" class="start-menu-card" data-start-action="races"><span class="start-menu-icon">🏇</span><strong>ALL RACES</strong><span>Horse racing · Greyhounds · Harness</span><small>Live and upcoming race feed →</small></button>
+        <button type="button" class="start-menu-card" data-start-action="sports"><span class="start-menu-icon">🏆</span><strong>ALL SPORTS</strong><span>Live and upcoming sporting fixtures</span><small>Load the full available sports feed →</small></button>
+      </div>
+      <p class="start-menu-foot">Read-only market information. Missing prices are shown as unavailable, never estimated.</p>
+    </section>
     <nav class="main-tabs" role="tablist" aria-label="Dashboard sections"><button class="main-tab active" data-view="racing">🏇 Racing</button><button class="main-tab" data-view="sports">🏆 All Sports & Upcoming</button></nav>
     <section class="racing-widgets-panel" id="racingWidgets">
       <div class="coverage-heading"><div><div class="eyebrow">FREE PUBLIC BOOKMAKER FEEDS · NO API KEY</div><h2>Live racing odds & next to jump</h2><p class="sub">Free public racing snapshots and provider-hosted live widgets. Sportsbet and Bet365 quotes appear when the no-key public sources return them, with jump times and favourites. The Bet365 public board requests up to the next 100 races, with a smaller multi-bookmaker Sportsbet sample alongside it. Actual coverage depends on the feeds.</p></div></div>
@@ -143,7 +151,24 @@
       button.addEventListener("click",function(){
         document.body.classList.add("site-entered");
         screen.classList.add("entry-screen-exit");
+        var menu=document.getElementById("dashboardStartMenu");
+        if(menu){menu.classList.add("menu-visible");menu.scrollIntoView({behavior:"smooth",block:"start"});}
         window.setTimeout(function(){screen.remove();},550);
+      });
+      document.addEventListener("click",function(event){
+        var choice=event.target.closest("[data-start-action]");if(!choice)return;
+        var action=choice.getAttribute("data-start-action");
+        var menu=document.getElementById("dashboardStartMenu");if(menu)menu.classList.remove("menu-visible");
+        var view=action==="sports"?"sports":"racing";
+        var tab=document.querySelector('.main-tab[data-view="'+view+'"]');if(tab)tab.click();
+        if(action==="races"){
+          var all=document.querySelector('.tab[data-filter="all"]');if(all)all.click();
+          var list=document.getElementById("raceList");if(list)list.scrollIntoView({behavior:"smooth",block:"start"});
+        }else{
+          var load=document.getElementById("loadAllSportsBtn");
+          if(load){var attempts=0;var timer=setInterval(function(){attempts++;if(!load.disabled&&load.offsetParent!==null){clearInterval(timer);load.click();}if(attempts>=20)clearInterval(timer);},300);}
+          var sports=document.querySelector(".live-sports-panel");if(sports)sports.scrollIntoView({behavior:"smooth",block:"start"});
+        }
       });
     })();
   </script>
