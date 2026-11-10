@@ -1,4 +1,4 @@
-const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, feedMode:"live", sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false };
+const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, feedMode:"live", sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false, sportsbetOnly:false };
 const $ = id => document.getElementById(id);
 const fmtTime = value => {
   if (!value) return "Time TBA";
@@ -373,7 +373,7 @@ function sportRankings(event) {
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
  const raceRows=(state.races||[]).filter(r=>{const t=Date.parse(r.start_time||"");return !Number.isFinite(t)||t>=Date.now()||isExplicitlyLive(r);});
- const sportsbetPicks=[],bet365Picks=[],racePicks=[],sportPicks=[],pricedTips=[],sportsbetPriced=[];
+ const sportsbetPicks=[],bet365Picks=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],pricedTips=[],sportsbetPriced=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
   const sb=sportsbetDisplayFavourite(r);
@@ -391,6 +391,7 @@ function renderTopTips() {
   const f=ranks[0],books=f.books||0;
   const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:"MARKET FAVOURITE"};
   sportPicks.push(tip);pricedTips.push(tip);
+  const sbSport=sportFavourite(e,"sportsbet");if(sbSport)sportsbetSportPicks.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:sbSport.name,odds:sbSport.price,score:0,source:"Sportsbet-labelled public sports quote",time:e.commence_time,quotes:sbSport.books||1,signal:"SPORTSBET PUBLIC PRICE"});
  }
  const today=new Date().toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"});
  const todays=pricedTips.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
@@ -408,6 +409,7 @@ function renderTopTips() {
  +section("BET365 FAVOURITES · EVERY RACE","Separate Bet365-labelled favourite for every returned upcoming/live race. Only Bet365-labelled prices are shown.",bet365Picks,"No upcoming races were returned by the racing feed.")
  +section("TOP TIPS · ALL RACES + SPORTS","Top 20 priced market favourites across all returned horse, greyhound, harness and sports events. Selections are ranked by the number of quotes, price agreement and market separation.",topTips,"No priced favourites are available from the current public feeds.")
  +section("RACE FAVOURITES · EVERY RACE","Market favourite for each returned race, including races awaiting prices.",racePicks,"No upcoming races were returned by the racing feed.")
+ +section("SPORTSBET SPORTS FAVOURITES · ALL RETURNED SPORTS","Only Sportsbet-labelled public head-to-head prices are shown here; other bookmaker prices and market estimates are not substituted.",sportsbetSportPicks,"No Sportsbet-labelled public sports prices were returned for the loaded fixtures.")
  +section("SPORTS FAVOURITES · EVERY SPORT","Priced favourites from all loaded live and upcoming sports fixtures.",sportPicks,"No sports fixtures with usable public head-to-head prices are available.");
 }
 function recordSportTrends(key, events){
@@ -451,7 +453,7 @@ async function loadSportResults(sportId){
 function renderSports(){
  const catalogue=$("sportsCatalogue"),list=$("sportsEvents");if(!catalogue||!list)return;
  catalogue.innerHTML=(state.sports||[]).map(s=>'<button class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
- const events=(state.sportEvents||[]).slice().filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
+ const events=(state.sportEvents||[]).slice().filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).filter(e=>!state.sportsbetOnly||(e.bookmakers||[]).some(b=>bookmakerMatches(b.key||b.name,"sportsbet"))).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
  list.innerHTML=events.length?events.map(e=>{
   const ranks=sportRankings(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),f=ranks[0];
   const start=e.commence_time?new Date(e.commence_time).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",hour12:true}):"Start time TBA";
@@ -633,6 +635,8 @@ $("sort").addEventListener("change",e=>{state.sort=e.target.value;render();});
 $("refreshBtn").addEventListener("click",loadRaces);
 $("sportsCatalogue").addEventListener("click",e=>{const b=e.target.closest("[data-sport]");if(b)loadSportOdds(b.dataset.sport);});
 $("loadAllSportsBtn").addEventListener("click",loadAllSports);
+$("allSportsViewBtn").addEventListener("click",()=>{state.sportsbetOnly=false;$("allSportsViewBtn").classList.add("active");$("sportsbetSportsOnlyBtn").classList.remove("active");renderSports();});
+$("sportsbetSportsOnlyBtn").addEventListener("click",()=>{state.sportsbetOnly=true;$("sportsbetSportsOnlyBtn").classList.add("active");$("allSportsViewBtn").classList.remove("active");if(!state.allSportsLoaded)loadAllSports();else renderSports();});
 $("refreshLiveSportsBtn").addEventListener("click",loadLiveSports);
 document.querySelectorAll(".main-tab").forEach(b=>b.addEventListener("click",()=>setMainView(b.dataset.view)));
 async function loadHistory() {
