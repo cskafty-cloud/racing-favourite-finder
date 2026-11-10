@@ -276,74 +276,85 @@ const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
   return /Racing provider 402/.test(String(error)) ? 6 * 60 * 60 * 1000 : 60 * 1000;
 }
+// RapidOddsAPI is the single source of truth for Australian and NZ racing.
+// Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
+const RAPID_RACING_CODES = ["thoroughbred","harness","greyhound"];
+const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
+let rapidRacingCache = { at:0, races:[], errors:[] };
+let rapidRacingRefresh = null;
+async function fetchRapidRacing(pathname, params={}) {
+  if (!RAPID_ODDS_KEY) throw new Error("RAPIDODDSAPI_API_KEY is missing in Railway.");
+  const url = new URL(RAPID_ODDS_BASE + pathname);
+  url.searchParams.set("api_key", RAPID_ODDS_KEY);
+  for (const [key,value] of Object.entries(params)) {
+    if (Array.isArray(value)) value.forEach(v=>url.searchParams.append(key,v));
+    else if (value != null && value !== "") url.searchParams.set(key,String(value));
+  }
+  const response = await fetch(url,{signal:AbortSignal.timeout(20000)});
+  const body = await response.text();
+  let data;
+  try { data=JSON.parse(body); } catch { throw new Error("RapidOddsAPI returned invalid JSON (HTTP "+response.status+")."); }
+  if (!response.ok) throw new Error("RapidOddsAPI "+response.status+": "+(data.detail||data.error||"request failed"));
+  return data;
+}
+function normalizeRapidRace(race) {
+  const runners = new Map();
+  for (const book of race.bookmakers || []) {
+    for (const runner of book.runners || []) {
+      const number = runner.number ?? null;
+      const name = runner.name || "Runner";
+      const key = number == null ? normalizeName(name) : "n"+number;
+      if (!runners.has(key)) runners.set(key,{number,name,bookmakers:[]});
+      const target = runners.get(key);
+      const win = Number(runner.win), place = Number(runner.place);
+      if (!runner.scratched && Number.isFinite(win) && win > 1) {
+        target.bookmakers.push({bookmaker:book.bookmaker,name:book.bookmaker,win_price:win,place_price:Number.isFinite(place)&&place>1?place:null,
+          age_seconds:book.last_update?Math.max(0,Math.floor((Date.now()-Date.parse(book.last_update))/1000)):null,
+          last_update:book.last_update||null,url:book.url||null});
+      }
+    }
+  }
+  const code = race.code || "thoroughbred";
+  return {race_id:race.race_id, id:race.race_id, category:code==="greyhound"?"greyhound":code==="harness"?"harness":"horse",
+    code,venue:race.track,track:race.track,race_number:race.race_number,start_time:race.start_time,
+    country:race.country,closed:!!race.closed,abandoned:!!race.abandoned,
+    bookmakers:(race.bookmakers||[]).map(b=>({bookmaker:b.bookmaker,url:b.url||null,status:b.status,last_update:b.last_update})),
+    runners:[...runners.values()]};
+}
+async function loadRapidRacing() {
+  const errors=[];
+  const meetingsByCode=await Promise.all(RAPID_RACING_CODES.map(async code=>{
+    try {
+      const data=await fetchRapidRacing("/racing/meetings",{countries:"AU,NZ",code});
+      return {code,meetings:data.meetings||[]};
+    } catch(err) { errors.push(code+" meetings: "+err.message); return {code,meetings:[]}; }
+  }));
+  const meetingJobs=meetingsByCode.flatMap(({code,meetings})=>meetings.map(async meeting=>{
+    try {
+      const data=await fetchRapidRacing("/racing/races",{track:meeting.track,code,countries:meeting.country||"AU,NZ",
+        bookmakers:RAPID_RACING_BOOKMAKERS.join(",")});
+      return (data.races||[]).map(normalizeRapidRace);
+    } catch(err) { errors.push(meeting.track+" ("+code+"): "+err.message); return []; }
+  }));
+  const groups=await Promise.all(meetingJobs);
+  const races=groups.flat().filter(r=>r.start_time && !r.abandoned);
+  return {races,errors};
+}
 async function getGlobalRaces() {
-  const now = Date.now();
-  if (now - pricedCache.at >= 15000 || now - scheduleCache.at >= 60000) {
-    if (!refreshInFlight) refreshInFlight = (async () => {
-      const tasks = [];
-      if (now - scheduleCache.at >= 60000) tasks.push((async () => {
-        try {
-          const data = now < providerRetryAt.schedule ? { races: await demoRacingFeed() } : await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,harness,greyhound" });
-          scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
-          providerErrors.schedule = null;
-          console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
-        } catch (err) {
-          providerErrors.schedule = err.message;
-          providerRetryAt.schedule = Date.now() + providerRetryDelay(err.message);
-          try {
-            const rows = await demoRacingFeed();
-            scheduleCache = { at: Date.now(), rows, horizonHours: 0 };
-            providerErrors.schedule = null;
-            console.warn("FEED_FALLBACK schedule", JSON.stringify({source:"PuntersEdge public demo",races:rows.length,at:new Date(scheduleCache.at).toISOString(),primaryError:err.message}));
-          } catch (fallbackError) {
-            providerErrors.schedule = err.message + " | fallback: " + fallbackError.message;
-            console.error("FEED_CHECK schedule", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.schedule).toISOString(),error:providerErrors.schedule,at:new Date().toISOString()}));
-          }
-        }
-      })());
-      if (now - pricedCache.at >= 15000) tasks.push((async () => {
-        try {
-          const data = now < providerRetryAt.odds ? { races: await demoRacingFeed() } : await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,harness,greyhound" });
-          pricedCache = { at: Date.now(), rows: rowsFrom(data) };
-          providerErrors.odds = null;
-          try {
-            const recorded = await recordMarketSnapshots(pricedCache.rows, new Date(pricedCache.at).toISOString());
-            console.info("MARKET_HISTORY", JSON.stringify({capturedAt:new Date(pricedCache.at).toISOString(), added:recorded.added, retained:recorded.total}));
-          } catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
-          const sample = pricedCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).slice(0,4).map(x=>({name:x.name||x.runner_name||x.horse_name||x.greyhound_name,quotes:runnerQuotes(x).slice(0,4).map(q=>({bookmaker:q.bookmaker||q.name||q.key,price:q.win_price??q.win??q.price}))}))}));
-          console.info("FEED_CHECK odds", JSON.stringify({ ok:true, fetchedAt:new Date(pricedCache.at).toISOString(), races:pricedCache.rows.length, pricedRunners:pricedCache.rows.reduce((n,r)=>n+(r.runners||[]).filter(x=>runnerQuotes(x).length).length,0), sample }));
-        } catch (err) {
-          providerErrors.odds = err.message;
-          providerRetryAt.odds = Date.now() + providerRetryDelay(err.message);
-          try {
-            const rows = await demoRacingFeed();
-            pricedCache = { at: Date.now(), rows };
-            providerErrors.odds = null;
-            console.warn("FEED_FALLBACK odds", JSON.stringify({source:"PuntersEdge public demo",races:rows.length,at:new Date(pricedCache.at).toISOString(),primaryError:err.message}));
-            try { await recordMarketSnapshots(pricedCache.rows, new Date(pricedCache.at).toISOString()); }
-            catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
-          } catch (fallbackError) {
-            providerErrors.odds = err.message + " | fallback: " + fallbackError.message;
-            console.error("FEED_CHECK odds", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.odds).toISOString(),error:providerErrors.odds,at:new Date().toISOString()}));
-          }
-        }
-      })());
-      await Promise.all(tasks);
-    })().finally(() => { refreshInFlight = null; });
-    await refreshInFlight;
+  if (!RAPID_ODDS_KEY) throw new Error("Add RAPIDODDSAPI_API_KEY in Railway Variables to enable the RapidOddsAPI racing feed.");
+  if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=30000) {
+    if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
+      const result=await loadRapidRacing();
+      rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
+      console.info("RAPIDODDS_RACING_FEED",JSON.stringify({fetchedAt:new Date(rapidRacingCache.at).toISOString(),
+        races:result.races.length,pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
+        runners:result.races.reduce((n,r)=>n+r.runners.length,0),errors:result.errors.slice(0,8)}));
+    })().finally(()=>{rapidRacingRefresh=null;});
+    await rapidRacingRefresh;
   }
-  const map = new Map();
-  const keyFor = r => String(r.race_id || r.id || [r.country || "",r.category || "",normalizeName(venueOf(r)),raceNumberOf(r) || "",localRaceDate(startTimeOf(r))].join("|"));
-  for (const r of scheduleCache.rows) map.set(keyFor(r), { ...r });
-  for (const r of pricedCache.rows) {
-    const key = keyFor(r);
-    map.set(key, { ...(map.get(key) || {}), ...r, runners: r.runners || map.get(key)?.runners || [] });
-  }
-  const races = [...map.values()].filter(r => ["horse","harness","greyhound"].includes(categoryOf(r)));
-  return { races, scheduleFetchedAt: scheduleCache.at ? new Date(scheduleCache.at).toISOString() : null,
-    oddsFetchedAt: pricedCache.at ? new Date(pricedCache.at).toISOString() : null,
-    horizonHours: scheduleCache.horizonHours,
-    feedErrors: Object.entries(providerErrors).filter(([,message]) => message).map(([feed,message]) => ({feed,message})) };
+  return {races:rapidRacingCache.races, scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
+    oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
+    feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message}))};
 }
 
 app.get("/api/races", async (_req, res) => {
@@ -373,8 +384,7 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    const usingPublicDemo = Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds;
-    res.json({races, providerBookmakers, mode:"live", feedSource:usingPublicDemo ? "PuntersEdge public demo (free)" : "PuntersEdge authenticated", fetchedAt:new Date().toISOString(),
+    res.json({races, providerBookmakers, mode:"live", feedSource:"RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, feedErrors:feed.feedErrors, scope:"provider-supported worldwide",
       note:"Worldwide schedule and prices for horse, harness and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
