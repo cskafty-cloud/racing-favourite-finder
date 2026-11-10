@@ -197,7 +197,7 @@ const PUBLIC_DEMO_SPORTS = {
   oddsdata_36:"afl",oddsdata_66:"bowls",oddsdata_75:"gaelic-sports",oddsdata_78:"handball",
   oddsdata_83:"futsal",oddsdata_90:"floorball",oddsdata_91:"volleyball",oddsdata_92:"table-tennis",
   oddsdata_94:"badminton",oddsdata_95:"beach-volleyball",oddsdata_107:"squash",oddsdata_110:"water-polo",
-  oddsdata_151:"esports",oddsdata_162:"mma"
+  oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field-hockey"
 };
 function publicDemoItems(payload) {
   if(Array.isArray(payload)) return payload;
