@@ -181,3 +181,13 @@ body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
 
 .sport-live-score{margin:8px 0;padding:9px 12px;border-radius:8px;background:#20372d;border:1px solid #47745a;color:#a9e4bd;font-size:14px;font-weight:700}
 .sport-league{font-size:11px;color:#9aabba;margin-top:4px}
+
+.public-racing-sources{margin:22px 0;padding:20px}
+.source-link-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px}
+.source-link{display:flex;flex-direction:column;gap:6px;padding:13px;border:1px solid #34495a;border-radius:8px;background:#111923;text-decoration:none;color:#e7eef4}
+.source-link b{font-size:12px}.source-link small,.sportsbet-market-link small{font-size:10px;color:#91a2b0;line-height:1.4}
+.source-link:hover{border-color:#76c89a}
+.sportsbet-market-link{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:12px;padding:14px;border:1px solid #5b4b2c;background:#211e18;border-radius:8px}
+.sportsbet-market-link span{display:flex;flex-direction:column;gap:5px}
+.sportsbet-market-link a{color:#f0ce8b;font-weight:700;font-size:11px;text-decoration:none;white-space:nowrap}
+@media(max-width:600px){.source-link-grid{grid-template-columns:1fr}.public-racing-sources{padding:14px}.sportsbet-market-link{align-items:flex-start;flex-direction:column}}
