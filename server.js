@@ -157,29 +157,26 @@ function runnerQuotes(runner) {
   return (runner.bookmakers || runner.odds || []).filter(q => Number(q.win_price ?? q.win ?? q.price) > 1);
 }
 function selectFavourite(race) {
-  const entries = (race.runners || []).map(r => {
-    const quotes = runnerQuotes(r);
-    const b365 = quotes.find(q => ["bet365","bet365au"].includes(bookmakerKey(q)));
-    const prices = quotes.map(q => Number(q.win_price ?? q.win ?? q.price)).sort((a,b)=>a-b);
-    const median = prices.length ? prices[Math.floor((prices.length-1)/2)] : null;
-    return { runner:r, quotes, b365, median };
-  });
-  // Never mix Bet365 prices and other bookmakers in the same race ranking.
-  const hasBet365Market = entries.some(x => x.b365);
-  const candidates = entries.filter(x => hasBet365Market ? !!x.b365 : x.median != null);
-  candidates.sort((a,b) => (hasBet365Market ? Number(a.b365.win_price ?? a.b365.win ?? a.b365.price) : a.median) -
-    (hasBet365Market ? Number(b.b365.win_price ?? b.b365.win ?? b.b365.price) : b.median));
-  const best = candidates[0];
-  if (!best) return null;
-  const r = best.runner;
-  return {
-    name: r.name || r.runner_name || r.horse_name || r.greyhound_name,
-    number: r.number ?? r.runner_number ?? null,
-    price: hasBet365Market ? Number(best.b365.win_price ?? best.b365.win ?? best.b365.price) : best.median,
-    priceSource: hasBet365Market ? "Bet365" : "market median",
-    bet365Price: best.b365 ? Number(best.b365.win_price ?? best.b365.win ?? best.b365.price) : null,
-    quoteCount: best.quotes.length
-  };
+  const median = values => { const x=values.slice().sort((a,b)=>a-b); return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null; };
+  const entries=(race.runners||[]).map(r=>{
+    const seen=new Set();
+    const quotes=runnerQuotes(r).filter(q=>{
+      const key=bookmakerKey(q),age=Number(q.age_seconds);
+      if(!key||seen.has(key)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
+      seen.add(key);return true;
+    });
+    const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
+    const fair=median(prices),spread=fair&&prices.length>1?(Math.max(...prices)-Math.min(...prices))/fair:1;
+    return {runner:r,quotes,fair,spread};
+  }).filter(x=>x.fair!=null).sort((a,b)=>a.fair-b.fair);
+  const best=entries[0];if(!best)return null;
+  const second=entries[1],gap=second?Math.max(0,(1/best.fair-1/second.fair)/(1/best.fair)):0;
+  const signalScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
+  const r=best.runner;
+  return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
+    price:best.fair,priceSource:"multi-bookmaker median",quoteCount:best.quotes.length,
+    spreadPct:+(best.spread*100).toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,
+    signalLabel:best.quotes.length>=3&&signalScore>=65?"STRONG SIGNAL":signalScore>=45?"CAUTION":"NO BET · WEAK SIGNAL"};
 }
 function winnerFromResult(r) {
   const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
@@ -315,7 +312,7 @@ app.get("/api/races", async (_req, res) => {
     let added = 0;
     for (const race of races) {
       const fav = selectFavourite(race);
-      if (!fav || !fav.name) continue;
+      if (!fav || !fav.name || fav.quoteCount < 3 || fav.signalScore < 65) continue;
       const id = raceId(race), matchKey = raceMatchKey(race);
       if (history.picks.some(p => p.raceId === id || (matchKey && p.raceMatchKey === matchKey))) continue;
       history.picks.push({
@@ -323,9 +320,7 @@ app.get("/api/races", async (_req, res) => {
         raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
         runnerName:fav.name, runnerNumber:fav.number, selectedOdds:fav.price,
         priceSource:fav.priceSource, quoteCount:fav.quoteCount,
-        confidence:fav.priceSource === "Bet365" ? "Bet365 price" :
-          fav.quoteCount >= 3 ? "stronger market coverage" :
-          fav.quoteCount === 2 ? "limited market coverage" : "single bookmaker quote",
+        confidence:fav.signalLabel, signalScore:fav.signalScore, spreadPct:fav.spreadPct, gapPct:fav.gapPct,
         selectedAt:new Date().toISOString(), status:"pending", winnerName:null, favouriteWon:null
       });
       added++;
