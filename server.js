@@ -925,7 +925,7 @@ async function getGlobalRaces() {
     const body=await response.text(); let payload;
     try { payload=JSON.parse(body); } catch { throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+")."); }
     if(!response.ok) throw new Error("MoviOdds "+response.status);
-    const raw=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,venue:r.venue||r.track||m.track||m.name})));
+    const raw=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,venue:r.venue||r.track||r.course||m.track||m.course||m.name,country:r.country||m.country})));
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
