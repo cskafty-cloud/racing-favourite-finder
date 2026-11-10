@@ -1026,7 +1026,7 @@ let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
  const fixed=runner.fixed_odds||runner.fixedOdds||runner.fixed||{};
  const direct=runner.win_price??runner.fixed_win_price??runner.fixed_win??runner.win_odds??
-  runner.decimal_odds??runner.winPrice??fixed.win??fixed.win_price??fixed.returnWin??fixed.decimal??null;
+  runner.decimal_odds??runner.winPrice??runner.price??(typeof runner.odds==="number"?runner.odds:null)??runner.decimal??fixed.win??fixed.win_price??fixed.winOdds??fixed.fixedWin??fixed.returnWin??fixed.decimal??null;
  if(direct!=null&&Number.isFinite(Number(direct))&&Number(direct)>1)return Number(direct);
  const markets=Array.isArray(runner.markets)?runner.markets:[];
  for(const market of markets){
@@ -1047,7 +1047,11 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
  const title=String(item.race_name||item.name||item.event_name||"");
  const raceNumber=Number(item.race_number??item.raceNo??item.race??item.number??(title.match(/\bR(?:ace)?\s*([0-9]+)\b/i)||[])[1]);
  const start=item.start_time||item.commence_time||item.startTime||item.jump_time||item.race_start_time||item.startTimeUtc||null;
- const rawRunners=item.runners||item.selections||item.participants||item.horses||item.dogs||[];
+ let rawRunners=item.runners||item.selections||item.participants||item.horses||item.dogs||[];
+ if(!Array.isArray(rawRunners)||!rawRunners.length){
+  const winMarket=(item.markets||[]).find(m=>/win|winner/i.test(String(m.name||m.key||m.market_name||"")));
+  if(winMarket)rawRunners=(winMarket.outcomes||winMarket.selections||[]).map(o=>({...o,name:o.name||o.selection||o.label,win_price:o.price??o.odds}));
+ }
  const runners=(Array.isArray(rawRunners)?rawRunners:[]).map(r=>{
   const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
   if(!name)return null;
