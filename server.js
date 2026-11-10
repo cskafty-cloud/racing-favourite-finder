@@ -257,20 +257,26 @@ let pricedCache = { at: 0, rows: [] };
 let scheduleCache = { at: 0, rows: [], horizonHours: SCHEDULE_HORIZON_HOURS };
 let refreshInFlight = null;
 let providerErrors = { schedule: null, odds: null };
+// Back off exhausted provider feeds instead of retrying every browser refresh.
+// HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
+const providerRetryAt = { schedule: 0, odds: 0 };
+function providerRetryDelay(error) {
+  return /Racing provider 402/.test(String(error)) ? 6 * 60 * 60 * 1000 : 60 * 1000;
+}
 async function getGlobalRaces() {
   const now = Date.now();
   if (now - pricedCache.at >= 15000 || now - scheduleCache.at >= 60000) {
     if (!refreshInFlight) refreshInFlight = (async () => {
       const tasks = [];
-      if (now - scheduleCache.at >= 60000) tasks.push((async () => {
+      if (now - scheduleCache.at >= 60000 && now >= providerRetryAt.schedule) tasks.push((async () => {
         try {
           const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,harness,greyhound" });
           scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
           providerErrors.schedule = null;
           console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
-        } catch (err) { providerErrors.schedule = err.message; console.error("FEED_CHECK schedule", JSON.stringify({ok:false,error:err.message,at:new Date().toISOString()})); }
+        } catch (err) { providerErrors.schedule = err.message; providerRetryAt.schedule = Date.now() + providerRetryDelay(err.message); console.error("FEED_CHECK schedule", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.schedule).toISOString(),error:err.message,at:new Date().toISOString()})); }
       })());
-      if (now - pricedCache.at >= 15000) tasks.push((async () => {
+      if (now - pricedCache.at >= 15000 && now >= providerRetryAt.odds) tasks.push((async () => {
         try {
           const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,harness,greyhound" });
           pricedCache = { at: Date.now(), rows: rowsFrom(data) };
@@ -281,7 +287,7 @@ async function getGlobalRaces() {
           } catch (historyError) { console.error("MARKET_HISTORY_ERROR", historyError.message); }
           const sample = pricedCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).slice(0,4).map(x=>({name:x.name||x.runner_name||x.horse_name||x.greyhound_name,quotes:runnerQuotes(x).slice(0,4).map(q=>({bookmaker:q.bookmaker||q.name||q.key,price:q.win_price??q.win??q.price}))}))}));
           console.info("FEED_CHECK odds", JSON.stringify({ ok:true, fetchedAt:new Date(pricedCache.at).toISOString(), races:pricedCache.rows.length, pricedRunners:pricedCache.rows.reduce((n,r)=>n+(r.runners||[]).filter(x=>runnerQuotes(x).length).length,0), sample }));
-        } catch (err) { providerErrors.odds = err.message; console.error("FEED_CHECK odds", JSON.stringify({ok:false,error:err.message,at:new Date().toISOString()})); }
+        } catch (err) { providerErrors.odds = err.message; providerRetryAt.odds = Date.now() + providerRetryDelay(err.message); console.error("FEED_CHECK odds", JSON.stringify({ok:false,retryAt:new Date(providerRetryAt.odds).toISOString(),error:err.message,at:new Date().toISOString()})); }
       })());
       await Promise.all(tasks);
     })().finally(() => { refreshInFlight = null; });
@@ -295,9 +301,6 @@ async function getGlobalRaces() {
     map.set(key, { ...(map.get(key) || {}), ...r, runners: r.runners || map.get(key)?.runners || [] });
   }
   const races = [...map.values()].filter(r => ["horse","harness","greyhound"].includes(categoryOf(r)));
-  if (!races.length && providerErrors.schedule && providerErrors.odds) {
-    throw new Error("Racing provider unavailable: " + [providerErrors.schedule, providerErrors.odds].join(" | "));
-  }
   return { races, scheduleFetchedAt: scheduleCache.at ? new Date(scheduleCache.at).toISOString() : null,
     oddsFetchedAt: pricedCache.at ? new Date(pricedCache.at).toISOString() : null,
     horizonHours: scheduleCache.horizonHours,
