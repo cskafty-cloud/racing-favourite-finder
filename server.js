@@ -297,7 +297,7 @@ const RAPID_RACING_CODES = ["thoroughbred","harness","greyhound"];
 const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
 const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
 let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null};
-async function fetchKrokRacing(date) {
+async function fetchKrokRacing(date, raceType) {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
   url.searchParams.set("date",date);
@@ -367,16 +367,25 @@ async function fetchKrokRacing(date) {
 }
 async function getKrokRaces() {
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Melbourne",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-  if(!krokRacingCache.at || Date.now()-krokRacingCache.at>=300000) {
-    const result=await fetchKrokRacing(today);
-    krokRacingCache={at:Date.now(),races:result.races,meta:result.meta,creditsRemaining:result.creditsRemaining,meta:result.meta};
+  if(!krokRacingCache.at || Date.now()-krokRacingCache.at>=60000) {
+    const codes=["T","G","H"];
+    const results=await Promise.all(codes.map(async code=>{
+      try { return await fetchKrokRacing(today,code); }
+      catch(error) { return {races:[],meta:null,creditsRemaining:null,error:code+": "+error.message}; }
+    }));
+    const races=results.flatMap(x=>x.races||[]);
+    const errors=results.filter(x=>x.error).map(x=>x.error);
+    krokRacingCache={at:Date.now(),races,meta:results.map(x=>x.meta).filter(Boolean),
+      creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
     console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
-      races:result.races.length,pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
-      runners:result.races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:result.creditsRemaining,meta:result.meta}));
+      raceCount:races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,races.filter(r=>r.category===k).length])),
+      pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
+      runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,errors}));
   }
   return {races:krokRacingCache.races,scheduleFetchedAt:new Date(krokRacingCache.at).toISOString(),
     oddsFetchedAt:new Date(krokRacingCache.at).toISOString(),horizonHours:24,
-    feedErrors:[],feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
+    feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+    feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
 }
 
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
@@ -738,9 +747,19 @@ app.get("/api/sports/:sportKey", async (req,res) => {
     const sport=sportsCatalogueCache.rows.find(x=>x.key===key);
     if(!sport) return res.status(404).json({error:"Sport is not in Krok Odds' live sports catalogue."});
     let cached=sportsOddsCache.get(key);
-    if(!cached||Date.now()-cached.at>=300000){
-      const result=await krokRequest("/odds-feed/sports/"+encodeURIComponent(key),{limit:25});
-      const raw=Array.isArray(result.payload.data)?result.payload.data:[];
+    if(!cached||Date.now()-cached.at>=60000){
+      // Page the free sports feed up to its documented 100-event scan cap.
+      const pages=[]; let cursor=null; let result=null;
+      for(let page=0;page<4;page++){
+        const params={limit:25,fresh:true};
+        if(cursor) params.cursor=cursor;
+        result=await krokRequest("/odds-feed/sports/"+encodeURIComponent(key),params);
+        pages.push(...(Array.isArray(result.payload.data)?result.payload.data:[]));
+        const next=result.payload.meta?.next_cursor||result.payload.meta?.next||null;
+        if(!next||next===cursor) break;
+        cursor=next;
+      }
+      const raw=pages;
       console.info("KROK_SPORT_SCHEMA",JSON.stringify({
         sport:key,payloadKeys:Object.keys(result.payload||{}),eventCount:raw.length,
         eventKeys:raw[0]?Object.keys(raw[0]):[],
@@ -804,7 +823,7 @@ app.get("/api/sports/:sportKey", async (req,res) => {
         const inPlay=!!(e.in_play||e.inplay||e.is_live||/in[ _-]?play|live|running/.test(status));
         return {...e,in_play:inPlay,status:inPlay?"IN PLAY":(e.status||"UPCOMING")};
       });
-      cached={at:Date.now(),rows:events,meta:result.payload.meta||null,creditsRemaining:result.creditsRemaining};
+      cached={at:Date.now(),rows:events,meta:result?.payload?.meta||null,creditsRemaining:result?.creditsRemaining||null};
       sportsOddsCache.set(key,cached);
       console.info("KROK_SPORT_ODDS",JSON.stringify({sport:key,events:events.length,
         pricedEvents:events.filter(e=>e.bookmakers.some(b=>b.markets.some(m=>m.outcomes.length))).length,
@@ -813,7 +832,7 @@ app.get("/api/sports/:sportKey", async (req,res) => {
     res.set("Cache-Control","no-store");
     res.json({sport,events:cached.rows,fetchedAt:new Date(cached.at).toISOString(),
       provider:"Krok Odds",providerMeta:cached.meta,creditsRemaining:cached.creditsRemaining,
-      refreshSeconds:300,liveInPlayAvailable:false,
+      refreshSeconds:60,liveInPlayAvailable:cached.rows.some(e=>e.in_play),
       note:"Upcoming/pre-match events and bookmaker markets from Krok Odds. Live scores are not inferred; event prices depend on Krok's available coverage."});
   } catch(err) {res.status(503).json({error:err.message,sportKey:key,provider:"Krok Odds"});}
 });
