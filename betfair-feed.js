@@ -3,13 +3,38 @@ const APP_KEY = process.env.BETFAIR_APP_KEY || "";
 const SESSION = process.env.BETFAIR_SESSION_TOKEN || "";
 const PORT = Number(process.env.PORT || 8080);
 const RPC = "https://api.betfair.com/exchange/betting/json-rpc/v1";
+const KEEPALIVE = "https://identitysso.betfair.com.au/api/keepAlive";
+let sessionToken = SESSION;
+let lastKeepAliveAttempt = 0;
+let sessionStatus = SESSION ? "configured-not-validated" : "missing";
 let cache = { at:0, races:[], error:null };
 let pending = null;
+async function maintainSession() {
+  if (!APP_KEY || !sessionToken) throw new Error("Betfair credentials missing");
+  if (Date.now() - lastKeepAliveAttempt < 9 * 60 * 60 * 1000) return;
+  lastKeepAliveAttempt = Date.now();
+  const response = await fetch(KEEPALIVE, {
+    method:"GET",
+    headers:{"Accept":"application/json","X-Application":APP_KEY,"X-Authentication":sessionToken},
+    signal:AbortSignal.timeout(15000)
+  });
+  const body = await response.text();
+  let data;
+  try { data = JSON.parse(body); } catch { sessionStatus = "keepalive-unavailable"; throw new Error("Betfair session keep-alive returned HTTP "+response.status); }
+  if (!response.ok || data.status !== "SUCCESS" || !data.token) {
+    sessionStatus = data.error === "NO_SESSION" ? "expired" : "keepalive-failed";
+    throw new Error("Betfair session is not valid ("+(data.error || "keep-alive failed")+")");
+  }
+  sessionToken = data.token;
+  sessionStatus = "valid";
+}
 async function call(method, params) {
-  if (!APP_KEY || !SESSION) throw new Error("Betfair credentials missing");
+  if (!APP_KEY || !sessionToken) throw new Error("Betfair credentials missing");
+  try { await maintainSession(); } catch (error) { console.warn("Betfair session check:",error.message); }
+
   const response = await fetch(RPC, {
     method:"POST",
-    headers:{"Content-Type":"application/json","X-Application":APP_KEY,"X-Authentication":SESSION,"Accept":"application/json"},
+    headers:{"Content-Type":"application/json","X-Application":APP_KEY,"X-Authentication":sessionToken,"Accept":"application/json"},
     body:JSON.stringify([{jsonrpc:"2.0",method:"SportsAPING/v1.0/"+method,params,id:1}]),
     signal:AbortSignal.timeout(20000)
   });
@@ -74,7 +99,7 @@ async function getData() {
 const server=http.createServer(async(req,res)=>{
   res.setHeader("Content-Type","application/json");
   res.setHeader("Cache-Control","no-store");
-  if(req.url==="/health") {res.writeHead(200);return res.end(JSON.stringify({ok:true,configured:!!(APP_KEY&&SESSION),region:"Australia"}));}
+  if(req.url==="/health") {res.writeHead(200);return res.end(JSON.stringify({ok:true,configured:!!(APP_KEY&&sessionToken),sessionStatus,region:process.env.RAILWAY_REPLICA_REGION||"Singapore"}));}
   if(req.url==="/api/races") {
     try {const data=await getData();res.writeHead(200);res.end(JSON.stringify(data));}
     catch(e){console.error("Betfair feed error:",e.message);res.writeHead(502);res.end(JSON.stringify({error:e.message,races:[]}));}
