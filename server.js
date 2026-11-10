@@ -1227,7 +1227,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:(feed.note||"Race cards combine public market feeds with Sportsbet's public next-races card and runner prices where available.")+" Sportsbet public race pages loaded: "+sportsbetRaces.length+"."});
+      note:(feed.note||"Australian racing schedule and runner prices from the connected feed.")+" Sportsbet-labelled runner quotes returned: "+sportsbetQuotes+". Direct Sportsbet page scraping is blocked from this server; no other bookmaker prices are substituted."});
   } catch (err) {
     const raw=String(err.message||"");
     const safeWarnings=[];
