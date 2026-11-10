@@ -256,7 +256,7 @@ async function loadLiveSports(){
   list.innerHTML=d.events.length?d.events.map(e=>{
    const score=e.score?" · "+esc(e.score):"",clock=e.minute!=null?" · "+esc(e.minute)+"′":"";
    const f=e.favourite;
-   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-favourite">★ BET365 FAVOURITE: <b>'+(f?esc(f.name):"No active main-market price")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small></article>';
+   return '<article class="sport-event"><b>'+esc(e.name||"Live event")+'</b><small>'+esc(e.league||"League unavailable")+' · IN PLAY'+score+clock+'</small><div class="sport-favourite">★ BET365 FAVOURITE: <b>'+(f?esc(f.name):"No active main-market price")+'</b> '+(f?"$"+f.price.toFixed(2):"—")+'</div><small>Quote snapshot: '+(fetched?esc(fetched.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})):"not available")+(e.error?" · "+esc(e.error):"")+'</small><small>SPORTSBET: in-play prices not available from this feed</small></article>';
   }).join(""):'<div class="empty">No live events were returned by bet365 at this check.</div>';
  }catch(e){notice.textContent=e.message;list.innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }

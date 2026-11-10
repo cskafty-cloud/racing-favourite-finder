@@ -219,13 +219,17 @@ function parseBet365Live(rows) {
   const home=teams.find(x=>String(x.OR)==="0")||teams[0]||{};
   const away=teams.find(x=>String(x.OR)==="1")||teams[1]||{};
   const markets=[]; let current=null;
+  let group="";
   for(const x of flat){
-    if(x.type==="MG"||x.type==="MA"){current={name:x.NA||"Market",suspended:String(x.SU)==="1",selections:[]};markets.push(current);}
-    else if(x.type==="PA"&&current) current.selections.push({name:x.NA,price:fractionalDecimal(x.OD),suspended:String(x.SU)==="1"});
+    if(x.type==="MG"){group=x.NA||"";}
+    else if(x.type==="MA"){current={name:x.NA||group||"Market",group,suspended:String(x.SU)==="1",selections:[]};markets.push(current);}
+    else if(x.type==="PA"&&current) current.selections.push({name:x.NA||x.HD||"Selection",price:fractionalDecimal(x.OD),suspended:String(x.SU)==="1"||current.suspended});
   }
-  const main=markets.find(m=>/full.?time result|match winner|money line/i.test(m.name))||markets.find(m=>m.selections.length>=2);
-  const valid=(main?.selections||[]).filter(x=>x.price>1&&!x.suspended);
-  const favourite=valid.sort((a,b)=>a.price-b.price)[0]||null;
+  const usable=markets.filter(m=>m.selections.length>=2);
+  const main=usable.find(m=>/full.?time result|match (winner|result|betting)|money ?line|to win|winner/i.test(m.name+" "+m.group))||usable[0];
+  // The favourite is the shortest-priced team/player; a draw is not a favourite.
+  const valid=(main?.selections||[]).filter(x=>x.price>1&&!x.suspended&&!/^draw$/i.test(x.name));
+  const favourite=[...valid].sort((a,b)=>a.price-b.price)[0]||null;
   return {id:ev.FI||null,name:ev.NA||[home.NA,away.NA].filter(Boolean).join(" v "),
     league:ev.CT||null,score:ev.SS||null,minute:ev.TM||null,second:ev.TS||null,
     status:"IN PLAY",updatedAt:ev.TU||null,home:home.NA||null,away:away.NA||null,
@@ -395,9 +399,16 @@ app.get("/api/sports", async (_req,res) => {
       note:"Upcoming sports fixtures and pre-match odds only. This provider does not supply in-play sports odds; fixtures leave the odds feed when they start."});
   } catch(err) { res.status(503).json({error:err.message}); }
 });
+async function ensureSportsCatalogue() {
+  if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 6*60*60*1000) {
+    const data = await provider("/v1/sports");
+    sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
+  }
+}
 app.get("/api/sports/:sportKey", async (req,res) => {
   const key = String(req.params.sportKey||"").toLowerCase();
   if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
+  try { await ensureSportsCatalogue(); } catch(err) { return res.status(503).json({error:err.message,sportKey:key}); }
   const known = sportsCatalogueCache.rows.some(x=>String(x.key).toLowerCase()===key);
   if (!known) return res.status(404).json({error:"Sport is not in the active provider catalogue. Refresh the sports list."});
   try {
