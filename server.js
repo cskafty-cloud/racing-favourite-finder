@@ -170,14 +170,17 @@ async function getGlobalRaces() {
           const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,greyhound" });
           scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
           providerErrors.schedule = null;
-        } catch (err) { providerErrors.schedule = err.message; }
+          console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
+        } catch (err) { providerErrors.schedule = err.message; console.error("FEED_CHECK schedule", JSON.stringify({ok:false,error:err.message,at:new Date().toISOString()})); }
       })());
       if (now - pricedCache.at >= 15000) tasks.push((async () => {
         try {
           const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,greyhound" });
           pricedCache = { at: Date.now(), rows: rowsFrom(data) };
           providerErrors.odds = null;
-        } catch (err) { providerErrors.odds = err.message; }
+          const sample = pricedCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).slice(0,4).map(x=>({name:x.name||x.runner_name||x.horse_name||x.greyhound_name,quotes:runnerQuotes(x).slice(0,4).map(q=>({bookmaker:q.bookmaker||q.name||q.key,price:q.win_price??q.win??q.price}))}))}));
+          console.info("FEED_CHECK odds", JSON.stringify({ ok:true, fetchedAt:new Date(pricedCache.at).toISOString(), races:pricedCache.rows.length, pricedRunners:pricedCache.rows.reduce((n,r)=>n+(r.runners||[]).filter(x=>runnerQuotes(x).length).length,0), sample }));
+        } catch (err) { providerErrors.odds = err.message; console.error("FEED_CHECK odds", JSON.stringify({ok:false,error:err.message,at:new Date().toISOString()})); }
       })());
       await Promise.all(tasks);
     })().finally(() => { refreshInFlight = null; });
