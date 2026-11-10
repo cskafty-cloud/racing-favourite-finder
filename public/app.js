@@ -41,10 +41,15 @@ function bookmakerFavourite(race, wantedKey) {
 }
 function raceBookmakerPanel(bookmaker, favourite) {
   const key=bookmaker.toLowerCase();
-  const url=favourite?.url||BOOKMAKER_URLS[key];
+  const url=favourite && favourite.url ? favourite.url : BOOKMAKER_URLS[key];
   const extra=key==="bet365" ? '<a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Bet365 live racing information ↗</a>' : "";
-  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+
-    (favourite ? '<div class="book-fav-runner">'+esc((favourite.number!=null?favourite.number+". ":"")+favourite.name)+'</div><div class="book-fav-price">
+  const runner=favourite ? (favourite.number!=null?favourite.number+". ":"")+favourite.name : "";
+  const details=favourite
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?"Quote age unavailable":"Quote age "+Math.round(Number(favourite.age))+"s")+' · latest fresh quote</div>'
+    : '<div class="book-fav-missing">No fresh '+esc(bookmaker)+' runner price supplied by the connected feed.</div>';
+  return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
+    '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
+}
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
