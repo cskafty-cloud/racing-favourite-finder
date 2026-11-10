@@ -178,6 +178,13 @@ async function publicDemoRequest(pathname, params={}) {
   if(!response.ok) throw new Error("Public odds preview "+response.status+": "+(data.detail||data.error||body.slice(0,180)));
   return data;
 }
+const MOVI_SPORT_SLUGS = {
+  oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby",oddsdata_12:"american-football",
+  oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",oddsdata_16:"baseball",
+  oddsdata_17:"hockey",oddsdata_18:"basketball",oddsdata_19:"rugby",oddsdata_36:"australian-rules",
+  oddsdata_78:"handball",oddsdata_83:"futsal",oddsdata_91:"volleyball",oddsdata_92:"table-tennis",
+  oddsdata_94:"badminton",oddsdata_151:"esports",oddsdata_162:"mma"
+};
 const PUBLIC_DEMO_SPORTS = {
   oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",oddsdata_9:"boxing",
   oddsdata_12:"nfl",oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",
@@ -217,7 +224,7 @@ async function loadPublicDemoSport(sport) {
     publicDemoRequest("/v1/demo/book-sport",{book:"bet365",sport:slug}),
     (async()=>{
       const url=new URL("https://moviodds.com/odds");
-      url.searchParams.set("sport",slug);
+      url.searchParams.set("sport",MOVI_SPORT_SLUGS[sport.key]||slug);
       url.searchParams.set("groups","40");
       const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
       const body=await response.text();let payload;
