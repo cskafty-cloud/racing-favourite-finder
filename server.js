@@ -29,7 +29,7 @@ async function betfairRpc(method, params) {
   try { payload=JSON.parse(body); } catch { throw new Error("Betfair returned invalid JSON (HTTP "+response.status+")."); }
   const item=Array.isArray(payload)?payload[0]:payload;
   if (!response.ok || item?.error || item?.result == null) {
-    const detail=item?.error?.data?. APINGException?.errorCode || item?.error?.data?.errorCode ||
+    const detail=item?.error?.data?.APINGException?.errorCode || item?.error?.data?.errorCode ||
       item?.error?.message || "request failed";
     throw new Error("Betfair "+(response.status||"API")+": "+detail);
   }
@@ -83,7 +83,7 @@ async function loadBetfairRaces() {
       if(!quote||!Number.isFinite(Number(quote))||Number(quote)<=1||priced?.status==="REMOVED") return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[]};
       return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[{
         bookmaker:"Betfair Exchange (delayed)",name:"Betfair Exchange (delayed)",key:"betfair",
-        win_price:Number(quote),age_seconds:0,last_update:capturedAt,source:"Betfair Exchange"
+        win_price:Number(quote),age_seconds:null,last_update:capturedAt,source:"Betfair Exchange"
       }]};
     });
     return {race_id:"betfair-"+m.marketId,id:"betfair-"+m.marketId,category,
