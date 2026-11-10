@@ -11,7 +11,7 @@ async function main() {
 
   // Windows ICO files can contain a PNG image. Keep the complete website
   // logo visible inside a square canvas rather than cropping its edges.
-  const png = await sharp(source)
+  const png = await sharp(source, { failOn: "none" })
     .resize(256, 256, {
       fit: "contain",
       background: { r: 8, g: 13, b: 24, alpha: 1 }
