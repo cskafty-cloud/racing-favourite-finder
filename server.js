@@ -943,7 +943,7 @@ async function getGlobalRaces() {
       const live=!!r.in_play||/live|in.?play|running/.test(status);
       return {race_id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_number:r.race_number??r.number??null,
-        start_time:start,country:"Australia",status,in_play:live,
+        start_time:start,country:r.country||"Country not supplied",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners};
     }).filter(r=>r.start_time&&!r.closed&&r.runners.length);
     if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
