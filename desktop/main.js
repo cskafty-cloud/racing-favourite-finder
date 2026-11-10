@@ -35,7 +35,25 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const choice = dialog.showMessageBoxSync({
+    type: "info",
+    title: "Racing Favourite Finder",
+    message: "Internet connection required",
+    detail: "This app connects to the live Racing Favourite Finder website to display racing and sports information. It is an information-only app: it does not place bets or connect to bookmaker accounts.",
+    buttons: ["Continue", "Exit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  });
+  if (choice !== 0) {
+    app.quit();
+    return;
+  }
   createWindow();
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
