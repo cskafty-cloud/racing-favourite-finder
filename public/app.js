@@ -11,10 +11,19 @@ const fmtDate = value => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",timeZone:"Australia/Brisbane"});
 };
 function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => Number(b.win_price ?? b.win ?? b.price) > 1); }
+function quoteAgeSeconds(q) {
+ const direct=q?.age_seconds;
+ if(direct!=null&&Number.isFinite(Number(direct)))return Math.max(0,Number(direct));
+ const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
+ if(stamp==null)return null;
+ const numeric=Number(stamp);
+ const ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
+ return Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+}
 function isBetfairQuote(q) { return /betfair|exchange/i.test(String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"")); }
 function fixedRunnerPrices(runner) { return runnerPrices(runner).filter(q=>!isBetfairQuote(q)); }
 function runnerFixedOdds(runner) {
- const ps=fixedRunnerPrices(runner).filter(q=>!q.stale&&(q.age_seconds==null||Number(q.age_seconds)<180)).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
+ const ps=fixedRunnerPrices(runner).filter(q=>{const age=quoteAgeSeconds(q);return !q.stale&&age!=null&&age<180;}).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
  return ps.length?ps[Math.floor((ps.length-1)/2)]:null;
 }
 function exchangeRunnerPrice(runner) {
@@ -26,15 +35,15 @@ function bookmakerFavourite(race, wantedKey) {
   const accepted = aliases[wantedKey] || [wantedKey];
   const candidates = (race.runners || []).map(runner => {
     const quote = fixedRunnerPrices(runner).find(q => {
-      const age=q.age_seconds==null?null:Number(q.age_seconds);
+      const age=quoteAgeSeconds(q);
       return [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => accepted.includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,"")))
-        && q.stale!==true && (age==null || !Number.isFinite(age) || age<180);
+        && q.stale!==true && age!=null && age<180;
     });
     if (!quote) return null;
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
       number:runner.number ?? runner.runner_number ?? null,
       price:Number(quote.win_price ?? quote.win ?? quote.price),
-      age:quote.age_seconds, stale:!!quote.stale,
+      age:quoteAgeSeconds(quote), stale:false, verified:true,
       url:quote.event_url||quote.market_url||quote.url||BOOKMAKER_URLS[wantedKey]};
   }).filter(x => x && Number.isFinite(x.price) && x.price > 1);
   return candidates.sort((a,b)=>a.price-b.price)[0] || null;
@@ -42,20 +51,22 @@ function bookmakerFavourite(race, wantedKey) {
 function raceBookmakerPanel(bookmaker, favourite) {
   const key=bookmaker.toLowerCase();
   const url=favourite && favourite.url ? favourite.url : BOOKMAKER_URLS[key];
-  const extra=key==="bet365" ? '<a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Bet365 live racing information ↗</a>' : "";
+  const extra=key==="bet365"
+    ? '<a class="bookmaker-market-link" href="https://extra.bet365.com.au/features/au/watch-racing-live" target="_blank" rel="noopener noreferrer">Bet365 live racing information ↗</a>'
+    : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & next-to-jump · horses, greyhounds and harness ↗</a>';
   const runner=favourite ? (favourite.number!=null?favourite.number+". ":"")+favourite.name : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">'+(favourite.age==null?"Quote age unavailable":"Quote age "+Math.round(Number(favourite.age))+"s")+' · latest fresh quote</div>'
-    : '<div class="book-fav-missing">No fresh '+esc(bookmaker)+' runner price supplied by the connected feed.</div>';
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">Verified quote · '+Math.round(Number(favourite.age))+'s old</div>'
+    : '<div class="book-fav-missing">No verified current '+esc(bookmaker)+' price available. Favourite not confirmed.</div>';
   return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
 function favouritePanel(label, favourite) {
   return `<div class="book-fav"><div class="book-fav-label">${label}</div>${favourite ? `<div class="book-fav-runner">${esc(favourite.number ? favourite.number+". " : "")}${esc(favourite.name)}</div><div class="book-fav-price">${favourite.price.toFixed(2)}</div><div class="book-fav-age">${Number.isFinite(Number(favourite.age)) ? "Quote age "+Math.round(Number(favourite.age))+"s" : "Age not supplied"}${favourite.stale || (Number.isFinite(Number(favourite.age)) && Number(favourite.age)>=180) ? " · STALE" : " · latest returned"}</div>` : `<div class="book-fav-missing">Waiting for ${label.toLowerCase().replace(" favourite","")} price from connected provider · no bookmaker favourite available yet</div>`}</div>`;
 }
-const BOOKMAKER_URLS={bet365:"https://www.bet365.com.au/",sportsbet:"https://www.sportsbet.com.au/"};
+const BOOKMAKER_URLS={bet365:"https://www.bet365.com.au/",sportsbet:"https://www.sportsbet.com.au/horse-racing/australia-nz/betting"};
 function bookmakerKeyForLink(q){const raw=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,"");if(raw.includes("sportsbet"))return "sportsbet";if(raw.includes("bet365"))return "bet365";return "";}
-function allBookmakerFavourites(race) { const books=new Map(); for(const runner of race.runners||[]) for(const q of fixedRunnerPrices(runner)) { const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=q.age_seconds==null?null:Number(q.age_seconds); if(!key||!Number.isFinite(price)||price<=1||q.stale===true||(age!=null&&age>=180)) continue; const current=books.get(key); if(!current||price<current.price) books.set(key,{key,bookmaker:key==="bet365"?"Bet365":"Sportsbet",name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??null,price,age,url:q.event_url||q.market_url||q.url||BOOKMAKER_URLS[key]}); } return [...books.values()].sort((a,b)=>a.bookmaker.localeCompare(b.bookmaker)); }
+function allBookmakerFavourites(race) { const books=new Map(); for(const runner of race.runners||[]) for(const q of fixedRunnerPrices(runner)) { const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q); if(!key||!Number.isFinite(price)||price<=1||q.stale===true||age==null||age>=180) continue; const current=books.get(key); if(!current||price<current.price) books.set(key,{key,bookmaker:key==="bet365"?"Bet365":"Sportsbet",name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??null,price,age,url:q.event_url||q.market_url||q.url||BOOKMAKER_URLS[key]}); } return [...books.values()].sort((a,b)=>a.bookmaker.localeCompare(b.bookmaker)); }
 function allBookFavouritePanel(f) {
   const runner=(f.number!=null?f.number+". ":"")+f.name;
   const age=f.age==null?"Quote age unavailable":"Quote age "+Math.round(f.age)+"s";
@@ -67,8 +78,8 @@ function marketFavourite(race) {
   const runners=(race.runners||[]).map(r=>{
     const seen=new Set();
     const quotes=fixedRunnerPrices(r).filter(q=>{
-      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=q.age_seconds==null?null:Number(q.age_seconds);
-      if(!key||seen.has(key)||q.stale===true||(age!=null&&Number.isFinite(age)&&age>=180))return false;
+      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=quoteAgeSeconds(q);
+      if(!key||seen.has(key)||q.stale===true||age==null||age>=180)return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
