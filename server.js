@@ -459,10 +459,41 @@ async function getGlobalRaces() {
   throw new Error("Add RAPIDODDSAPI_API_KEY or KROKODDS_API_KEY in Railway Variables to enable racing feeds.");
 }
 
+function dedupeRaces(input) {
+  const unique = new Map();
+  for (const race of input || []) {
+    const category = categoryOf(race), venue = normalizeName(venueOf(race));
+    const number = String(raceNumberOf(race) ?? "").trim(), day = localRaceDate(startTimeOf(race));
+    const key = [category, venue, number, day].join("|");
+    if (!venue || !number || !day) { const fallback=raceId(race); if(!unique.has(fallback)) unique.set(fallback,race); continue; }
+    if (!unique.has(key)) { unique.set(key,{...race,runners:(race.runners||[]).map(r=>({...r,bookmakers:[...(r.bookmakers||r.odds||[])]}))}); continue; }
+    const target=unique.get(key);
+    for (const runner of race.runners||[]) {
+      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
+      const n=runner.number??runner.runner_number;
+      let existing=(target.runners||[]).find(x=>n!=null&&(x.number??x.runner_number)!=null
+        ? String(x.number??x.runner_number)===String(n)
+        : normalizeName(x.name||x.runner_name)===normalizeName(name));
+      if(!existing){existing={...runner,name,bookmakers:[]};target.runners.push(existing);}
+      for(const q of runner.bookmakers||runner.odds||[]){
+        const qkey=bookmakerKey(q); if(!qkey)continue;
+        const ix=existing.bookmakers.findIndex(x=>bookmakerKey(x)===qkey);
+        if(ix<0)existing.bookmakers.push(q);
+        else {
+          const old=existing.bookmakers[ix], fresh=Date.parse(q.last_update||q.updated_at||""), prior=Date.parse(old.last_update||old.updated_at||"");
+          if((Number.isFinite(fresh)&&(!Number.isFinite(prior)||fresh>prior))||
+             (q.age_seconds!=null&&(old.age_seconds==null||Number(q.age_seconds)<Number(old.age_seconds)))) existing.bookmakers[ix]=q;
+        }
+      }
+    }
+  }
+  return [...unique.values()].sort((a,b)=>new Date(startTimeOf(a)||0)-new Date(startTimeOf(b)||0));
+}
+
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
-    const races = feed.races;
+    const races = dedupeRaces(feed.races);
     const history = await readHistory();
     let added = 0;
     for (const race of races) {
