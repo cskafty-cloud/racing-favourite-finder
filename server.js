@@ -1416,7 +1416,7 @@ app.get("/api/history", async (_req,res) => {
       summary:{races:final.length,wins,losses:final.length-wins,
         strikeRate:final.length ? +(100*wins/final.length).toFixed(1) : null,
         pending:history.picks.filter(p=>p.status==="pending").length,
-        horse:byCode("horse"),greyhound:byCode("greyhound")}
+        horse:byCode("horse"),greyhound:byCode("greyhound"),harness:byCode("harness")}
     });
   } catch (err) { res.status(500).json({error:err.message}); }
 });
