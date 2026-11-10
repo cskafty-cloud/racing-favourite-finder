@@ -453,7 +453,7 @@ async function getGlobalRaces() {
     return {races:rapidRacingCache.races, scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
       oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
       feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})),
-      feedSource:"RapidOddsAPI Racing",scope:"Australia and New Zealand"};
+      feedSource:"RapidOddsAPI Racing",scope:feed.feedSource==="Krok Odds"?"Australia":"Australia and New Zealand"};
   }
   if (KROKODDS_API_KEY) return getKrokRaces();
   throw new Error("Add RAPIDODDSAPI_API_KEY or KROKODDS_API_KEY in Railway Variables to enable racing feeds.");
@@ -519,7 +519,7 @@ app.get("/api/races", async (_req, res) => {
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
     res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?"Krok Odds Free": "RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
+      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?(feed.meta?.tier||"Krok Odds tier not reported"):"RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
       note:"Australian and New Zealand thoroughbred, harness and greyhound races. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
