@@ -50,8 +50,8 @@ function marketFavourite(race) {
   const runners=(race.runners||[]).map(r=>{
     const seen=new Set();
     const quotes=runnerPrices(r).filter(q=>{
-      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=Number(q.age_seconds);
-      if(!key||seen.has(key)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
+      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=q.age_seconds==null?null:Number(q.age_seconds);
+      if(!key||seen.has(key)||q.stale===true||(age!=null&&Number.isFinite(age)&&age>=180))return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
@@ -351,7 +351,13 @@ function render() {
    const now = Date.now();
    const upcoming = rows.filter(r => {
      const t = new Date(r.start_time).getTime();
-     return isExplicitlyLive(r) || (Number.isFinite(t) && t >= now);
+     // Keep provider-supplied races with missing/invalid jump times visible at the bottom.
+     return isExplicitlyLive(r) || !Number.isFinite(t) || t >= now;
+   }).sort((a,b) => {
+     const ta=new Date(a.start_time).getTime(), tb=new Date(b.start_time).getTime();
+     if(!Number.isFinite(ta))return 1;
+     if(!Number.isFinite(tb))return -1;
+     return ta-tb;
    });
    $("raceCount").textContent = upcoming.length;
    $("horseCount").textContent = upcoming.filter(r=>categoryOf(r)==="horse").length;
@@ -371,7 +377,7 @@ async function loadRaces() {
     state.races = data.races || [];
     $("feedStatus").textContent = data.mode === "live" ? (data.feedErrors?.length ? "LIVE FEED · PARTIAL" : "LIVE FEED") : "FEED OFFLINE";
     $("updatedAt").textContent = new Date(data.fetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    $("feedFreshness").textContent = `Screen refresh: 5s (display only) · bookmaker price updates vary by feed; check quote age · provider schedule: ${data.horizonHours || 24}h (${esc(data.providerPlan || "free")} plan) · last odds fetch ${data.oddsFetchedAt ? new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"} · schedule fetch ${data.scheduleFetchedAt ? new Date(data.scheduleFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "waiting"}`;
+    const feedMeta=data.feedMeta||{}; const books=(data.providerBookmakers||[]).length; const cap=feedMeta.truncated?` · PROVIDER LIMIT: ${feedMeta.limit||"tier cap"} of ${feedMeta.total_matched||"more"} records returned`:""; $("feedFreshness").textContent = `Screen refresh: 5s (display only) · ${books} bookmaker feeds with prices in this response · ${data.scope||"provider coverage"} · provider tier: ${esc(data.providerPlan||"not reported")}${cap} · price freshness varies by bookmaker; check each quote age · last feed fetch ${data.oddsFetchedAt?new Date(data.oddsFetchedAt).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"waiting"}`;
     $("notice").textContent = (data.note || "Live racing prices are indicative. Check the bookmaker's current market and scratchings before making any decision.") + (data.feedErrors?.length ? " Feed warning: " + data.feedErrors.map(x => x.feed + ": " + x.message).join(" · ") : "");
     $("notice").classList.remove("hidden");
     render();
