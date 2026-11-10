@@ -382,6 +382,7 @@ function render() {
     ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
     : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>';
 }
+function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 async function loadRaces() {
   if (state.loading) return;
   state.loading = true; $("refreshBtn").disabled = true;
