@@ -299,7 +299,7 @@ async function fetchKrokRacing(date) {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
   url.searchParams.set("date",date);
-  url.searchParams.set("limit","10");
+  // Request the documented API-tier page size. Krok enforces the account-tier cap\n  // (10 on Free, up to 500 on API) and reports truncation in response metadata.\n  url.searchParams.set("limit","500");
   const response = await fetch(url,{headers:{"X-API-Key":KROKODDS_API_KEY},signal:AbortSignal.timeout(20000)});
   const body = await response.text();
   let payload;
@@ -360,17 +360,17 @@ async function fetchKrokRacing(date) {
     creditsRemaining:response.headers.get("X-Credits-Remaining")};
 }
 async function getKrokRaces() {
-  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Brisbane",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Melbourne",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   if(!krokRacingCache.at || Date.now()-krokRacingCache.at>=300000) {
     const result=await fetchKrokRacing(today);
-    krokRacingCache={at:Date.now(),races:result.races,meta:result.meta,creditsRemaining:result.creditsRemaining};
+    krokRacingCache={at:Date.now(),races:result.races,meta:result.meta,creditsRemaining:result.creditsRemaining,meta:result.meta};
     console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
       races:result.races.length,pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
-      runners:result.races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:result.creditsRemaining}));
+      runners:result.races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:result.creditsRemaining,meta:result.meta}));
   }
   return {races:krokRacingCache.races,scheduleFetchedAt:new Date(krokRacingCache.at).toISOString(),
     oddsFetchedAt:new Date(krokRacingCache.at).toISOString(),horizonHours:24,
-    feedErrors:[],feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining};
+    feedErrors:[],feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
 }
 
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
@@ -519,7 +519,7 @@ app.get("/api/races", async (_req, res) => {
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
     res.json({races, providerBookmakers, mode:"live", feedSource:feed.feedSource || "RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?"Krok Odds Free": "RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
+      horizonHours:feed.horizonHours, providerPlan:feed.feedSource==="Krok Odds"?"Krok Odds Free": "RapidOddsAPI Racing", creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
       note:"Australian and New Zealand thoroughbred, harness and greyhound races. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
