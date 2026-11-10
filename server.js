@@ -1003,20 +1003,28 @@ async function getGlobalRaces() {
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
       const runners=(r.runners||[]).map(x=>{
-        const price=Number(x.win_odds??x.fixed_win??x.win_price??x.odds),updated=x.updated_at||r.updated_at||payload.server_time||null;
-        return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||"Runner",
-          bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365 via MoviOdds",name:"Bet365",win_price:price,
-            last_update:updated,age_seconds:updated?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null,
-            source_url:x.url||x.source_url||null,public_demo:true}]:[]};
+        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.odds??x.price;
+        const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
+        const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:null;
+        const price=Number(fractionPrice??rawPrice),updated=x.updated_at||r.updated_at||payload.server_time||null;
+        const age=updated&&Number.isFinite(Date.parse(updated))?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null;
+        return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||x.selection_name||"Runner",
+          jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
+          scratched:x.scratched===true,suspended:x.suspended===true,
+          bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365 via MoviOdds public feed",name:"Bet365",win_price:price,
+            last_update:updated,age_seconds:age,stale:age!=null&&age>=180,suspended:x.suspended===true,
+            source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(r.id||r.race_id||"")),public_demo:true}]:[]};
       });
       const rawStart=r.jump_utc||r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const start=typeof rawStart==="number"?(rawStart>1000000000000?new Date(rawStart).toISOString():new Date(rawStart*1000).toISOString()):rawStart;
       const venue=r.course||r.venue||r.track||r.meeting||r.name||"Track TBA";
       const status=String(r.status||"scheduled").toLowerCase();
       const live=!!r.in_play||/live|in.?play|running/.test(status);
-      return {race_id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),id:String(r.id||r.race_id||[venue,r.race_number,start].join("-")),
-        category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_number:r.race_number??r.number??null,
-        start_time:start,country:r.country||"Country not supplied",status,in_play:live,
+      return {race_id:String(r.id||r.race_id||[venue,r.race_number??r.number,start].join("-")),id:String(r.id||r.race_id||[venue,r.race_number??r.number,start].join("-")),
+        category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_name:r.full_name||r.name||null,
+        race_number:r.race_number??r.number??null,distance_m:Number(String(r.distance||"").match(/[0-9]+/)?.[0])||null,
+        each_way:r.each_way||null,updated_at:r.updated_at||payload.server_time||null,
+        start_time:start,country:r.country||"Australia",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners};
     }).filter(r=>r.start_time&&!r.closed);
     if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
