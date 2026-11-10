@@ -397,7 +397,7 @@ function oddsDataEvent(raw,sport) {
  const live=status==="1"||status==="7"||status==="10";
  const epoch=Number(raw.time);
  const start=Number.isFinite(epoch)&&epoch>0?new Date(epoch*1000).toISOString():null;
- return {id:String(raw.id||raw.bet365_id||""),sport_id:String(sport.id),sport_name:sport.title,
+ return {id:String(raw.id||raw.bet365_id||""),bet365_id:String(raw.bet365_id||""),sport_id:String(sport.id),sport_name:sport.title,
   league:raw.league?.name||"",home_team:raw.home?.name||raw.home_team||"Team TBA",
   away_team:raw.away?.name||raw.away_team||"Team TBA",commence_time:start,
   in_play:live,status:live?"LIVE":(status==="2"?"TIME TBA":"UPCOMING"),
@@ -1051,6 +1051,53 @@ function mergeRapidOdds(baseEvents,rapidGames){
  }
  return events;
 }
+
+const bet365ResultsCache = new Map();
+// Finished fixtures are retrieved per sport, then enriched with Bet365's final-result endpoint.
+// One batched result request covers up to ten fixture IDs; cache prevents repeated credit use.
+app.get("/api/sports/results", async (req,res) => {
+  const sportId=String(req.query.sport_id||"1");
+  if(!/^\\d+$/.test(sportId)) return res.status(400).json({error:"Invalid sport_id"});
+  const cached=bet365ResultsCache.get(sportId);
+  if(cached && Date.now()-cached.at<5*60*1000) return res.json(cached.payload);
+  try {
+    const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
+    const ended=await oddsApi("/v3/events/ended",{sport_id:sportId,day,page:1,skip_esports:1});
+    const fixtures=(ended.data.results||[]).filter(x=>x.bet365_id||x.id).slice(0,10);
+    let finished=[];
+    if(fixtures.length) {
+      const ids=fixtures.map(x=>String(x.bet365_id||"")).filter(Boolean);
+      if(ids.length) {
+        const details=await oddsApi("/v1/bet365/result",{event_id:ids.join(",")});
+        const raw=details.data.results||[];
+        const byId=new Map(raw.map(x=>[String(x.id||""),x]));
+        finished=fixtures.map(f=>{
+          const fi=String(f.bet365_id||"");
+          const r=byId.get(fi);
+          if(!r) return null;
+          return {
+            id:fi, event_id:String(f.id||r.our_event_id||""),
+            sport_id:sportId, league:r.league?.name||f.league?.name||"",
+            home_team:r.home?.name||f.home?.name||"Team TBA",
+            away_team:r.away?.name||f.away?.name||"Team TBA",
+            score:r.ss||null, scores:r.scores||null,
+            status:"FINISHED", time:r.time||f.time||null,
+            stats:r.stats||null, events:r.events||[],
+            provider:"Bet365", updatedAt:new Date().toISOString()
+          };
+        }).filter(Boolean);
+      }
+    }
+    const payload={sport_id:sportId,results:finished,fetchedAt:new Date().toISOString(),
+      provider:"Odds Data API / Bet365",requested:fixtures.length,
+      note:"Final scores and match details are returned by the Bet365 results endpoint. Only completed fixtures returned by the provider are shown."};
+    bet365ResultsCache.set(sportId,{at:Date.now(),payload});
+    res.set("Cache-Control","no-store"); return res.json(payload);
+  } catch(err) {
+    return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365",sport_id:sportId});
+  }
+});
+
 app.get("/api/sports/:sportKey", async (req,res) => {
   const oddsSport=ODDS_DATA_SPORTS.find(x=>x.key===String(req.params.sportKey||"").toLowerCase());
   if(oddsSport) {
