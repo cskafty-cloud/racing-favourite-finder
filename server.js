@@ -168,8 +168,20 @@ async function demoRacingFeed() {
   if (!response.ok) throw new Error("Public racing demo feed " + response.status + ": " + body.slice(0, 240));
   const payload = JSON.parse(body);
   const rows = (Array.isArray(payload) ? payload : (Array.isArray(payload.races) ? payload.races : []))
-    .map(r=>({...r,_publicDemo:true,runners:(r.runners||[]).map(x=>({...x,
-      bookmakers:(x.bookmakers||x.odds||[]).map(q=>({...q,public_demo:true}))}))}));
+    .map(r=>({...r,_publicDemo:true,runners:(r.runners||[]).map(x=>{
+      const rawQuotes=x.bookmakers||x.odds||x.prices||[];
+      const bookmakers=(Array.isArray(rawQuotes)?rawQuotes:[]).map(q=>{
+        const rawBook=q.key||q.bookmaker_key||q.bookmaker||q.bookmaker_name||q.site||q.name||"";
+        const key=canonicalBookmakerKey(rawBook);
+        const price=Number(q.win_price??q.fixed_win_price??q.fixed_win??q.win_odds??q.odds_decimal??q.odds??q.price??q.win);
+        const age=q.age_seconds??q.quote_age_seconds??null;
+        const updated=q.last_update||q.updated_at||q.captured_at||q.timestamp||r.updated_at||null;
+        return {...q,key,bookmaker:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":q.bookmaker||q.name||rawBook,
+          win_price:price,age_seconds:age==null?null:Number(age),last_update:updated,
+          stale:q.stale===true||(age!=null&&Number(age)>=180),public_demo:true};
+      }).filter(q=>q.key&&Number.isFinite(q.win_price)&&q.win_price>1);
+      return {...x,bookmakers};
+    })}));
   // An empty array is a valid off-hours response (Australian racing has no cards 24/7).
   // Cache it too, otherwise every browser refresh hammers both feeds and fills logs with false errors.
   demoRacingCache = { at: Date.now(), rows };
@@ -1053,7 +1065,7 @@ async function getGlobalRaces() {
       scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       horizonHours:24,feedErrors:failures,feedSource:"Free public previews · PuntersEdge + Bet365 via MoviOdds",scope:"Australia",
-      note:"Free no-key public previews combined: the next 200 races returned by the Bet365 MoviOdds board plus PuntersEdge multi-bookmaker samples, including Sportsbet where quoted. Races remain listed even when runner fields or bookmaker prices have not arrived. Coverage is limited by each public preview and is not guaranteed to include every meeting worldwide. Quote age and jump times depend on each source."};
+      note:"Free no-key public previews combined: the next races returned by the Bet365 MoviOdds board plus PuntersEdge multi-bookmaker samples. Sportsbet favourites are calculated only from quotes explicitly labelled Sportsbet in the public sample; Bet365 and overall market prices are never substituted. Public demo coverage is limited and is not guaranteed to include every Australian meeting. Quote age and jump times depend on each source."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
   } catch(error) {
     failures.push({feed:"MoviOdds public Bet365 preview",message:error.message});
