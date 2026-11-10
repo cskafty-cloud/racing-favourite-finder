@@ -471,6 +471,45 @@ async function ensureSportsCatalogue() {
     sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
   }
 }
+const RAPID_SPORT_ALIASES={
+ nfl:"NFL",americanfootball_nfl:"NFL",nba:"NBA",basketball_nba:"NBA",wnba:"WNBA",mlb:"MLB",baseball_mlb:"MLB",nhl:"NHL",icehockey_nhl:"NHL",
+ afl:"AFL",australianrules_afl:"AFL",nrl:"NRL",rugby_nrl:"NRL",epl:"EPL",soccer_epl:"EPL",mls:"MLS",soccer_usa_mls:"MLS",
+ nbl:"NBL",basketball_nbl:"NBL",ncaab:"NCAAB",basketball_ncaab:"NCAAB",world_cup:"WORLD_CUP",
+ mens_ao:"MENS_AO",mens_rg:"MENS_RG",mens_wimbledon:"MENS_WIMBLEDON",mens_uso:"MENS_USO"
+};
+const rapidSportsOddsCache=new Map();
+function rapidSportId(key,title){
+ const k=String(key||"").toLowerCase();
+ if(RAPID_SPORT_ALIASES[k])return RAPID_SPORT_ALIASES[k];
+ const t=String(title||"").toLowerCase();
+ if(t.includes("australian rules")||t==="afl")return "AFL";
+ if(t.includes("rugby league")||t==="nrl")return "NRL";
+ if(t.includes("national basketball league")||t==="nbl")return "NBL";
+ return null;
+}
+function mergeRapidOdds(baseEvents,rapidGames){
+ const events=(baseEvents||[]).map(e=>({...e,bookmakers:[...(e.bookmakers||[])]}));
+ for(const entry of rapidGames||[]){
+  const g=entry.game||{};
+  const home=String(g.home_team||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const away=String(g.away_team||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  let target=events.find(e=>{
+   const eh=String(e.home_team||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+   const ea=String(e.away_team||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+   return eh===home&&ea===away;
+  });
+  if(!target){
+   target={id:String(g.game_id||[home,away,g.commence_time].join("|")),home_team:g.home_team,away_team:g.away_team,
+    commence_time:g.commence_time,bookmakers:[],_source:"RapidOddsAPI"};
+   events.push(target);
+  }
+  for(const book of entry.bookmakers||[]){
+   target.bookmakers.push({key:book.name,name:book.name,title:book.name,last_update:book.last_update,
+    markets:(book.markets||[]).map(m=>({key:m.key==="head_to_head"?"h2h":m.key,outcomes:(m.outcomes||[]).map(o=>({name:o.name,price:Number(o.price),point:o.point}))}))});
+  }
+ }
+ return events;
+}
 app.get("/api/sports/:sportKey", async (req,res) => {
   const key = String(req.params.sportKey||"").toLowerCase();
   if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
@@ -481,14 +520,32 @@ app.get("/api/sports/:sportKey", async (req,res) => {
     let cached=sportsOddsCache.get(key);
     if (!cached || Date.now()-cached.at>=15*60*1000) {
       const data=await provider("/v1/sports/"+encodeURIComponent(key)+"/odds",{markets:"h2h",oddsFormat:"decimal"});
-      cached={at:Date.now(),rows:rowsFrom(data)};
+      const baseRows=rowsFrom(data);
+      const sport=sportsCatalogueCache.rows.find(x=>String(x.key).toLowerCase()===key);
+      const rapidId=rapidSportId(key,sport?.title||sport?.name);
+      let rapidRows=[],rapidError=null,rapidFetchedAt=null;
+      if(RAPID_ODDS_KEY && rapidId){
+       try{
+        let rc=rapidSportsOddsCache.get(rapidId);
+        if(!rc||Date.now()-rc.at>=15*60*1000){
+         const rr=await rapidOdds("/sports/"+encodeURIComponent(rapidId)+"/markets",{
+          market_type:["head_to_head"],bookmaker:RAPID_BOOKMAKERS
+         });
+         rc={at:Date.now(),games:rr.data.games||[]};rapidSportsOddsCache.set(rapidId,rc);
+        }
+        rapidRows=rc.games;rapidFetchedAt=new Date(rc.at).toISOString();
+       }catch(err){rapidError=err.message;}
+      }
+      cached={at:Date.now(),rows:mergeRapidOdds(baseRows,rapidRows),rapidFetchedAt,rapidError,rapidSport:rapidId,
+       rapidGames:rapidRows.length};
       sportsOddsCache.set(key,cached);
     }
     res.set("Cache-Control","no-store");
     res.json({sport:sportsCatalogueCache.rows.find(x=>String(x.key).toLowerCase()===key),
-      events:cached.rows, fetchedAt:new Date(cached.at).toISOString(), refreshSeconds:900,
-      liveInPlayAvailable:false,
-      note:"Pre-match head-to-head odds only. No live/in-play sports market is supplied by this provider."});
+      events:cached.rows, fetchedAt:new Date(cached.at).toISOString(), rapidFetchedAt:cached.rapidFetchedAt,
+      rapidSport:cached.rapidSport,rapidGames:cached.rapidGames,rapidError:cached.rapidError,
+      bookmakers:RAPID_BOOKMAKERS,refreshSeconds:900,liveInPlayAvailable:false,
+      note:"Upcoming/pre-match head-to-head prices. Sportsbet, Bet365 and other bookmaker feeds are merged when the RapidOddsAPI feed has a matching fixture. Odds update on the provider's refresh cycle; this is not a second-by-second in-play odds feed."});
   } catch(err) { res.status(503).json({error:err.message,sportKey:key}); }
 });
 
