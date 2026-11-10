@@ -58,6 +58,7 @@ function normalizeName(value) {
 }
 function categoryOf(r) {
   const c = String(valueOf(r, ["category","code","race_type","type"]) || "").toLowerCase();
+  if (c.includes("harness") || c.includes("trotting") || c.includes("pacing")) return "harness";
   return c.includes("grey") || c.includes("dog") ? "greyhound" : "horse";
 }
 function venueOf(r) {
@@ -207,7 +208,7 @@ async function getGlobalRaces() {
       const tasks = [];
       if (now - scheduleCache.at >= 60000) tasks.push((async () => {
         try {
-          const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,greyhound" });
+          const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,harness,greyhound" });
           scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
           providerErrors.schedule = null;
           console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
@@ -215,7 +216,7 @@ async function getGlobalRaces() {
       })());
       if (now - pricedCache.at >= 15000) tasks.push((async () => {
         try {
-          const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,greyhound" });
+          const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,harness,greyhound" });
           pricedCache = { at: Date.now(), rows: rowsFrom(data) };
           providerErrors.odds = null;
           try {
@@ -237,7 +238,7 @@ async function getGlobalRaces() {
     const key = keyFor(r);
     map.set(key, { ...(map.get(key) || {}), ...r, runners: r.runners || map.get(key)?.runners || [] });
   }
-  const races = [...map.values()].filter(r => ["horse","greyhound"].includes(categoryOf(r)));
+  const races = [...map.values()].filter(r => ["horse","harness","greyhound"].includes(categoryOf(r)));
   if (!races.length && providerErrors.schedule && providerErrors.odds) {
     throw new Error("Racing provider unavailable: " + [providerErrors.schedule, providerErrors.odds].join(" | "));
   }
@@ -279,8 +280,45 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, providerBookmakers, mode:"live", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, feedErrors:feed.feedErrors, scope:"provider-supported worldwide",
-      note:"Worldwide schedule and prices for horse and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
+      note:"Worldwide schedule and prices for horse, harness and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
+});
+
+
+// Sports catalogue is cached for six hours. Sports odds are fetched on demand
+// per selected sport and cached for 15 minutes to control provider credit use.
+let sportsCatalogueCache = { at:0, rows:[] };
+const sportsOddsCache = new Map();
+app.get("/api/sports", async (_req,res) => {
+  try {
+    if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 6*60*60*1000) {
+      const data = await provider("/v1/sports");
+      sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
+    }
+    res.set("Cache-Control","no-store");
+    res.json({sports:sportsCatalogueCache.rows, fetchedAt:new Date(sportsCatalogueCache.at).toISOString(),
+      refreshSeconds:900, liveInPlayAvailable:false,
+      note:"Upcoming sports fixtures and pre-match odds only. This provider does not supply in-play sports odds; fixtures leave the odds feed when they start."});
+  } catch(err) { res.status(503).json({error:err.message}); }
+});
+app.get("/api/sports/:sportKey", async (req,res) => {
+  const key = String(req.params.sportKey||"").toLowerCase();
+  if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
+  const known = sportsCatalogueCache.rows.some(x=>String(x.key).toLowerCase()===key);
+  if (!known) return res.status(404).json({error:"Sport is not in the active provider catalogue. Refresh the sports list."});
+  try {
+    let cached=sportsOddsCache.get(key);
+    if (!cached || Date.now()-cached.at>=15*60*1000) {
+      const data=await provider("/v1/sports/"+encodeURIComponent(key)+"/odds",{markets:"h2h",oddsFormat:"decimal"});
+      cached={at:Date.now(),rows:rowsFrom(data)};
+      sportsOddsCache.set(key,cached);
+    }
+    res.set("Cache-Control","no-store");
+    res.json({sport:sportsCatalogueCache.rows.find(x=>String(x.key).toLowerCase()===key),
+      events:cached.rows, fetchedAt:new Date(cached.at).toISOString(), refreshSeconds:900,
+      liveInPlayAvailable:false,
+      note:"Pre-match head-to-head odds only. No live/in-play sports market is supplied by this provider."});
+  } catch(err) { res.status(503).json({error:err.message,sportKey:key}); }
 });
 
 app.post("/api/history/sync", async (_req,res) => {
