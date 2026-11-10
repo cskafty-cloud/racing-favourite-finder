@@ -56,7 +56,7 @@ function raceBookmakerPanel(bookmaker, favourite) {
     : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Sportsbet live & next-to-jump · horses, greyhounds and harness ↗</a>';
   const runner=favourite ? (favourite.number!=null?favourite.number+". ":"")+favourite.name : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">Verified quote · '+Math.round(Number(favourite.age))+'s old</div>'
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+favourite.price.toFixed(2)+'</div><div class="book-fav-age">Public preview · quote age not supplied</div>'
     : '<div class="book-fav-missing">No verified current '+esc(bookmaker)+' price available. Favourite not confirmed.</div>';
   return '<div class="book-fav"><div class="book-fav-label">'+esc(bookmaker)+' favourite</div>'+details+
     '<a class="bookmaker-market-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
@@ -482,7 +482,7 @@ function render() {
     ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
     : (state.feedMode === "public-widgets"
       ? '<div class="empty">No imported race cards are available from the connected licensed feeds at this refresh. The live public racing board is displayed above under Live racing odds & next to jump. <a href="#racingWidgets">Jump to the free live racing board ↗</a></div>'
-      : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>');
+      : (state.feedMode === "demo" ? '<div class="empty">The free public preview has no Australian race cards at this moment. This is not a website outage; check the live widgets above and refresh for the next sample.</div>' : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>'));
   renderTopTips();
 }
 function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
