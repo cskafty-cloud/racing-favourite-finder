@@ -155,6 +155,7 @@
         screen.classList.add("entry-screen-exit");
         var menu=document.getElementById("dashboardStartMenu");
         if(menu)menu.remove();
+        if(typeof window.startFullDashboardFeeds==="function")window.startFullDashboardFeeds();
         window.setTimeout(function(){
           screen.remove();
           var dashboard=document.querySelector(".shell");
