@@ -499,8 +499,10 @@ async function loadRaces() {
     $("updatedAt").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     const books = (data.providerBookmakers || []).length;
     $("feedFreshness").textContent = state.feedMode === "public-widgets"
-      ? "Free live racing widgets are displayed above · imported prices appear only when a connected provider supplies verified current quotes · no sample odds are generated."
-      : "Screen refresh: 60s · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
+      ? "Free live racing widgets are displayed above · no sample odds are generated."
+      : state.feedMode === "demo"
+        ? "Free no-key public preview · " + books + " bookmaker feeds returned · limited race sample, not the full Australian card. Quote age is shown only when supplied."
+        : "Screen refresh: 60s · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
     $("notice").textContent = data.note || "Racing cards and prices appear only when a connected provider returns them. Free public feeds remain available below.";
     $("notice").classList.remove("hidden");
     render();
