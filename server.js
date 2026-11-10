@@ -200,9 +200,13 @@ async function oddsApi(pathname, params={}) {
   const url = new URL("https://api.odds-data-api.com" + pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   url.searchParams.set("token",ODDS_API_TOKEN);
-  const response = await fetch(url,{signal:AbortSignal.timeout(20000)});
-  const data = await response.json();
-  if (!response.ok || data.success !== 1) throw new Error("Odds Data API: "+(data.error||response.status));
+  let response;
+  try { response = await fetch(url,{signal:AbortSignal.timeout(12000)}); }
+  catch (err) { throw new Error("Odds Data API connection failed: "+(err.cause?.code||err.name||err.message)); }
+  const body = await response.text();
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error("Odds Data API returned invalid JSON (HTTP "+response.status+")."); }
+  if (!response.ok || data.success !== 1) throw new Error("Odds Data API: "+(data.error||response.status)+(data.error_detail?" · "+data.error_detail:""));
   return {data, headers: {remaining:response.headers.get("X-RateLimit-Remaining"), reset:response.headers.get("X-RateLimit-Reset")}};
 }
 function fractionalDecimal(value) {
@@ -325,42 +329,39 @@ app.get("/api/races", async (_req, res) => {
 
 
 
-let liveSportsCache={at:0,events:[],error:null,rateLimitRemaining:null};
+let liveSportsCache={at:0,events:[],error:null,rateLimitRemaining:null,totalInPlay:0};
 let liveSportsRefresh=null;
 app.get("/api/live-sports",async(_req,res)=>{
  try{
   if(!ODDS_API_TOKEN)return res.status(503).json({configured:false,error:"Add ODDS_DATA_API_TOKEN to Railway and deploy it."});
-  // Refresh at 30 seconds and cap detail lookups to 20 events. This keeps
-  // the list + detail polling below the provider's documented 3,600/hour limit.
-  if(!liveSportsCache.at || Date.now()-liveSportsCache.at>30000){
+  // One list call and at most 10 sequential event calls per minute to protect
+  // the small Railway instance from concurrent large provider responses.
+  if(!liveSportsCache.at || Date.now()-liveSportsCache.at>60000){
    if(!liveSportsRefresh)liveSportsRefresh=(async()=>{
     try{
-     // sport_id is optional on Bet365 InPlay Filter. Unlike /v3/events/inplay,
-     // this endpoint returns the all-sports Bet365 in-play list and FI ids.
      const list=await oddsApi("/v1/bet365/inplay_filter",{skip_esports:1});
-     const fixtures=(list.data.results||[]).filter(e=>e.id).slice(0,20);
-     const details=await Promise.all(fixtures.map(async e=>{
+     const all=list.data.results||[];
+     const fixtures=all.filter(e=>e.id).slice(0,10);
+     const details=[];
+     for(const e of fixtures){
       try{
        const d=await oddsApi("/v1/bet365/event",{FI:e.id});
-       return parseBet365Live(d.data.results);
+       const parsed=parseBet365Live(d.data.results);
+       details.push({...parsed,id:parsed.id||e.id,
+        name:parsed.name||[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",
+        league:parsed.league||e.league?.name||null,score:parsed.score||e.ss||null,bookmaker:"bet365"});
       }catch(err){
-       return {id:e.id,name:[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",
+       details.push({id:e.id,name:[e.home?.name,e.away?.name].filter(Boolean).join(" v ")||"Live event",
         league:e.league?.name||null,score:e.ss||null,minute:null,status:"IN PLAY",
-        error:err.message,bookmaker:"bet365"};
+        error:err.message,bookmaker:"bet365",favourite:null,markets:[]});
       }
-     }));
-     liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining,
-      totalInPlay:list.data.results?.length||0};
+     }
+     liveSportsCache={at:Date.now(),events:details,error:null,rateLimitRemaining:list.headers.remaining,totalInPlay:all.length};
      console.info("BET365_INPLAY_REFRESH",JSON.stringify({
-      fetchedAt:new Date(liveSportsCache.at).toISOString(),
-      totalInPlay:liveSportsCache.totalInPlay,
-      detailed:details.length,
-      withScore:details.filter(x=>!!x.score).length,
-      withFavourite:details.filter(x=>!!x.favourite?.price).length,
-      withMarkets:details.filter(x=>(x.markets||[]).length>0).length,
-      eventErrors:details.filter(x=>!!x.error).length,
-      rateLimitRemaining:liveSportsCache.rateLimitRemaining,
-      sample:details.slice(0,3).map(x=>({name:x.name,score:x.score,minute:x.minute,favourite:x.favourite}))
+      fetchedAt:new Date(liveSportsCache.at).toISOString(),totalInPlay:all.length,detailed:details.length,
+      withScore:details.filter(x=>!!x.score).length,withFavourite:details.filter(x=>!!x.favourite?.price).length,
+      eventErrors:details.filter(x=>!!x.error).length,rateLimitRemaining:liveSportsCache.rateLimitRemaining,
+      sample:details.slice(0,3).map(x=>({name:x.name,score:x.score,favourite:x.favourite}))
      }));
     }catch(err){
      liveSportsCache={...liveSportsCache,at:Date.now(),error:err.message};
@@ -371,11 +372,10 @@ app.get("/api/live-sports",async(_req,res)=>{
   }
   res.set("Cache-Control","no-store");
   res.json({configured:true,provider:"Odds Data API / bet365",events:liveSportsCache.events,
-   totalInPlay:liveSportsCache.totalInPlay??null,
-   fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
+   totalInPlay:liveSportsCache.totalInPlay,fetchedAt:liveSportsCache.at?new Date(liveSportsCache.at).toISOString():null,
    ageSeconds:liveSportsCache.at?Math.round((Date.now()-liveSportsCache.at)/1000):null,
    rateLimitRemaining:liveSportsCache.rateLimitRemaining,error:liveSportsCache.error,
-   note:"Bet365 in-play scores and prices where returned. Up to 20 events are detailed per refresh; data is cached for 30 seconds. Sportsbet in-play prices are not provided by this connection."});
+   note:"Live scores and in-play prices from bet365. Sportsbet live odds require a separate live sportsbook feed; both Sportsbet and bet365 are shown for upcoming events when returned by the pre-match provider."});
  }catch(err){res.status(503).json({error:err.message});}
 });
 
