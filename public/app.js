@@ -174,7 +174,7 @@ function raceCard(r, live=false) {
   const fav = marketFavourite(r);
   const bet365Fav = bookmakerFavourite(r,"bet365");
   const sportsbetFav = sportsbetDisplayFavourite(r);
-  const bookFavourites = allBookmakerFavourites(r);
+  const bookFavourites = allBookmakerFavourites(r).filter(f=>f.key!=="sportsbet");
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
