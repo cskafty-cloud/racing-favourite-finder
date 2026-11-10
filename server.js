@@ -293,7 +293,17 @@ async function fetchKrokRacing(date) {
   try { payload=JSON.parse(body); } catch { throw new Error("Krok Odds returned invalid JSON (HTTP "+response.status+")."); }
   if (!response.ok || payload.success === false) throw new Error("Krok Odds "+response.status+": "+(payload.error||"request failed"));
   const grouped = new Map();
-  for (const bookRow of (Array.isArray(payload.data)?payload.data:[])) {
+  const sourceRows=Array.isArray(payload.data)?payload.data:[];
+  console.info("KROK_RACING_SCHEMA",JSON.stringify({
+    payloadKeys:Object.keys(payload||{}),
+    rowCount:sourceRows.length,
+    rowKeys:sourceRows[0]?Object.keys(sourceRows[0]):[],
+    raceTypeSamples:[...new Set(sourceRows.map(x=>String(x.race_type??x.category??x.type??"unknown")))].slice(0,12),
+    raceKeys:sourceRows[0]?.races?.[0]?Object.keys(sourceRows[0].races[0]):[],
+    runnerKeys:sourceRows[0]?.races?.[0]?.runners?.[0]?Object.keys(sourceRows[0].races[0].runners[0]):[],
+    runnerSample:sourceRows[0]?.races?.[0]?.runners?.[0]||null
+  }));
+  for (const bookRow of sourceRows) {
     const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
     const code = String(bookRow.race_type || "").toUpperCase();
@@ -660,6 +670,14 @@ app.get("/api/sports/:sportKey", async (req,res) => {
     if(!cached||Date.now()-cached.at>=300000){
       const result=await krokRequest("/odds-feed/sports/"+encodeURIComponent(key),{limit:25});
       const raw=Array.isArray(result.payload.data)?result.payload.data:[];
+      console.info("KROK_SPORT_SCHEMA",JSON.stringify({
+        sport:key,payloadKeys:Object.keys(result.payload||{}),eventCount:raw.length,
+        eventKeys:raw[0]?Object.keys(raw[0]):[],
+        bookmakerKeys:raw[0]?.bookmakers?.[0]?Object.keys(raw[0].bookmakers[0]):[],
+        marketKeys:raw[0]?.bookmakers?.[0]?.markets?.[0]?Object.keys(raw[0].bookmakers[0].markets[0]):[],
+        selectionKeys:raw[0]?.bookmakers?.[0]?.markets?.[0]?.selections?.[0]?Object.keys(raw[0].bookmakers[0].markets[0].selections[0]):[],
+        eventSample:raw[0]||null
+      }));
       const events=raw.map((e,i)=>{
         const markets=e.markets||e.odds||[];
         const bookmakers=(e.bookmakers||[]).map((b,j)=>({
