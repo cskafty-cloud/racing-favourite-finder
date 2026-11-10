@@ -436,14 +436,14 @@ async function loadRapidRacing() {
   const errors=[];
   const meetingsByCode=await Promise.all(RAPID_RACING_CODES.map(async code=>{
     try {
-      const data=await fetchRapidRacing("/racing/meetings",{countries:"AU,NZ",code});
+      const data=await fetchRapidRacing("/racing/meetings",{countries:"AU",code});
       return {code,meetings:data.meetings||[]};
     } catch(err) { errors.push(code+" meetings: "+err.message); return {code,meetings:[]}; }
   }));
   const meetingJobs=meetingsByCode.flatMap(({code,meetings})=>meetings.map(async meeting=>{
     try {
       const data=await fetchRapidRacing("/racing/races",{track:meeting.track,code,countries:meeting.country||"AU,NZ",
-        bookmakers:RAPID_RACING_BOOKMAKERS.join(",")});
+        bookmakers:RAPID_RACING_BOOKMAKERS.join(","),countries:"AU"});
       return (data.races||[]).map(normalizeRapidRace);
     } catch(err) { errors.push(meeting.track+" ("+code+"): "+err.message); return []; }
   }));
@@ -517,30 +517,53 @@ async function loadPuntersEdgeRaces() {
   };
 }
 async function getGlobalRaces() {
-  if(API_KEY) {
-    try { return await loadPuntersEdgeRaces(); }
-    catch(error) {
+  const failures=[];
+  if (API_KEY) {
+    try {
+      const primary=await loadPuntersEdgeRaces();
+      if (primary.races?.length) return primary;
+      failures.push({feed:"PuntersEdge",message:"Schedule and next-to-go endpoints returned no races."});
+    } catch(error) {
       console.error("PUNTERS_EDGE_PRIMARY_FAILED",error.message);
-      if(!KROKODDS_API_KEY && !RAPID_ODDS_KEY) throw error;
-      const fallback=KROKODDS_API_KEY?await getKrokRaces():null;
-      if(fallback) return {...fallback,feedErrors:[...(fallback.feedErrors||[]),{feed:"PuntersEdge",message:error.message}]};
+      failures.push({feed:"PuntersEdge",message:error.message});
     }
   }
+  // Try RapidOdds before Krok: Krok free-tier requests are limited and may be
+  // exhausted, while RapidOdds can provide the meeting schedule and race markets.
   if (RAPID_ODDS_KEY) {
-    if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
-      if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
-        const result=await loadRapidRacing();
-        rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
-      })().finally(()=>{rapidRacingRefresh=null;});
-      await rapidRacingRefresh;
+    try {
+      if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
+        if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
+          const result=await loadRapidRacing();
+          rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
+        })().finally(()=>{rapidRacingRefresh=null;});
+        await rapidRacingRefresh;
+      }
+      if (rapidRacingCache.races.length) return {
+        races:rapidRacingCache.races,
+        scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
+        oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),
+        horizonHours:24,
+        feedErrors:[...failures,...rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message}))],
+        feedSource:"RapidOddsAPI Australian Racing",scope:"Australia"
+      };
+      failures.push({feed:"RapidOddsAPI",message:"No Australian races returned for the requested meetings."},
+        ...rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})));
+    } catch(error) {
+      failures.push({feed:"RapidOddsAPI",message:error.message});
     }
-    return {races:rapidRacingCache.races,scheduleFetchedAt:new Date(rapidRacingCache.at).toISOString(),
-      oddsFetchedAt:new Date(rapidRacingCache.at).toISOString(),horizonHours:24,
-      feedErrors:rapidRacingCache.errors.map(message=>({feed:"RapidOddsAPI",message})),
-      feedSource:"RapidOddsAPI Racing",scope:"Australia and New Zealand"};
   }
-  if (KROKODDS_API_KEY) return getKrokRaces();
-  throw new Error("No racing feed API key is configured in Railway.");
+  if (KROKODDS_API_KEY) {
+    try {
+      const fallback=await getKrokRaces();
+      if (fallback.races?.length) return {...fallback,scope:"Australia",feedErrors:[...failures,...(fallback.feedErrors||[])]};
+      failures.push(...(fallback.feedErrors||[]),{feed:"Krok Odds",message:"No Australian races returned."});
+    } catch(error) {
+      failures.push({feed:"Krok Odds",message:error.message});
+    }
+  }
+  if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
+  throw new Error("No Australian racing feed API key is configured in Railway.");
 }
 
 function dedupeRaces(input) {
