@@ -887,6 +887,14 @@ async function loadPuntersEdgeRaces() {
     note:"Australian horse, greyhound and harness schedule merged with current runner prices from every bookmaker supported by the connected feed. Sportsbet, bet365 and other supported Australian books appear when they publish a quote. Quote age varies by bookmaker. The feed cannot include bookmakers or races its licensed data provider does not supply."
   };
 }
+function isAustralianRace(race) {
+  const country=String(race.country||race.country_code||race.region||"").trim().toLowerCase();
+  if (/^(au|aus|australia|australian)(\\b|$)/.test(country)) return true;
+  if (country && !/^(unknown|n\\/?a|not supplied|unspecified)$/.test(country)) return false;
+  const venue=String(race.venue||race.track||race.course||"").toLowerCase();
+  return !/\\b(zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\\b/.test(venue);
+}
+
 async function getGlobalRaces() {
   const failures=[];
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
@@ -978,12 +986,12 @@ async function getGlobalRaces() {
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_number:r.race_number??r.number??null,
         start_time:start,country:r.country||"Country not supplied",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners};
-    }).filter(r=>r.start_time&&!r.closed&&r.runners.length);
+    }).filter(r=>r.start_time&&!r.closed&&r.runners.length&&isAustralianRace(r));
     if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
       scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
       horizonHours:24,feedErrors:failures,feedSource:"Free public previews · PuntersEdge + Bet365 via MoviOdds",scope:"Australia",
-      note:"Free no-key public previews combined: independent provider MoviOdds supplies up to the next 100 Bet365 horse, greyhound and harness races; PuntersEdge adds a small multi-bookmaker sample, including Sportsbet where quoted. Coverage still depends on the public feeds and is not guaranteed to include every Australian meeting. Quote age and jump times depend on each source."};
+      note:"Free no-key public previews combined: Australian-only MoviOdds Bet365 racing snapshots plus PuntersEdge multi-bookmaker samples, including Sportsbet where quoted. Overseas meetings are filtered out. Coverage is limited by each public preview and is not guaranteed to include every Australian meeting. Quote age and jump times depend on each source."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
   } catch(error) {
     failures.push({feed:"MoviOdds public Bet365 preview",message:error.message});
