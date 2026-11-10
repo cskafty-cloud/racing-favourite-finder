@@ -129,13 +129,74 @@ function renderCoverage(rows) {
     (gapRows ? '<div class="coverage-subheading">Possible missing race numbers</div>'+gapRows : '<div class="coverage-empty">No race-number gaps detected among returned races.</div>');
 }
 
+
+function rawRunnerQuotes(runner) {
+  return (runner.bookmakers || runner.odds || []).map(q => ({
+    name:q.bookmaker || q.name || q.key || "Bookmaker",
+    price:Number(q.win_price ?? q.win ?? q.price),
+    age:q.age_seconds ?? null,
+    stale:!!q.stale,
+    url:q.source_link || q.source_url || null
+  })).filter(q=>Number.isFinite(q.price)&&q.price>1);
+}
+function isExplicitlyLive(r) {
+  const status=String(r.status || r.market_status || r.race_status || r.event_status || "").toLowerCase();
+  return r.inplay===true || r.in_play===true || r.is_live===true || /(^|[^a-z])(in[ -]?play|live|running)([^a-z]|$)/.test(status);
+}
+function renderLiveNow(rows) {
+  const live=rows.filter(isExplicitlyLive).sort((a,b)=>new Date(a.start_time||0)-new Date(b.start_time||0));
+  $("liveNowCount").textContent=live.length;
+  $("liveNowList").innerHTML=live.length ? live.map(r=>raceCard(r,true)).join("") :
+    '<div class="empty compact-empty">The provider has not explicitly marked any returned race as live/in-play at this refresh. Upcoming races are listed separately below.</div>';
+}
+function renderFullCoverage(rows) {
+  const catalog=new Map(); let racesWithQuotes=0, racesWithoutQuotes=0, runners=0, quotes=0;
+  for(const race of rows) {
+    let raceQuotes=0;
+    for(const runner of race.runners||[]) {
+      runners++;
+      for(const q of rawRunnerQuotes(runner)) {
+        quotes++; raceQuotes++;
+        const key=normalizeText(q.name);
+        if(key&&!catalog.has(key)) catalog.set(key,q.name);
+      }
+    }
+    if(raceQuotes) racesWithQuotes++; else racesWithoutQuotes++;
+  }
+  $("bookmakerUniverse").innerHTML = '<div class="bookmaker-universe-title">BOOKMAKERS FOUND IN THIS FEED ('+catalog.size+')</div>'+
+    (catalog.size ? [...catalog.values()].sort((a,b)=>a.localeCompare(b)).map(x=>'<span class="bookmaker-chip">'+esc(x)+'</span>').join("") :
+      '<span class="coverage-empty">No bookmaker names returned yet.</span>');
+  $("fullCoverageStats").innerHTML =
+    '<div><b>'+rows.length+'</b><span>Races returned</span></div>'+
+    '<div><b>'+runners+'</b><span>Runner rows</span></div>'+
+    '<div><b>'+quotes+'</b><span>Available quote rows</span></div>'+
+    '<div><b>'+racesWithoutQuotes+'</b><span>Races with no prices</span></div>';
+  $("fullCoverageList").innerHTML=rows.length ? rows.map(r=>{
+    const venue=r.venue||r.track_name||r.venue_canonical||"Unknown track";
+    const number=r.race_number||r.race_no||r.raceNumber||"—";
+    const all=(r.runners||[]).map(runner=>{
+      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
+      const qs=rawRunnerQuotes(runner).sort((a,b)=>a.name.localeCompare(b.name));
+      const quoteHtml=qs.map(q=>{
+        const age=q.age==null?"age n/a":Math.round(Number(q.age))+"s old";
+        const stale=q.stale || (q.age!=null && Number(q.age)>=180);
+        const link=q.url && /^https?:\/\//i.test(q.url) ? ' · <a class="bet-link" href="'+esc(q.url)+'" target="_blank" rel="noopener noreferrer">Open site</a>' : "";
+        return '<span class="bookmaker-quote '+(stale?"stale-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":" · returned")+'</small>'+link+'</span>';
+      }).join("");
+      return '<div class="full-runner"><div class="full-runner-name">'+esc((runner.number??runner.runner_number) ? (runner.number??runner.runner_number)+". " : "")+esc(name)+'</div><div class="bookmaker-prices">'+(quoteHtml||'<span class="no-odds">No bookmaker prices returned for this runner.</span>')+'</div></div>';
+    }).join("");
+    const raceQuoteCount=(r.runners||[]).reduce((n,x)=>n+rawRunnerQuotes(x).length,0);
+    const live=isExplicitlyLive(r);
+    return '<details class="full-race-row" '+(live?"open":"")+'><summary><span><b>'+esc(venue)+' R'+esc(number)+'</b><small>'+esc(categoryOf(r))+' · '+esc(r.country||"Country n/a")+' · '+esc(fmtDate(r.start_time))+' '+esc(fmtTime(r.start_time))+(live?' · LIVE NOW':'')+'</small></span><strong>'+raceQuoteCount+' quotes · '+(r.runners||[]).length+' runners</strong><span class="detail-chevron">⌄</span></summary><div class="full-race-runners">'+(all||'<div class="no-odds">No runners supplied by the provider for this race yet.</div>')+'</div></details>';
+  }).join("") : '<div class="empty">No races returned by the provider.</div>';
+}
 function render() {
   const horses = state.races.filter(r=>categoryOf(r)==="horse").length;
   $("raceCount").textContent = state.races.length;
   $("horseCount").textContent = horses;
   $("dogCount").textContent = state.races.length-horses;
   const rows = filteredRaces();
-  renderCoverage(rows);
+  renderCoverage(rows);\n  renderLiveNow(rows);\n  renderFullCoverage(rows);
   const now = Date.now(), cutoff = now + 30*60*1000;
   const live = rows.filter(r => {
     const t = new Date(r.start_time).getTime();
