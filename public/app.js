@@ -23,7 +23,7 @@ function quoteAgeSeconds(q) {
 function isBetfairQuote(q) { return /betfair|exchange/i.test(String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"")); }
 function fixedRunnerPrices(runner) { return runnerPrices(runner).filter(q=>!isBetfairQuote(q)); }
 function runnerFixedOdds(runner) {
- const ps=fixedRunnerPrices(runner).filter(q=>{const age=quoteAgeSeconds(q);return !q.stale&&age!=null&&age<180;}).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
+ const ps=fixedRunnerPrices(runner).filter(q=>{const age=quoteAgeSeconds(q);return !q.stale&&(age==null?q.public_demo===true:age<180);}).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
  return ps.length?ps[Math.floor((ps.length-1)/2)]:null;
 }
 function exchangeRunnerPrice(runner) {
@@ -37,13 +37,13 @@ function bookmakerFavourite(race, wantedKey) {
     const quote = fixedRunnerPrices(runner).find(q => {
       const age=quoteAgeSeconds(q);
       return [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => accepted.includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,"")))
-        && q.stale!==true && age!=null && age<180;
+        && q.stale!==true && (age==null?q.public_demo===true:age<180);
     });
     if (!quote) return null;
     return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
       number:runner.number ?? runner.runner_number ?? null,
       price:Number(quote.win_price ?? quote.win ?? quote.price),
-      age:quoteAgeSeconds(quote), stale:false, verified:true,
+      age:quoteAgeSeconds(quote), stale:false, verified:quote.public_demo!==true,
       url:quote.event_url||quote.market_url||quote.url||BOOKMAKER_URLS[wantedKey]};
   }).filter(x => x && Number.isFinite(x.price) && x.price > 1);
   return candidates.sort((a,b)=>a.price-b.price)[0] || null;
