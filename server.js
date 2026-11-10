@@ -451,6 +451,19 @@ app.get("/api/races", async (_req, res) => {
 
 
 
+
+async function krokRequest(pathname, params={}) {
+  if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
+  const url = new URL(KROKODDS_BASE + pathname);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,String(v)));
+  const response = await fetch(url,{headers:{"X-API-Key":KROKODDS_API_KEY},signal:AbortSignal.timeout(20000)});
+  const body = await response.text();
+  let payload;
+  try { payload=JSON.parse(body); } catch { throw new Error("Krok Odds returned invalid JSON (HTTP "+response.status+")."); }
+  if (!response.ok || payload.success === false) throw new Error("Krok Odds "+response.status+": "+(payload.error||payload.message||"request failed"));
+  return {payload, creditsRemaining:response.headers.get("X-Credits-Remaining")};
+}
+
 const RAPID_ODDS_KEY = process.env.RAPIDODDSAPI_API_KEY || "";
 const RAPID_ODDS_BASE = "https://api.rapidoddsapi.com";
 const RAPID_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","PickleBet","Dabble","Amused","Betmakers","GenWeb","AllBets","PuntersTech","BetCloud"];
@@ -559,22 +572,44 @@ app.get("/api/live-sports",async(_req,res)=>{
 // per selected sport and cached for 15 minutes to control provider credit use.
 let sportsCatalogueCache = { at:0, rows:[] };
 const sportsOddsCache = new Map();
+// Krok Odds is the single source for the sports catalogue and pre-match sports prices.
+let sportsCatalogueCache = { at:0, rows:[], meta:null };
+const sportsOddsCache = new Map();
 app.get("/api/sports", async (_req,res) => {
   try {
-    if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 6*60*60*1000) {
-      const data = await provider("/v1/sports");
-      sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
+    if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 300000) {
+      const result = await krokRequest("/odds-feed/sports");
+      const rows = Array.isArray(result.payload.data) ? result.payload.data : [];
+      sportsCatalogueCache = {at:Date.now(),rows:rows.map(x=>({
+        key:String(x.sport||x.key||"").toLowerCase(),
+        title:x.label||x.title||x.sport||x.key,
+        name:x.label||x.title||x.sport||x.key,
+        category:x.category||"Sports",
+        event_count:Number(x.event_count||0),
+        bookmakers:x.bookmakers||[],
+        href:x.href||null,
+        active:true
+      })).filter(x=>x.key),meta:result.payload.meta||null};
+      console.info("KROK_SPORTS_INDEX",JSON.stringify({sports:sportsCatalogueCache.rows.length,
+        eventCounts:sportsCatalogueCache.rows.reduce((n,x)=>n+x.event_count,0),
+        creditsRemaining:result.creditsRemaining}));
     }
     res.set("Cache-Control","no-store");
-    res.json({sports:sportsCatalogueCache.rows, fetchedAt:new Date(sportsCatalogueCache.at).toISOString(),
-      refreshSeconds:900, liveInPlayAvailable:false,
-      note:"Upcoming sports fixtures and pre-match odds only. This provider does not supply in-play sports odds; fixtures leave the odds feed when they start."});
-  } catch(err) { res.status(503).json({error:err.message}); }
+    res.json({sports:sportsCatalogueCache.rows,fetchedAt:new Date(sportsCatalogueCache.at).toISOString(),
+      provider:"Krok Odds",providerMeta:sportsCatalogueCache.meta,refreshSeconds:300,
+      liveInPlayAvailable:false,
+      note:"Sports catalogue and pre-match bookmaker odds are supplied by Krok Odds. In-play scores are not claimed unless a live-score source confirms them."});
+  } catch(err) { res.status(503).json({error:err.message,provider:"Krok Odds"}); }
 });
 async function ensureSportsCatalogue() {
-  if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 6*60*60*1000) {
-    const data = await provider("/v1/sports");
-    sportsCatalogueCache = { at:Date.now(), rows:rowsFrom(data).filter(x=>x.active!==false) };
+  if (!sportsCatalogueCache.at || Date.now()-sportsCatalogueCache.at >= 300000) {
+    const result=await krokRequest("/odds-feed/sports");
+    const rows=Array.isArray(result.payload.data)?result.payload.data:[];
+    sportsCatalogueCache={at:Date.now(),rows:rows.map(x=>({
+      key:String(x.sport||x.key||"").toLowerCase(),title:x.label||x.title||x.sport||x.key,
+      name:x.label||x.title||x.sport||x.key,category:x.category||"Sports",
+      event_count:Number(x.event_count||0),bookmakers:x.bookmakers||[],href:x.href||null,active:true
+    })).filter(x=>x.key),meta:result.payload.meta||null};
   }
 }
 const RAPID_SPORT_ALIASES={
@@ -617,44 +652,57 @@ function mergeRapidOdds(baseEvents,rapidGames){
  return events;
 }
 app.get("/api/sports/:sportKey", async (req,res) => {
-  const key = String(req.params.sportKey||"").toLowerCase();
-  if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
-  try { await ensureSportsCatalogue(); } catch(err) { return res.status(503).json({error:err.message,sportKey:key}); }
-  const known = sportsCatalogueCache.rows.some(x=>String(x.key).toLowerCase()===key);
-  if (!known) return res.status(404).json({error:"Sport is not in the active provider catalogue. Refresh the sports list."});
+  const key=String(req.params.sportKey||"").toLowerCase();
+  if(!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({error:"Invalid sport key"});
   try {
+    await ensureSportsCatalogue();
+    const sport=sportsCatalogueCache.rows.find(x=>x.key===key);
+    if(!sport) return res.status(404).json({error:"Sport is not in Krok Odds' live sports catalogue."});
     let cached=sportsOddsCache.get(key);
-    if (!cached || Date.now()-cached.at>=15*60*1000) {
-      const data=await provider("/v1/sports/"+encodeURIComponent(key)+"/odds",{markets:"h2h",oddsFormat:"decimal"});
-      const baseRows=rowsFrom(data);
-      const sport=sportsCatalogueCache.rows.find(x=>String(x.key).toLowerCase()===key);
-      const rapidId=rapidSportId(key,sport?.title||sport?.name);
-      let rapidRows=[],rapidError=null,rapidFetchedAt=null;
-      if(RAPID_ODDS_KEY && rapidId){
-       try{
-        let rc=rapidSportsOddsCache.get(rapidId);
-        if(!rc||Date.now()-rc.at>=15*60*1000){
-         const rr=await rapidOdds("/sports/"+encodeURIComponent(rapidId)+"/markets",{
-          market_type:["head_to_head"],bookmaker:RAPID_BOOKMAKERS
-         });
-         rc={at:Date.now(),games:rr.data.games||[]};rapidSportsOddsCache.set(rapidId,rc);
-        }
-        rapidRows=rc.games;rapidFetchedAt=new Date(rc.at).toISOString();
-       }catch(err){rapidError=err.message;}
-      }
-      cached={at:Date.now(),rows:mergeRapidOdds(baseRows,rapidRows),rapidFetchedAt,rapidError,rapidSport:rapidId,
-       rapidGames:rapidRows.length};
+    if(!cached||Date.now()-cached.at>=300000){
+      const result=await krokRequest("/odds-feed/sports/"+encodeURIComponent(key),{limit:25});
+      const raw=Array.isArray(result.payload.data)?result.payload.data:[];
+      const events=raw.map((e,i)=>{
+        const markets=e.markets||e.odds||[];
+        const bookmakers=(e.bookmakers||[]).map((b,j)=>({
+          key:b.bookmaker_key||b.key||b.name||("book-"+j),
+          name:b.bookmaker||b.bookmaker_name||b.name||b.bookmaker_key||"Bookmaker",
+          title:b.bookmaker||b.bookmaker_name||b.name||b.bookmaker_key||"Bookmaker",
+          last_update:b.captured_at||b.last_update||e.captured_at||null,
+          markets:(b.markets||[]).map(m=>({
+            key:m.market_key||m.key||m.name||"h2h",
+            name:m.market_label||m.name||m.market_key||"Head to head",
+            outcomes:(m.selections||m.outcomes||[]).map(o=>({
+              name:o.name||o.selection||o.label||"Selection",
+              price:Number(o.odds??o.price??o.decimal_odds),
+              point:o.point??null
+            })).filter(o=>Number.isFinite(o.price)&&o.price>1)
+          }))
+        }));
+        const directSelections=e.selections||e.outcomes||[];
+        if(!bookmakers.length&&directSelections.length) bookmakers.push({key:"krok",name:"Krok Odds",title:"Krok Odds",
+          last_update:e.captured_at||null,markets:[{key:"h2h",name:"Head to head",outcomes:directSelections.map(o=>({
+            name:o.name||o.selection||o.label||"Selection",price:Number(o.odds??o.price??o.decimal_odds)
+          })).filter(o=>Number.isFinite(o.price)&&o.price>1)}]});
+        return {...e,id:String(e.event_id||e.id||[key,i,e.start_time||e.commence_time].join("-")),
+          home_team:e.home_team||e.home||e.team_home||null,
+          away_team:e.away_team||e.away||e.team_away||null,
+          commence_time:e.start_time||e.commence_time||e.event_start||null,
+          bookmakers,_source:"Krok Odds"};
+      });
+      cached={at:Date.now(),rows:events,meta:result.payload.meta||null,creditsRemaining:result.creditsRemaining};
       sportsOddsCache.set(key,cached);
+      console.info("KROK_SPORT_ODDS",JSON.stringify({sport:key,events:events.length,
+        pricedEvents:events.filter(e=>e.bookmakers.some(b=>b.markets.some(m=>m.outcomes.length))).length,
+        creditsRemaining:result.creditsRemaining}));
     }
     res.set("Cache-Control","no-store");
-    res.json({sport:sportsCatalogueCache.rows.find(x=>String(x.key).toLowerCase()===key),
-      events:cached.rows, fetchedAt:new Date(cached.at).toISOString(), rapidFetchedAt:cached.rapidFetchedAt,
-      rapidSport:cached.rapidSport,rapidGames:cached.rapidGames,rapidError:cached.rapidError,
-      bookmakers:RAPID_BOOKMAKERS,refreshSeconds:900,liveInPlayAvailable:false,
-      note:"Upcoming/pre-match head-to-head prices. Sportsbet, Bet365 and other bookmaker feeds are merged when the RapidOddsAPI feed has a matching fixture. Odds update on the provider's refresh cycle; this is not a second-by-second in-play odds feed."});
-  } catch(err) { res.status(503).json({error:err.message,sportKey:key}); }
+    res.json({sport,events:cached.rows,fetchedAt:new Date(cached.at).toISOString(),
+      provider:"Krok Odds",providerMeta:cached.meta,creditsRemaining:cached.creditsRemaining,
+      refreshSeconds:300,liveInPlayAvailable:false,
+      note:"Upcoming/pre-match events and bookmaker markets from Krok Odds. Live scores are not inferred; event prices depend on Krok's available coverage."});
+  } catch(err) {res.status(503).json({error:err.message,sportKey:key,provider:"Krok Odds"});}
 });
-
 app.post("/api/history/sync", async (_req,res) => {
   try {
     const results = rowsFrom(await provider("/v1/racing/results", {
