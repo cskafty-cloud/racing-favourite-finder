@@ -1024,20 +1024,25 @@ async function loadSportsbetPublicRaces(){
 
 let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
- const fixed=runner.fixed_odds||runner.fixedOdds||runner.fixed||{};
+ const fixed=runner.fixed_odds||runner.fixedOdds||runner.fixed||runner.fixed_win_odds||runner.fixedWinOdds||{};
+ const odds=runner.odds&&typeof runner.odds==="object"?runner.odds:{};
  const direct=runner.win_price??runner.fixed_win_price??runner.fixed_win??runner.win_odds??
-  runner.decimal_odds??runner.winPrice??runner.price??(typeof runner.odds==="number"?runner.odds:null)??runner.decimal??fixed.win??fixed.win_price??fixed.winOdds??fixed.fixedWin??fixed.returnWin??fixed.decimal??null;
+  runner.win_fixed_odds??runner.fixed_win_odds??runner.fixedWinOdds??runner.fixedWinPrice??
+  runner.decimal_odds??runner.odds_decimal??runner.winPrice??runner.price??
+  (typeof runner.odds==="number"?runner.odds:null)??runner.decimal??
+  odds.win??odds.fixed_win??odds.win_price??odds.decimal??
+  fixed.win??fixed.win_price??fixed.winPrice??fixed.winOdds??fixed.fixedWin??fixed.returnWin??fixed.decimal??null;
  if(direct!=null&&Number.isFinite(Number(direct))&&Number(direct)>1)return Number(direct);
  const markets=Array.isArray(runner.markets)?runner.markets:[];
  for(const market of markets){
   if(!/win|winner/i.test(String(market.name||market.key||market.market_name||"")))continue;
   const outcomes=market.outcomes||market.selections||[];
-  for(const outcome of outcomes){const price=Number(outcome.price??outcome.odds??outcome.decimal);if(price>1)return price;}
+  for(const outcome of outcomes){const price=Number(outcome.price??outcome.odds??outcome.decimal??outcome.fixed_win_price);if(price>1)return price;}
  }
  const prices=Array.isArray(runner.prices)?runner.prices:[];
  for(const price of prices){
   if(!/win|fixed/i.test(String(price.market||price.market_name||price.type||"win")))continue;
-  const n=Number(price.price??price.odds??price.decimal);if(n>1)return n;
+  const n=Number(price.price??price.odds??price.decimal??price.fixed_win_price);if(n>1)return n;
  }
  return null;
 }
@@ -1642,5 +1647,5 @@ app.listen(PORT,"0.0.0.0",()=>{
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
-  setInterval(refreshBackgroundRacingFeed, 60000);
+  setInterval(refreshBackgroundRacingFeed, 5 * 60 * 1000);
 });
