@@ -435,7 +435,7 @@ async function loadSportResults(sportId){
 function renderSports(){
  const catalogue=$("sportsCatalogue"),list=$("sportsEvents");if(!catalogue||!list)return;
  catalogue.innerHTML=(state.sports||[]).map(s=>'<button class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
- const events=(state.sportEvents||[]).slice().filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).filter(e=>!state.sportsbetOnly||(e.bookmakers||[]).some(b=>bookmakerMatches(b.key||b.name,"sportsbet"))).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
+ const events=(state.sportEvents||[]).slice().filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
  list.innerHTML=events.length?events.map(e=>{
   const ranks=sportRankings(e),sb=sportFavourite(e,"sportsbet"),b365=sportFavourite(e,"bet365"),f=ranks[0];
   const start=e.commence_time?new Date(e.commence_time).toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",hour12:true}):"Start time TBA";
@@ -447,7 +447,7 @@ function renderSports(){
   const outcomes=ranks.length?'<div class="sport-ranked-outcomes">'+ranks.map((x,i)=>'<span>'+(i+1)+'. '+esc(x.name)+' <b>$'+Number(x.price).toFixed(2)+'</b> · '+x.books+' quote'+(x.books===1?"":"s")+'</span>').join("")+'</div>':'<div class="empty compact-empty">No current head-to-head prices returned.</div>';
   const bookmakerFavourites='<div class="sport-book-favs"><span>Sportsbet: <b>'+(sb?esc(sb.name)+' $'+Number(sb.price).toFixed(2):"price unavailable")+'</b></span><span>Bet365: <b>'+(b365?esc(b365.name)+' $'+Number(b365.price).toFixed(2):"price unavailable")+'</b></span><span>Overall market: <b>'+(f?esc(f.name)+' $'+Number(f.price).toFixed(2):"not confirmed")+'</b></span></div>';
   return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(e.in_play===true?"LIVE · IN PLAY":"UPCOMING")+'</span></div><div class="sport-league">'+esc(e.sport_name||e._sport||"SPORT")+(e.league?" · "+esc(e.league):"")+'</div><div class="sport-start-info">'+esc(start)+'</div>'+bookmakerFavourites+outcomes+'<details><summary>All returned bookmaker markets</summary><div class="live-bookmakers">'+(bookText||"No bookmaker market prices returned for this fixture.")+'</div></details><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div></article>';
- }).join(""):'<div class="empty">No live or upcoming sports fixtures were returned by the public feeds at this refresh. The full sports catalogue remains available above.</div>';
+ }).join(""):'<div class="empty">No live or upcoming fixtures were returned by the connected public sports feeds at this refresh. Sportsbet prices remain unavailable unless the public source labels a quote Sportsbet.</div>';
  renderSportTrends();renderTopTips();
 }
 function liveScoreText(side){
