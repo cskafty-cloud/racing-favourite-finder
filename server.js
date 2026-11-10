@@ -1250,7 +1250,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
     res.set("Cache-Control","no-store");
     return res.json({sport:{key:sport.key,title:sport.title},events:data.rows,fetchedAt:new Date(data.at).toISOString(),
       provider:data.provider,providerErrors:data.errors,publicDemo:true,
-      note:"Free no-key public snapshot from Sportsbet and Bet365 via PuntersEdge. Only a few events are exposed per sport and coverage varies. Times are shown in Brisbane time; absent prices and fixtures are not invented."});
+      note:"Free no-key feeds: PuntersEdge Sportsbet and Bet365 book-by-sport snapshots plus its best-odds sample for selected sports; MoviOdds supplies additional mapped fixtures. Each preview is truncated and coverage varies by sport. Times are shown in Brisbane time; absent prices and fixtures are never invented."});
   }catch(error){return res.status(502).json({error:error.message,publicDemo:true});}
 });
 app.get("/api/sports/:sportKey", async (req,res) => {
