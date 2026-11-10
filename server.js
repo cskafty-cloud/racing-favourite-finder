@@ -342,7 +342,7 @@ async function loadRapidRacing() {
 }
 async function getGlobalRaces() {
   if (!RAPID_ODDS_KEY) throw new Error("Add RAPIDODDSAPI_API_KEY in Railway Variables to enable the RapidOddsAPI racing feed.");
-  if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=30000) {
+  if (!rapidRacingCache.at || Date.now()-rapidRacingCache.at>=60000) {
     if (!rapidRacingRefresh) rapidRacingRefresh=(async()=>{
       const result=await loadRapidRacing();
       rapidRacingCache={at:Date.now(),races:result.races,errors:result.errors};
@@ -380,14 +380,14 @@ app.get("/api/races", async (_req, res) => {
     }
     if (added) await saveHistory(history);
     res.set("Cache-Control","no-store");
-    const providerBookmakers = [...new Map(pricedCache.rows.flatMap(r => (r.runners || []).flatMap(x => runnerQuotes(x).map(q => {
+    const providerBookmakers = [...new Map(races.flatMap(r => (r.runners || []).flatMap(x => runnerQuotes(x).map(q => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
     res.json({races, providerBookmakers, mode:"live", feedSource:"RapidOddsAPI racing", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
-      horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, feedErrors:feed.feedErrors, scope:"provider-supported worldwide",
-      note:"Worldwide schedule and prices for horse, harness and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
+      horizonHours:feed.horizonHours, providerPlan:"RapidOddsAPI Racing", feedErrors:feed.feedErrors, scope:"Australia and New Zealand",
+      note:"Australian and New Zealand thoroughbred, harness and greyhound races. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker. Check quote age."});
   } catch (err) { res.status(503).json({error:err.message,mode:"offline"}); }
 });
 
