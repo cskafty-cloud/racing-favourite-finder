@@ -1025,7 +1025,8 @@ app.get("/api/live-sports",async(_req,res)=>{
  try{
   if(!bet365LiveCache.at||Date.now()-bet365LiveCache.at>85000){
    const sports=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id));
-   const settled=await Promise.allSettled(sports.map(loadPublicDemoSport));
+   const settled=[];
+   for(let i=0;i<sports.length;i+=4) settled.push(...await Promise.allSettled(sports.slice(i,i+4).map(loadPublicDemoSport)));
    const events=[],errors=[];
    settled.forEach((result,index)=>{
     if(result.status!=="fulfilled"){errors.push(sports[index].title+": "+result.reason.message);return;}
