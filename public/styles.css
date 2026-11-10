@@ -191,3 +191,10 @@ body.sports-mode .sports-panel{margin-top:0;min-height:65vh}
 .sportsbet-market-link span{display:flex;flex-direction:column;gap:5px}
 .sportsbet-market-link a{color:#f0ce8b;font-weight:700;font-size:11px;text-decoration:none;white-space:nowrap}
 @media(max-width:600px){.source-link-grid{grid-template-columns:1fr}.public-racing-sources{padding:14px}.sportsbet-market-link{align-items:flex-start;flex-direction:column}}
+
+.bookmaker-market-link,.sportsbook-links a{display:inline-block;margin-top:8px;color:#a9d8ff;font-size:10px;font-weight:700;text-decoration:none}
+.bookmaker-market-link:hover,.sportsbook-links a:hover{text-decoration:underline}
+.sportsbook-links{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}
+.race-bookmaker-favourites{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.race-bookmaker-favourites> b{grid-column:1/-1}
+@media(max-width:650px){.race-bookmaker-favourites{grid-template-columns:1fr}}
