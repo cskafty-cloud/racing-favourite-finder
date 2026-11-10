@@ -209,7 +209,9 @@ function render() {
   $("horseCount").textContent = horses;
   $("dogCount").textContent = state.races.length-horses;
   const rows = filteredRaces();
-  renderCoverage(rows);\n  renderLiveNow(rows);\n  renderFullCoverage(rows);
+  renderCoverage(rows);
+  renderLiveNow(rows);
+  renderFullCoverage(rows);
   const now = Date.now(), cutoff = now + 30*60*1000;
   const live = rows.filter(r => {
     const t = new Date(r.start_time).getTime();
