@@ -12,6 +12,9 @@ const BASE = "https://api.puntersedge.online";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 let writeQueue = Promise.resolve();
+const lastMarketSignatures = new Map();
+const MARKET_HISTORY_LIMIT = 25000;
+const MARKET_HISTORY_DAYS = 30;
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -96,6 +99,41 @@ function findMatchingPick(picks, result) {
       String(p.raceNumber) === String(raceNumberOf(result)) &&
       localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
   return matches.length === 1 ? matches[0] : null;
+}
+async function recordMarketSnapshots(races, capturedAt) {
+  const history = await readHistory();
+  const cutoff = Date.now() - MARKET_HISTORY_DAYS * 86400000;
+  history.marketSnapshots = history.marketSnapshots.filter(x => Date.parse(x.capturedAt) >= cutoff);
+  let added = 0;
+  for (const race of races) {
+    const runners = (race.runners || []).map(r => ({
+      name:r.name || r.runner_name || r.horse_name || r.greyhound_name || "Runner",
+      number:r.number ?? r.runner_number ?? null,
+      quotes:runnerQuotes(r).map(q => ({
+        bookmaker:q.bookmaker || q.name || q.key || "Bookmaker",
+        price:Number(q.win_price ?? q.win ?? q.price),
+        ageSeconds:q.age_seconds ?? null
+      })).sort((a,b)=>a.bookmaker.localeCompare(b.bookmaker))
+    }));
+    const favourite = selectFavourite(race);
+    const signature = JSON.stringify({runners, favourite});
+    const id = raceId(race);
+    if (lastMarketSignatures.get(id) === signature) continue;
+    lastMarketSignatures.set(id, signature);
+    history.marketSnapshots.push({
+      raceId:id, category:categoryOf(race), venue:venueOf(race),
+      raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
+      capturedAt, favourite, runners,
+      quoteCount:runners.reduce((n,r)=>n+r.quotes.length,0),
+      status:favourite ? "priced" : "waiting_for_odds"
+    });
+    added++;
+  }
+  if (added) {
+    history.marketSnapshots = history.marketSnapshots.slice(-MARKET_HISTORY_LIMIT);
+    await saveHistory(history);
+  }
+  return { added, total:history.marketSnapshots.length };
 }
 function bookmakerKey(q) {
   return String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -259,6 +297,20 @@ app.post("/api/history/sync", async (_req,res) => {
       pending:history.picks.filter(p=>p.status==="pending").length,
       total:history.picks.length, syncedAt:new Date().toISOString()});
   } catch (err) { res.status(503).json({error:err.message}); }
+});
+
+app.get("/api/market-history", async (req,res) => {
+  try {
+    const history = await readHistory();
+    const snapshots = history.marketSnapshots.slice().sort((a,b)=>Date.parse(b.capturedAt)-Date.parse(a.capturedAt));
+    const raceIdFilter = req.query.raceId ? String(req.query.raceId) : null;
+    const rows = raceIdFilter ? snapshots.filter(x=>x.raceId===raceIdFilter) : snapshots;
+    res.set("Cache-Control","no-store");
+    res.json({ snapshots:rows.slice(0,100), total:rows.length,
+      racesTracked:new Set(snapshots.map(x=>x.raceId)).size,
+      capturedAt:snapshots[0]?.capturedAt || null,
+      retentionDays:MARKET_HISTORY_DAYS });
+  } catch(err) { res.status(500).json({error:err.message}); }
 });
 
 app.get("/api/history", async (_req,res) => {
