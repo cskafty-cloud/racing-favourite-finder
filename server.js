@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 // This application is permanently display-only: it may read odds/results but must never place bets.
 const AUTO_BETTING_ENABLED = false;
 app.use((req, res, next) => {
-  if (!AUTO_BETTING_ENABLED && req.path.startsWith("/api/") && ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+  if (!AUTO_BETTING_ENABLED && req.path.startsWith("/api/") && !(req.method === "POST" && req.path === "/api/history/sync") && ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     return res.status(403).json({ ok:false, error:"Bet placement and account actions are disabled. This is a read-only odds display." });
   }
   next();
@@ -1090,7 +1090,7 @@ app.get("/api/races", async (_req, res) => {
     const races = dedupeRaces(feed.races);
     const history = await readHistory();
     let added = 0;
-    if (!/demo|public/i.test(String(feed.feedSource||""))) for (const race of races) {
+    for (const race of races) {
       const fav = selectFavourite(race);
       if (!fav || !fav.name || fav.quoteCount < 3 || fav.signalScore < 65) continue;
       const id = raceId(race), matchKey = raceMatchKey(race);
@@ -1364,6 +1364,42 @@ app.get("/api/market-history", async (req,res) => {
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
+app.post("/api/history/sync", async (_req,res) => {
+  try {
+    if (!API_KEY) return res.status(503).json({error:"Results sync needs the configured PuntersEdge results feed."});
+    const history = await readHistory();
+    const pending = history.picks.filter(p => p.status === "pending");
+    let settled = 0, unmatched = 0, checked = 0;
+    for (let i=0; i<pending.length; i+=50) {
+      const batch = pending.slice(i,i+50);
+      const ids = batch.map(p=>p.raceId).filter(id=>id && !String(id).startsWith("betfair-"));
+      if (!ids.length) { unmatched += batch.length; continue; }
+      const results = rowsFrom(await provider("/v1/racing/results", {
+        race_id:ids.join(","), country:"AU", status:"final", limit:200
+      }));
+      checked += results.length;
+      for (const result of results) {
+        const pick = findMatchingPick(batch,result);
+        if (!pick) continue;
+        const winner = winnerFromResult(result);
+        if (!winner || !winner.name) continue;
+        pick.status = "final";
+        pick.winnerName = winner.name;
+        pick.favouriteWon = isSameRunner(pick,winner);
+        pick.resultedAt = result.resulted_at || new Date().toISOString();
+        settled++;
+      }
+      const matched = new Set(results.map(r=>findMatchingPick(batch,r)).filter(Boolean));
+      unmatched += batch.filter(p=>!matched.has(p)).length;
+    }
+    if (settled) await saveHistory(history);
+    res.set("Cache-Control","no-store");
+    return res.json({ok:true,settled,unmatched,checked,pending:history.picks.filter(p=>p.status==="pending").length,
+      note:"Only official final results returned by the connected results provider are used. Unmatched races remain pending."});
+  } catch (error) {
+    return res.status(502).json({error:"Results sync failed: "+error.message});
+  }
+});
 app.get("/api/history", async (_req,res) => {
   try {
     const history = await readHistory();
