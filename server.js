@@ -942,62 +942,82 @@ function isAustralianRace(race) {
 
 let sportsbetPublicCache={at:0,races:[],refresh:null};
 function sportsbetDecodeHtml(value){return String(value||"").replace(/&nbsp;|&#160;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">");}
-function sportsbetHtmlLines(html){return sportsbetDecodeHtml(String(html||"").replace(/<\/(?:td|th|tr|div|p|li|section|h[1-6])\s*>/gi,"\n").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<[^>]*>/g," ")).split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);}
-async function sportsbetFetch(url){const r=await fetch(url,{headers:{Accept:"text/html,application/xhtml+xml","User-Agent":"Mozilla/5.0 (compatible; RacingFavouriteFinder/1.0)"},signal:AbortSignal.timeout(7000)});if(!r.ok)throw new Error("Sportsbet public page HTTP "+r.status);return r.text();}
+function sportsbetHtmlLines(html){
+ return sportsbetDecodeHtml(String(html||"")
+  .replace(/<[/](?:td|th|tr|div|p|li|section|h[1-6])[ ]*>/gi,"\n")
+  .replace(/<br[ ]*[/]?[ ]*>/gi,"\n")
+  .replace(/<[^>]*>/g," "))
+  .split(/\r?\n/).map(x=>x.replace(/[ ]+/g," ").trim()).filter(Boolean);
+}
+async function sportsbetFetch(url){
+ const r=await fetch(url,{headers:{Accept:"text/html,application/xhtml+xml","User-Agent":"Mozilla/5.0 (compatible; RacingFavouriteFinder/1.0)"},signal:AbortSignal.timeout(7000)});
+ if(!r.ok)throw new Error("Sportsbet public page HTTP "+r.status);
+ return r.text();
+}
 function parseSportsbetRacePage(html,url){
- const lines=sportsbetHtmlLines(html),p=new URL(url).pathname.toLowerCase(),cat=p.includes("greyhound-racing")?"greyhound":p.includes("harness-racing")?"harness":"horse";
- const m=p.match(/race-(\\d+)-(\\d+)/),raceNumber=m?Number(m[1]):null;
+ const lines=sportsbetHtmlLines(html),p=new URL(url).pathname.toLowerCase();
+ const cat=p.includes("greyhound-racing")?"greyhound":p.includes("harness-racing")?"harness":"horse";
+ const m=p.match(/race-([0-9]+)-([0-9]+)/i),raceNumber=m?Number(m[1]):null;
  const title=sportsbetDecodeHtml((String(html).split("<title")[1]||"").split(">")[1]?.split("</title>")[0]||"");
- const venue=title.replace(/\\s*(?:Race|R)\\s*\\d+.*$/i,"").replace(/\\s*\\|.*$/,"").trim()||p.split("/").filter(Boolean).slice(-2,-1)[0]?.replace(/-/g," ")||"Sportsbet meeting";
- const header=lines.findIndex(x=>/^Runner$/i.test(x)),runners=[];
+ const venue=title.replace(/[ ]*(?:Race|R)[ ]*[0-9]+.*$/i,"").replace(/[ ]*[|].*$/,"").trim()||p.split("/").filter(Boolean).slice(-2,-1)[0]?.replace(/-/g," ")||"Sportsbet meeting";
+ const header=lines.findIndex(x=>x.toLowerCase()==="runner"),runners=[];
  if(header>=0){
-  const starts=[];for(let i=header+1;i<lines.length;i++)if(/^\\d+\\.\\s+.+\\(\\d+\\)$/.test(lines[i]))starts.push(i);
+  const starts=[];
+  for(let i=header+1;i<lines.length;i++)if(/^[0-9]+[.][ ]+.+[(][0-9]+[)]$/.test(lines[i]))starts.push(i);
   for(let k=0;k<starts.length;k++){
-   const st=starts[k],en=starts[k+1]??Math.min(lines.length,st+35),h=lines[st],rm=h.match(/^(\\d+)\\.\\s+(.+?)\\s+\\((\\d+)\\)$/);if(!rm)continue;
-   const block=lines.slice(st+1,en);if(block.some(x=>/^Scratched\\b/i.test(x)))continue;
-   // Sportsbet's current public race card places the fixed win/placed prices
-   // after the trainer row (not after an "Early Speed" label). Read the
-   // numeric-only odds cells and select the win price immediately before the
-   // final place-price cell. This handles fluctuating-price columns as well.
-   const trainer=block.findIndex(x=>/^T:/i.test(x));
-   const speed=block.findIndex(x=>/Early Speed:/i.test(x));
-   const oddsStart=trainer>=0?trainer+1:(speed>=0?speed+1:0);
-   const oddsValues=[];
-   for(const line of block.slice(oddsStart)){
-    if(/^(?:Fav|EW|Scratched|\$?\d+(?:\\.\\d{1,2})?\\s*(?:Fav|EW))$/i.test(line)) {
-      const match=line.match(/\\d+\\.\\d{1,2}/);if(match)oddsValues.push(Number(match[0]));continue;
-    }
-    if(!/^\\s*\\$?\\d+(?:\\.\\d{1,2})?(?:\\s+\\$?\\d+(?:\\.\\d{1,2})?)*\\s*$/.test(line))continue;
-    const vals=(line.match(/\\d+\\.\\d{1,2}/g)||[]).map(Number).filter(n=>n>1&&n<1000);
-    oddsValues.push(...vals);
+   const st=starts[k],en=starts[k+1]??Math.min(lines.length,st+40),h=lines[st];
+   const rm=h.match(/^([0-9]+)[.][ ]+(.+)[ ]+[(]([0-9]+)[)]$/);if(!rm)continue;
+   const runnerBlock=lines.slice(st+1,en);
+   if(runnerBlock.some(x=>x.toLowerCase().startsWith("scratched")))continue;
+   // Current Sportsbet race cards show fluctuation prices, then Win Fixed,
+   // then Place Fixed. The win quote is the second-last decimal price.
+   const trainer=runnerBlock.findIndex(x=>x.toUpperCase().startsWith("T:"));
+   const speed=runnerBlock.findIndex(x=>x.toLowerCase().includes("early speed:"));
+   const oddsStart=trainer>=0?trainer+1:(speed>=0?speed+1:0),oddsValues=[];
+   for(const line of runnerBlock.slice(oddsStart)){
+    const tokens=line.replace(/[$,]/g,"").split(/[ ]+/).filter(Boolean);
+    if(!tokens.length||!tokens.every(x=>/^[0-9]+[.][0-9]{1,2}$/.test(x)))continue;
+    for(const token of tokens){const n=Number(token);if(n>1&&n<1000)oddsValues.push(n);}
    }
    const price=oddsValues.length>=2?oddsValues[oddsValues.length-2]:(oddsValues[0]||null);
    if(!Number.isFinite(price)||price<=1)continue;
-   runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,last_update:new Date().toISOString(),age_seconds:0,stale:false,public_demo:true,source_url:url,event_url:url}]});
+   runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{
+    key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
+    last_update:new Date().toISOString(),age_seconds:0,stale:false,public_demo:true,
+    source_url:url,event_url:url
+   }]});
   }
  }
  let startTime=null;
  const todayLocal=new Date(new Date().toLocaleString("en-US",{timeZone:"Australia/Brisbane"}));
  for(const line of lines){
-  const relative=line.match(/^(Today|Tomorrow)\\s+(\\d{1,2}):(\\d{2})$/i);
-  const dated=line.match(/(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{1,2}):(\\d{2})/);
+  const relative=line.match(/^(Today|Tomorrow)[ ]+([0-9]{1,2}):([0-9]{2})$/i);
+  const dated=line.match(/([0-9]{1,2})[ ]+([A-Za-z]{3})[ ]+([0-9]{1,2}):([0-9]{2})/);
   let year=todayLocal.getFullYear(),month=null,day=null,hour=null,minute=null;
   if(relative){const d=new Date(todayLocal);if(relative[1].toLowerCase()==="tomorrow")d.setDate(d.getDate()+1);year=d.getFullYear();month=d.getMonth()+1;day=d.getDate();hour=Number(relative[2]);minute=Number(relative[3]);}
   else if(dated){month=new Date(Date.parse(dated[2]+" 1 2000")).getMonth()+1;day=Number(dated[1]);hour=Number(dated[3]);minute=Number(dated[4]);}
   else continue;
   if(month){const date=String(year).padStart(4,"0")+"-"+String(month).padStart(2,"0")+"-"+String(day).padStart(2,"0");startTime=date+"T"+String(hour).padStart(2,"0")+":"+String(minute).padStart(2,"0")+":00+10:00";break;}
  }
- const rid=m?m[2]:p.split("-").pop();return {id:"sportsbet-"+rid,race_id:"sportsbet-"+rid,category:cat,code:cat,venue,track:venue,race_number:raceNumber,start_time:startTime,country:"Australia",status:"scheduled",in_play:false,runners,sportsbet_url:url,sportsbet_public:true,updated_at:new Date().toISOString()};
+ const rid=m?m[2]:p.split("-").pop();
+ return {id:"sportsbet-"+rid,race_id:"sportsbet-"+rid,category:cat,code:cat,venue,track:venue,
+  race_number:raceNumber,start_time:startTime,country:"Australia",status:"scheduled",in_play:false,
+  runners,sportsbet_url:url,sportsbet_public:true,updated_at:new Date().toISOString()};
 }
 async function loadSportsbetPublicRaces(){
  if(sportsbetPublicCache.at&&Date.now()-sportsbetPublicCache.at<45000)return sportsbetPublicCache.races;
  if(sportsbetPublicCache.refresh)return sportsbetPublicCache.refresh;
  sportsbetPublicCache.refresh=(async()=>{
   const html=await sportsbetFetch("https://www.sportsbet.com.au/next-races"),hrefs=[];
-  for(const a of html.matchAll(/href=["']([^"']+)["']/gi)){const raw=sportsbetDecodeHtml(a[1]);if(raw.includes("-racing/")&&/race-\\d+-\\d+/i.test(raw))hrefs.push(new URL(raw,"https://www.sportsbet.com.au").toString());}
+  for(const a of html.matchAll(/href=["']([^"']+)["']/gi)){
+   const raw=sportsbetDecodeHtml(a[1]);
+   if(raw.includes("-racing/")&&/race-[0-9]+-[0-9]+/i.test(raw))hrefs.push(new URL(raw,"https://www.sportsbet.com.au").toString());
+  }
   const urls=[...new Set(hrefs)].slice(0,120),races=[];let cursor=0;
   await Promise.all(Array.from({length:16},async()=>{while(cursor<urls.length){const url=urls[cursor++];try{const page=await sportsbetFetch(url),race=parseSportsbetRacePage(page,url);if(race.race_number)races.push(race);}catch(e){}}}));
-  sportsbetPublicCache={at:Date.now(),races,refresh:null};console.log("SPORTSBET_PUBLIC_RACING_REFRESH",JSON.stringify({racePages:urls.length,races:races.length,priced:races.filter(x=>x.runners.length).length}));return races;
+  sportsbetPublicCache={at:Date.now(),races,refresh:null};
+  console.log("SPORTSBET_PUBLIC_RACING_REFRESH",JSON.stringify({racePages:urls.length,races:races.length,priced:races.filter(x=>x.runners.length).length}));
+  return races;
  })().catch(e=>{sportsbetPublicCache.refresh=null;console.warn("SPORTSBET_PUBLIC_FEED_FAILED",e.message);return sportsbetPublicCache.races;});
  return sportsbetPublicCache.refresh;
 }
