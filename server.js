@@ -1088,6 +1088,8 @@ app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
     const races = dedupeRaces(feed.races);
+    try { await recordMarketSnapshots(races, new Date().toISOString()); }
+    catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
     const history = await readHistory();
     let added = 0;
     for (const race of races) {
