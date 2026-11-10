@@ -140,7 +140,8 @@ function bookmakerKey(q) {
   return String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"");
 }
 function runnerQuotes(runner) {
-  return (runner.bookmakers || runner.odds || []).filter(q => Number(q.win_price ?? q.win ?? q.price) > 1 && !q.stale);
+  // Preserve every valid provider-returned price; stale/age metadata is displayed, not used to erase quotes.
+  return (runner.bookmakers || runner.odds || []).filter(q => Number(q.win_price ?? q.win ?? q.price) > 1);
 }
 function selectFavourite(race) {
   const entries = (race.runners || []).map(r => {
@@ -271,7 +272,11 @@ app.get("/api/races", async (_req, res) => {
     }
     if (added) await saveHistory(history);
     res.set("Cache-Control","no-store");
-    res.json({races, mode:"live", fetchedAt:new Date().toISOString(),
+    const providerBookmakers = [...new Map(pricedCache.rows.flatMap(r => (r.runners || []).flatMap(x => runnerQuotes(x).map(q => {
+      const name = q.bookmaker || q.name || q.key || "Bookmaker";
+      return [bookmakerKey(q), name];
+    }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
+    res.json({races, providerBookmakers, mode:"live", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:PROVIDER_PLAN, feedErrors:feed.feedErrors, scope:"provider-supported worldwide",
       note:"Worldwide schedule and prices for horse and greyhound racing where covered by the provider. The schedule includes races before bookmaker prices open. The screen refreshes every 5 seconds, but bookmaker price updates vary by bookmaker and are not guaranteed every 5 seconds. Check quote age. Worldwide coverage is limited to races available in the provider feed; schedule horizon depends on provider plan."});
