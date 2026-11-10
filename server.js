@@ -236,10 +236,11 @@ function normalizePublicBookSport(item, book, sport) {
   const away=item.away_team||item.away||item.awayTeam||"";
   const start=item.commence_time||item.start_time||item.kickoff||item.time||null;
   const explicitLive=item.in_play===true||item.inplay===true||/^(live|in.?play|running)$/i.test(String(item.status||""));
+  const canonical=canonicalBookmakerKey(book);
   return {id:String(item.id||item.event_id||[home,away,start].join("|")),home_team:home||"Event",away_team:away,
     league:item.league||item.competition||item.tournament||"",sport_name:sport.title,commence_time:start,
     in_play:explicitLive,status:explicitLive?"LIVE":"UPCOMING",score:item.score||item.ss||null,
-    bookmakers:outcomes.length?[{key:book,name:book==="sportsbet"?"Sportsbet":"Bet365",last_update:item.updated_at||item.last_update||null,
+    bookmakers:outcomes.length?[{key:canonical,name:canonical==="sportsbet"?"Sportsbet":"Bet365",last_update:item.updated_at||item.last_update||item.captured_at||null,
       markets:[{key:"h2h",name:"Head to head",outcomes}]}]:[],_publicDemo:true};
 }
 function normalizeBestOddsEvent(item,sport) {
@@ -311,7 +312,7 @@ async function loadPublicDemoSport(sport) {
         home_team:match.home||"Event",away_team:match.away||"",league:match.league||"",
         sport_name:sport.title,commence_time:match.kickoff_utc||null,in_play:!!match.in_play,
         status:match.in_play?"LIVE":"UPCOMING",score:match.score||null,
-        bookmakers:[{key:"bet365_movi",name:"Bet365 via MoviOdds",last_update:match.updated_at||null,
+        bookmakers:[{key:"bet365",name:"Bet365",last_update:match.updated_at||null,
           markets:[{key:"h2h",name:"Head to head",outcomes}],public_demo:true}],_publicDemo:true};
       const key=[event.home_team,event.away_team].join("|").toLowerCase();
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
@@ -323,8 +324,11 @@ async function loadPublicDemoSport(sport) {
       }
     }
   }else errors.push("MoviOdds: "+moviResult.reason.message);
-  const rows=[...rowsByKey.values()].filter(e=>{const t=Date.parse(e.commence_time||"");return e.in_play===true||!Number.isFinite(t)||t>=Date.now();})
-    .sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
+  const rows=[...rowsByKey.values()].filter(e=>{
+    if(e.in_play===true)return true;
+    const t=Date.parse(e.commence_time||"");
+    return Number.isFinite(t)&&t>=Date.now();
+  }).sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
   const result={at:Date.now(),rows,errors,provider:"PuntersEdge public demo · Sportsbet + Bet365 snapshots + best odds; MoviOdds"};
   publicDemoCache.set(sport.key,result);
   console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,bookSlug,bestSlug,events:rows.length,live:rows.filter(x=>x.in_play).length,
@@ -441,15 +445,32 @@ async function recordMarketSnapshots(races, capturedAt) {
   }
   return { added, total:history.marketSnapshots.length };
 }
+function canonicalBookmakerKey(value) {
+  const key=String(value||"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(/sportsbet|sportsbetcomau|sbcomau/.test(key))return "sportsbet";
+  if(/bet365|betthree65/.test(key))return "bet365";
+  if(/betfair|exchange/.test(key))return "betfair";
+  if(key.includes("tabtouch"))return "tabtouch";
+  if(key.includes("tab"))return "tab";
+  if(key.includes("betr"))return "betr";
+  return key;
+}
 function bookmakerKey(q) {
-  return String(q.key || q.bookmaker || q.name || "").toLowerCase().replace(/[^a-z0-9]/g,"");
+  return canonicalBookmakerKey([q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).join(" "));
+}
+function quoteAgeSecondsServer(q) {
+  if(q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds)))return Math.max(0,Number(q.age_seconds));
+  const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
+  if(stamp==null)return null;
+  const numeric=Number(stamp),ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
+  return Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
 }
 function runnerQuotes(runner) {
-  // One current quote per independent bookmaker; ignore scratched runners and invalid prices.
+  // Unknown-age and older-than-three-minute prices are not current quotes.
   const unique=new Map();
   for(const q of (runner.bookmakers || runner.odds || [])) {
-    const price=Number(q.win_price ?? q.win ?? q.price), key=bookmakerKey(q);
-    if(!key || !Number.isFinite(price) || price<=1 || q.stale===true) continue;
+    const price=Number(q.win_price ?? q.win ?? q.price), key=bookmakerKey(q), age=quoteAgeSecondsServer(q);
+    if(!key || !Number.isFinite(price) || price<=1 || q.stale===true || age==null || age>=180) continue;
     const previous=unique.get(key);
     const stamp=Date.parse(q.last_update||q.updated_at||"")||0;
     const previousStamp=Date.parse(previous?.last_update||previous?.updated_at||"")||0;
@@ -625,7 +646,10 @@ async function loadOddsDataSport(sport, options={}) {
    const outcomes=oddsDataMarketOutcomes(marketRow,e);
    if(outcomes.length)markets.push({key:/_1$/.test(marketKey)?"h2h":marketKey,name:marketKey,outcomes});
   }
-  if(markets.length)e.bookmakers=[{key:"bet365",name:"Bet365",last_update:new Date().toISOString(),markets}];
+  if(markets.length){
+    const quoteStamp=bet365.last_update||bet365.updated_at||root.last_update||root.updated_at||null;
+    e.bookmakers=[{key:"bet365",name:"Bet365",last_update:quoteStamp,markets}];
+   }
  });
  const result={at:Date.now(),rows:events,errors,provider:"Odds Data API / Bet365"};
  oddsDataSportCache.set(cacheKey,result);
@@ -633,7 +657,7 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:"delayed-read-only", storage:DATA_DIR}));
+app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:false, betfairMode:"disabled-unverified-403", storage:DATA_DIR}));
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
@@ -935,7 +959,7 @@ async function getGlobalRaces() {
   // Use the direct, read-only Betfair Exchange API integration before the
   // optional external proxy URL. This path was implemented but previously
   // never called by the production racing feed selector.
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
+  if (false && BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
       if (exchange.races?.length) return {...exchange,feedErrors:failures,
@@ -949,7 +973,7 @@ async function getGlobalRaces() {
   } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairRetryAt) {
     failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
   }
-  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
+  if (false && BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
@@ -1263,10 +1287,35 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
   if(!sport)return res.status(404).json({error:"Sport is not in the public sports catalogue."});
   try{
     const data=await loadPublicDemoSport(sport);
+    const events=(data.rows||[]).map(e=>({...e,bookmakers:(e.bookmakers||[]).map(b=>{
+      const key=canonicalBookmakerKey(b.key||b.name);
+      return {...b,key,name:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":b.name};
+    })}));
+    const errors=[...(data.errors||[])];
+    if(ODDS_API_TOKEN&&events.length<3){
+      try{
+        const fallback=await loadOddsDataSport(sport,{bulk:true});
+        for(const incoming of fallback.rows||[]){
+          const home=normalizeName(incoming.home_team),away=normalizeName(incoming.away_team);
+          const existing=events.find(e=>normalizeName(e.home_team)===home&&normalizeName(e.away_team)===away);
+          if(existing)existing.bookmakers=[...(existing.bookmakers||[]),...(incoming.bookmakers||[])];
+          else events.push(incoming);
+        }
+      }catch(error){errors.push("Bet365 fixture fallback: "+error.message);}
+    }
+    const unique=new Map();
+    for(const event of events){
+      const key=[normalizeName(event.home_team),normalizeName(event.away_team),String(event.commence_time||"").slice(0,10)].join("|");
+      if(!unique.has(key))unique.set(key,event);
+      else unique.get(key).bookmakers=[...(unique.get(key).bookmakers||[]),...(event.bookmakers||[])];
+    }
+    const rows=[...unique.values()].filter(e=>e.in_play===true||(Number.isFinite(Date.parse(e.commence_time||""))&&Date.parse(e.commence_time)>=Date.now()));
     res.set("Cache-Control","no-store");
-    return res.json({sport:{key:sport.key,title:sport.title},events:data.rows,fetchedAt:new Date(data.at).toISOString(),
-      provider:data.provider,providerErrors:data.errors,publicDemo:true,
-      note:"Free no-key feeds: PuntersEdge Sportsbet and Bet365 book-by-sport snapshots plus its best-odds sample for selected sports; MoviOdds supplies additional mapped fixtures. Each preview is truncated and coverage varies by sport. Times are shown in Brisbane time; absent prices and fixtures are never invented."});
+    return res.json({sport:{key:sport.key,title:sport.title},events:rows,fetchedAt:new Date().toISOString(),
+      provider:data.provider+(ODDS_API_TOKEN?" · Bet365 fallback when public coverage is thin":""),providerErrors:errors,publicDemo:true,
+      eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,
+      pricedCount:rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length,
+      note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 aliases are normalised. Only source-timestamped quotes younger than 180 seconds count as current; old or unknown-age prices are not live. Provider coverage varies by sport."});
   }catch(error){return res.status(502).json({error:error.message,publicDemo:true});}
 });
 app.get("/api/sports/:sportKey", async (req,res) => {
