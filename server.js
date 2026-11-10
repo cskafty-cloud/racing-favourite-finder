@@ -937,7 +937,7 @@ app.get("/api/races", async (_req, res) => {
     const races = dedupeRaces(feed.races);
     const history = await readHistory();
     let added = 0;
-    for (const race of races) {
+    if (!/demo|public/i.test(String(feed.feedSource||""))) for (const race of races) {
       const fav = selectFavourite(race);
       if (!fav || !fav.name || fav.quoteCount < 3 || fav.signalScore < 65) continue;
       const id = raceId(race), matchKey = raceMatchKey(race);
