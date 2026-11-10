@@ -291,11 +291,13 @@ function sportRankings(event) {
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
  const raceRows=(state.races||[]).filter(r=>{const t=Date.parse(r.start_time||"");return !Number.isFinite(t)||t>=Date.now()||isExplicitlyLive(r);}).sort((a,b)=>Date.parse(a.start_time||"")-Date.parse(b.start_time||""));
- const sportsbetPicks=[],racePicks=[],sportPicks=[],allTips=[];
+ const sportsbetPicks=[],bet365Picks=[],racePicks=[],sportPicks=[],allTips=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
   const sb=bookmakerFavourite(r,"sportsbet");
   if(sb)sportsbetPicks.push({event,category,selection:(sb.number?sb.number+". ":"")+sb.name,odds:sb.price,time,source:"Sportsbet public quote",score:0,quotes:1,signal:"SPORTSBET PRICE CONFIRMED"});
+  const b365=bookmakerFavourite(r,"bet365");
+  if(b365)bet365Picks.push({event,category,selection:(b365.number?b365.number+". ":"")+b365.name,odds:b365.price,time,source:"Bet365 public quote",score:0,quotes:1,signal:"BET365 PRICE RETURNED"});
   const fav=marketFavourite(r);
   if(fav){const pick={kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"LOW CONFIDENCE"};racePicks.push(pick);allTips.push(pick);}
  }
@@ -310,7 +312,8 @@ function renderTopTips() {
  const bestDay=(todays.length?todays:allTips).sort((a,b)=>b.score-a.score||a.odds-b.odds).slice(0,10);
  const card=(t,i,label)=>'<article class="sport-event"><div class="sport-event-heading"><b>#'+(i+1)+' · '+esc(t.selection)+'</b><span class="sport-upcoming-label">'+esc(label||t.kind||"RACING")+'</span></div><div>'+esc(t.event)+' · '+esc(t.time?fmtDate(t.time)+" "+fmtTime(t.time):"Time TBA")+'</div><div class="sport-favourite">Fixed odds: <strong>$'+t.odds.toFixed(2)+'</strong> · '+(t.quotes||0)+' quote'+((t.quotes||0)===1?"":"s")+' · '+esc(t.signal||("signal "+(t.score||0)+"/100"))+'</div><small>'+esc(t.source||"Public snapshot")+' · market ranking only, not a guaranteed winner.</small></article>';
  const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
- el.innerHTML=section("SPORTSBET RACING SHORTLIST","Only runners with a returned Sportsbet fixed-odds quote. No Bet365 or market-median substitution.",sportsbetPicks,"No Sportsbet race prices were returned in this public snapshot. This is a feed coverage gap, not a missing favourite.")
+ el.innerHTML=section("SPORTSBET RACING SHORTLIST","Only runners with a returned Sportsbet fixed-odds quote. No Bet365 or market-median substitution.",sportsbetPicks,'No Sportsbet race prices were returned in this public snapshot. This is a feed coverage gap, not a missing favourite. <a href="https://www.sportsbet.com.au/horse-racing/australia-nz/betting" target="_blank" rel="noopener noreferrer">Open Sportsbet racing markets ↗</a>')
+ +section("BET365 RACING FAVOURITES","Only runners with a fresh Bet365-labelled fixed-odds quote from the connected public feeds. Prices are not estimated or substituted from another bookmaker.",bet365Picks,'No current Bet365 price returned by the public feed. Favourite not confirmed. <a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 race markets ↗</a>')
  +section("BEST PICK IN EACH RACE","One current market favourite per returned Australian race, ranked using fresh fixed bookmaker quotes. Weak single-book quotes are clearly labelled.",racePicks,"No fresh priced race favourites are available.")
  +section("SPORTS FAVOURITES","One lowest-priced head-to-head outcome per returned live or upcoming sports fixture. Sportsbet is shown separately on each fixture where its quote exists.",sportPicks,"No sports fixtures with usable head-to-head prices are available.")
  +section("BEST OF THE DAY · TOP TIPS","Top 10 current market signals for today, ranked by quote agreement, price spread and favourite separation. These are market shortlists, not predictions of certainty.",bestDay,"No fresh odds are available for a daily shortlist.");
