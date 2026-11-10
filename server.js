@@ -280,9 +280,9 @@ async function getGlobalRaces() {
   if (now - pricedCache.at >= 15000 || now - scheduleCache.at >= 60000) {
     if (!refreshInFlight) refreshInFlight = (async () => {
       const tasks = [];
-      if (now - scheduleCache.at >= 60000 && now >= providerRetryAt.schedule) tasks.push((async () => {
+      if (now - scheduleCache.at >= 60000) tasks.push((async () => {
         try {
-          const data = await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,harness,greyhound" });
+          const data = now < providerRetryAt.schedule ? { races: await demoRacingFeed() } : await provider("/v1/racing/events", { hours_ahead:SCHEDULE_HORIZON_HOURS, categories:"horse,harness,greyhound" });
           scheduleCache = { at: Date.now(), rows: rowsFrom(data), horizonHours: SCHEDULE_HORIZON_HOURS };
           providerErrors.schedule = null;
           console.info("FEED_CHECK schedule", JSON.stringify({ ok:true, fetchedAt:new Date(scheduleCache.at).toISOString(), races:scheduleCache.rows.length, sample:scheduleCache.rows.slice(0,3).map(r=>({venue:venueOf(r),race:raceNumberOf(r),start:startTimeOf(r),runners:(r.runners||[]).length})) }));
@@ -300,9 +300,9 @@ async function getGlobalRaces() {
           }
         }
       })());
-      if (now - pricedCache.at >= 15000 && now >= providerRetryAt.odds) tasks.push((async () => {
+      if (now - pricedCache.at >= 15000) tasks.push((async () => {
         try {
-          const data = await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,harness,greyhound" });
+          const data = now < providerRetryAt.odds ? { races: await demoRacingFeed() } : await provider("/v1/racing/next-to-go", { num_races:200, categories:"horse,harness,greyhound" });
           pricedCache = { at: Date.now(), rows: rowsFrom(data) };
           providerErrors.odds = null;
           try {
