@@ -857,21 +857,17 @@ async function getGlobalRaces() {
   } else if (BETFAIR_FEED_URL && Date.now()<betfairFeedRetryAt) {
     failures.push({feed:"Betfair feed adapter",message:"Connection temporarily paused after the previous network failure."});
   }
-  // Use the documented no-key racing preview when authenticated providers are unavailable.
+  // Combine the public multi-bookmaker teaser with an independent Bet365-only racing board.
+  let publicRaceRows=[];
   try {
-    const rows=await demoRacingFeed();
-    if(rows.length) return {races:rows,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),
-      oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),horizonHours:24,feedErrors:failures,
-      feedSource:"PuntersEdge public demo",scope:"Australia",
-      note:"Free no-key public preview: a limited sample of upcoming Australian horse, greyhound and harness races, with up to three bookmaker prices per runner. Sportsbet and bet365 appear where quoted. This is a sample, not the complete race card."};
-    failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
+    publicRaceRows=await demoRacingFeed();
+    if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
-  // Bet365-only no-key racing board from independent provider MoviOdds.
   try {
     const response=await fetch("https://moviodds.com/racing?code=all&near=12",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
     const body=await response.text(); let payload;
     try { payload=JSON.parse(body); } catch { throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+")."); }
-    if(!response.ok)throw new Error("MoviOdds "+response.status);
+    if(!response.ok) throw new Error("MoviOdds "+response.status);
     const raw=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,venue:r.venue||r.track||m.track||m.name})));
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
@@ -890,13 +886,20 @@ async function getGlobalRaces() {
         start_time:start,country:"Australia",status:r.status||"scheduled",in_play:!!r.in_play,
         closed:["off","abandoned","result_final"].includes(String(r.status||"").toLowerCase()),runners};
     }).filter(r=>r.start_time&&!r.closed&&r.runners.length);
-    if(races.length)return {races:dedupeRaces(races),scheduleFetchedAt:payload.server_time||new Date().toISOString(),
-      oddsFetchedAt:payload.server_time||new Date().toISOString(),horizonHours:24,feedErrors:failures,
-      feedSource:"MoviOdds public Bet365 racing preview",scope:"Australia",
-      note:"Free public Bet365-only racing prices supplied by independent provider Moviodds. Coverage depends on its public board; verify prices and jump times at the bookmaker."};
+    if(races.length||publicRaceRows.length) return {races:dedupeRaces([...publicRaceRows,...races]),
+      scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
+      oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
+      horizonHours:24,feedErrors:failures,feedSource:"Free public previews · PuntersEdge + Bet365 via MoviOdds",scope:"Australia",
+      note:"Free no-key public previews combined: PuntersEdge supplies a limited multi-bookmaker sample (including Sportsbet where quoted), while independent provider MoviOdds supplies Bet365-only race cards and prices. Coverage is not a complete national card; quote age and jump times depend on each source."};
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
-  } catch(error) { failures.push({feed:"MoviOdds public Bet365 preview",message:error.message}); }
-  if(publicRaceRows.length)return {races:publicRaceRows,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),\n    oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),horizonHours:24,feedErrors:failures,\n    feedSource:"PuntersEdge public demo",scope:"Australia",\n    note:"Free no-key public preview: a limited sample of Australian races and bookmaker prices. It is not a complete national race card."};\n  if (failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
+  } catch(error) {
+    failures.push({feed:"MoviOdds public Bet365 preview",message:error.message});
+  }
+  if(publicRaceRows.length) return {races:publicRaceRows,
+    scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),
+    horizonHours:24,feedErrors:failures,feedSource:"PuntersEdge public demo",scope:"Australia",
+    note:"Free no-key public preview: a limited sample of Australian races and bookmaker prices. It is not a complete national race card."};
+  if(failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
   throw new Error("No free public Australian racing snapshot is available at this refresh.");
 }
 
