@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "desktop:dev": "electron .",
-    "desktop:dist": "electron-builder --win portable"
+    "desktop:dist": "node desktop/create-icon.cjs && electron-builder --win portable"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
@@ -16,7 +16,8 @@
   "main": "desktop/main.js",
   "devDependencies": {
     "electron": "^39.2.7",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "sharp": "^0.34.5"
   },
   "build": {
     "appId": "au.com.racingfavouritefinder.desktop",
@@ -38,7 +39,8 @@
           ]
         }
       ],
-      "artifactName": "Racing-Favourite-Finder-Setup-${version}.${ext}"
+      "artifactName": "Racing-Favourite-Finder-Setup-${version}.${ext}",
+      "icon": "desktop/icon.ico"
     },
     "portable": {
       "artifactName": "Racing-Favourite-Finder-${version}-Windows.${ext}"
