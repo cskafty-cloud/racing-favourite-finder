@@ -31,7 +31,7 @@ function exchangeRunnerPrice(runner) {
  return q?Number(q.win_price??q.win??q.price):null;
 }
 function bookmakerFavourite(race, wantedKey) {
-  const aliases = { sportsbet:["sportsbet","sportsbetau","sportsbetcomau"], bet365:["bet365","bet365au","bet365comau"] };
+  const aliases = { sportsbet:["sportsbet","sportsbetau","sportsbetcomau"], bet365:["bet365","bet365au","bet365comau","bet365movi"] };
   const accepted = aliases[wantedKey] || [wantedKey];
   const candidates = (race.runners || []).map(runner => {
     const quote = fixedRunnerPrices(runner).find(q => {
@@ -420,7 +420,7 @@ async function loadAllSports(){
   state.selectedSport=null;state.allSportsLoaded=true;
   state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>new Date(a.commence_time||0)-new Date(b.commence_time||0));
   renderSports();renderTopTips();
-  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming/live fixtures across "+Object.keys(state.sportsByKey).length+" of "+state.sports.length+" catalogue sports. "+(failed?failed+" sports had incomplete or unavailable provider data.":"All catalogue sports responded.")+" Public preview size is capped by each source; missing markets are not estimated.";
+  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" upcoming/live fixtures across "+Object.keys(state.sportsByKey).length+" of "+state.sports.length+" catalogue sports attempted. "+(failed?failed+" sports had incomplete or unavailable provider data.":"No provider errors were reported for this pass.")+" Public no-key odds cover only the sports and events each source publishes; other catalogue sports remain visible without fabricated fixtures or prices.";
  }catch(e){$("sportsNotice").textContent="The full sports catalogue is listed below, but some fixture feeds are temporarily unavailable. "+e.message;}
  finally{btn.disabled=false;}
 }
