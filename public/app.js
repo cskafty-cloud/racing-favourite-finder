@@ -594,7 +594,7 @@ async function loadRaces() {
       ? "Free live racing widgets are displayed above · no sample odds are generated."
       : state.feedMode === "demo"
         ? "Free no-key public preview · " + books + " bookmaker feeds returned · limited race sample, not the full Australian card. Quote age is shown only when supplied."
-        : "Screen refresh: 2 min · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
+        : "Screen refresh: 5 min · " + books + " bookmaker feeds with prices in this response · " + (data.scope || "provider coverage") + " · quote freshness varies by bookmaker.";
     $("notice").textContent = data.note || "Racing cards and prices appear only when a connected provider returns them. Free public feeds remain available below.";
     $("notice").classList.remove("hidden");
     render();
@@ -684,7 +684,7 @@ window.startFullDashboardFeeds=function(){
   loadMarketHistory();
 };
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,2*60*1000);
+setInterval(loadRaces,5*60*1000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
