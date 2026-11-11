@@ -780,9 +780,10 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
     runnerSample:sourceRows[0]?.races?.[0]?.runners?.[0]||null
   }));
   for (const bookRow of sourceRows) {
-    const book = bookRow.bookmaker_key || bookRow.bookmaker || bookmaker || "Unknown bookmaker";
-    // Enforce the requested bookmaker even if an upstream response ignores its filter.
-    if (canonicalBookmakerKey(book) !== canonicalBookmakerKey(bookmaker)) continue;
+    // A request filter is not proof of the returned quote's bookmaker.
+    // Require an explicit bookmaker identity on each provider bookmaker row.
+    const book = bookRow.bookmaker_key || bookRow.bookmaker || bookRow.bookmaker_name || bookRow.key || bookRow.name || bookRow.site || "";
+    if (!book || canonicalBookmakerKey(book) !== canonicalBookmakerKey(bookmaker)) continue;
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
     const rawType = valueOf(bookRow, ["race_type","raceType","race_code","code","category","sport","type"]);
       const code = String(rawType || "").trim().toUpperCase();
@@ -817,8 +818,12 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
           const bookmakerId=canonicalBookmakerKey(book);
           const quote={bookmaker:book,name:book,key:bookmakerId,win_price:win,
             place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:runner.age_seconds??bookRow.age_seconds??null,
-            last_update:runner.captured_at||runner.updated_at||runner.last_update||bookRow.captured_at||bookRow.updated_at||null,
-            observed_at:new Date().toISOString(),feed_observed_at:new Date().toISOString(),source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
+            // Only bookmaker update fields qualify as quote timestamps. captured_at
+            // is retained separately as feed observation metadata, never promoted.
+            last_update:runner.updated_at||runner.last_update||bookRow.updated_at||bookRow.last_update||null,
+            observed_at:new Date().toISOString(),feed_observed_at:bookRow.captured_at||new Date().toISOString(),
+            timestamp_status:(runner.updated_at||runner.last_update||bookRow.updated_at||bookRow.last_update)?"bookmaker_timestamp":"unknown",
+            source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
           const prior=existing.bookmakers.findIndex(q=>bookmakerKey(q)===bookmakerId);
           if(prior<0) existing.bookmakers.push(quote);
           else if(Date.parse(quote.last_update||"")>Date.parse(existing.bookmakers[prior].last_update||"")) existing.bookmakers[prior]=quote;
@@ -893,11 +898,17 @@ function normalizeRapidRace(race) {
       const key = number == null ? normalizeName(name) : "n"+number;
       if (!runners.has(key)) runners.set(key,{number,name,bookmakers:[]});
       const target = runners.get(key);
-      const win = Number(runner.win), place = Number(runner.place);
-      if (!runner.scratched && Number.isFinite(win) && win > 1) {
-        target.bookmakers.push({bookmaker:book.bookmaker,name:book.bookmaker,win_price:win,place_price:Number.isFinite(place)&&place>1?place:null,
-          age_seconds:book.last_update?Math.max(0,Math.floor((Date.now()-Date.parse(book.last_update))/1000)):null,
-          last_update:book.last_update||null,url:book.url||null});
+      const explicitBookmaker=book.bookmaker||book.bookmaker_name||book.key||book.name||"";
+      const verifiedBookmaker=canonicalBookmakerKey(explicitBookmaker);
+      const win = Number(runner.win??runner.win_price??runner.fixed_win_price);
+      const place = Number(runner.place??runner.place_price??runner.fixed_place_price);
+      if (verifiedBookmaker && RAPID_RACING_BOOKMAKERS.some(name=>canonicalBookmakerKey(name)===verifiedBookmaker)
+          && !runner.scratched && Number.isFinite(win) && win > 1) {
+        target.bookmakers.push({bookmaker:explicitBookmaker,name:explicitBookmaker,key:verifiedBookmaker,win_price:win,place_price:Number.isFinite(place)&&place>1?place:null,
+          age_seconds:runner.age_seconds??(book.last_update?Math.max(0,Math.floor((Date.now()-Date.parse(book.last_update))/1000)):null),
+          last_update:runner.last_update||runner.updated_at||book.last_update||null,
+          feed_observed_at:new Date().toISOString(),timestamp_status:(runner.last_update||runner.updated_at||book.last_update)?"bookmaker_timestamp":"unknown",
+          source:"RapidOddsAPI racing feed",url:book.url||null});
       }
     }
   }
