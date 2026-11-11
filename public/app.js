@@ -282,7 +282,7 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = fixedRunnerPrices(runner).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:racingWinPrice(q), age:quoteAgeSeconds(q), feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), publicDemo:q.public_demo===true,
+      price:racingWinPrice(q), placePrice:(Number(q.place_price??q.fixed_place_price??q.fixed_place)>1?Number(q.place_price??q.fixed_place_price??q.fixed_place):null), age:quoteAgeSeconds(q), feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), publicDemo:q.public_demo===true,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
