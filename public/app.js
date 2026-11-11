@@ -54,7 +54,7 @@ function freshestQuotesByBook(runner) {
     const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q);
     if(!key||!Number.isFinite(price)||price<=1||!quoteIsCurrent(q))continue;
     const previous=byBook.get(key);
-    if(!previous||age<previous.age)byBook.set(key,{q,key,price,age});
+    if(!previous||(age!=null&&(previous.age==null||age<previous.age)))byBook.set(key,{q,key,price,age});
   }
   return [...byBook.values()];
 }
@@ -80,7 +80,7 @@ function runnerConsensusSignal(race, selected) {
  const avg=p.reduce((a,b)=>a+b,0)/p.length,spread=p.length>1?Math.max(...p)-Math.min(...p):1,support=s.votes/books.length;
  const coverage=Math.min(1,s.quotes.length/Math.min(5,Math.max(2,books.length)));
  const known=s.quotes.map(q=>q.age).filter(x=>x!=null),age=known.length?known.reduce((a,b)=>a+b,0)/known.length:null;
- const freshness=age==null?.35:Math.max(0,1-age/180),consistency=Math.max(0,1-spread/Math.max(avg,.01));
+ const freshness=age==null ? 0.35 : Math.max(0,1-age/180),consistency=Math.max(0,1-spread/Math.max(avg,.01));
  const rank=rows.filter(r=>{const v=stats.get(r).prob;return v.length&&v.reduce((a,b)=>a+b,0)/v.length<avg;}).length;
  const strength=rows.length>1?rank/(rows.length-1):1;
  let score=Math.round(35*support+25*strength+15*coverage+15*freshness+10*consistency);
