@@ -124,8 +124,8 @@ async function getBetfairRaces() {
 }
 const PROVIDER_PLAN = String(process.env.PUNTERSEDGE_PLAN || "free").toLowerCase();
 const SCHEDULE_HORIZON_HOURS = PROVIDER_PLAN === "standard" ? 48 : (["plus","premium","pro","enterprise"].includes(PROVIDER_PLAN) ? 168 : 24);
-// Protect the 1,500-credit free allowance: authenticated full racing polls are
-// intentionally infrequent on Free. Public no-key previews continue separately.
+// Protect the free monthly credit allowance. The full AU card is a bulk request;
+// keep it on a conservative cadence and retain source timestamps for every quote.
 // Fresh quote timestamps are still enforced; old quotes are never displayed as live.
 const FREE_PLAN = PROVIDER_PLAN === "free";
 const PUNTERS_SCHEDULE_REFRESH_MS = FREE_PLAN ? 12*60*60*1000 : 10*60*1000;
@@ -890,8 +890,7 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  return /(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error)) ? 6 * 60 * 60 * 1000
-    : /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
+  if (/(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error))) {\n    // Monthly credits reset at 00:00 UTC. Retrying every six hours only burns\n    // requests without restoring quota, so pause until the next reset.\n    const now = new Date();\n    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);\n    return Math.max(60 * 1000, nextReset - Date.now());\n  }\n  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
