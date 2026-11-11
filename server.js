@@ -1357,6 +1357,7 @@ async function getGlobalRaces() {
     payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country})));
 
     const raw=payload.races;
+    let verifiedBet365Quotes=0,unverifiedPriceRows=0;
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
@@ -1376,6 +1377,10 @@ async function getGlobalRaces() {
         const bet365NestedValue=nestedBet365&&typeof nestedBet365==="object"
           ?(nestedBet365.win??nestedBet365.fixed_win??nestedBet365.win_price??nestedBet365.price??nestedBet365.odds)
           :nestedBet365;
+        const hasUnverifiedPrice=priceRows.some(p=>/^(fixed[_ -]?)?win$|winner|win[_ -]fixed/i.test(String(p.market||p.market_name||p.type||p.key||""))&&moviQuoteBookmakerKey(p)!=="bet365")||
+          [x.win_odds,x.fixed_win_odds,x.fixed_win,x.win_price,x.win_price_decimal,x.fixed_odds_decimal,x.win,
+           nested.win,nested.fixed_win,nested.win_price,fixed.win,fixed.win_price,fixed.decimal,fixed.price].some(v=>v!=null);
+        if(hasUnverifiedPrice&&!quoteIsBet365)unverifiedPriceRows++;
         const rawPrice=quoteIsBet365?(priceRow?.price??priceRow?.odds??priceRow?.decimal??
           bet365NestedValue??(explicitRunnerBook||explicitNestedBook?
             (x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.win_price_decimal??x.fixed_odds_decimal??x.win??
@@ -1386,6 +1391,7 @@ async function getGlobalRaces() {
         const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
+        if(quoteIsBet365&&Number.isFinite(price)&&price>1)verifiedBet365Quotes++;
         // Race.updated_at is only a card timestamp; never use it as the bookmaker price timestamp.
         const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
@@ -1429,6 +1435,8 @@ async function getGlobalRaces() {
         start_time:start,country:r.country||"Australia",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners:uniqueRunners};
     }).filter(r=>r.start_time&&!r.closed);
+    console.info("MOVIODDS_RACING_BOOKMAKER_VALIDATION",JSON.stringify({races:races.length,verifiedBet365Quotes,unverifiedPriceRows,
+      categories:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length]))}));
     if(races.length||publicRaceRows.length) {
       const supplemental=await loadSupplementalAustralianRaces();
       const combined=dedupeRaces([...publicRaceRows,...races,...supplemental.races]);
