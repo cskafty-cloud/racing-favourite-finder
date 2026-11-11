@@ -43,7 +43,18 @@ function sourceDetails(q){
   if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\./,"")}catch{}}
   return {source,host,url:safeUrl};
  }
- function renderRunnerMarkets(r){
+ function exchangeEstimate(rows,market){
+ const qs=rows.filter(q=>q.exchange===true&&q.market===market&&Number(q.price)>1);
+ const back=qs.find(q=>String(q.price_side||"").toUpperCase()==="BACK");
+ const lay=qs.find(q=>String(q.price_side||"").toUpperCase()==="LAY");
+ const b=Number(back?.price),l=Number(lay?.price),reference=b>1&&l>1?(b+l)/2:b>1?b:null;
+ if(!(reference>1))return null;
+ const stamp=back?.captured_at||lay?.captured_at||back?.observed_at||lay?.observed_at||null;
+ const age=stamp?Math.max(0,(Date.now()-Date.parse(stamp))/1000):null;
+ if(age!=null&&(!Number.isFinite(age)||age>180))return null;
+ return {price:reference/1.05,low:reference/1.08,high:reference/1.03,stamp,age};
+}
+function renderRunnerMarkets(r){
   const rows=auditRows(r);if(!rows.length)return "";
   // Same bookmaker from different providers remains a separate, attributable quote group.
   const groups=new Map();
@@ -65,7 +76,12 @@ function sourceDetails(q){
     '<div class="rf-source-meta"><span>DATA SOURCE</span> '+sourceLink+' <span class="rf-source-detail">('+esc(group.source)+')</span></div>'+
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange WIN · BACK / LAY":"Fixed WIN")+'</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange PLACE · BACK / LAY":"Fixed PLACE")+'</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
-  }).join("");
+  }).join("");+
+  ["WIN","PLACE"].map(m=>{
+   const q=exchangeEstimate(rows,m);if(!q)return "";
+   return '<div class="rf-price-box"><h4>'+m+' estimated bookmaker-equivalent price · $'+q.price.toFixed(2)+' <b>ESTIMATE</b></h4><div class="rf-muted">Indicative range $'+q.low.toFixed(2)+'–$'+q.high.toFixed(2)+' · assumed 5% margin · Betfair Exchange delayed source · '+esc(fmtTime(q.stamp))+' · '+esc(fmtAge(q.age))+' · NOT Sportsbet/Bet365 odds</div></div>';
+  }).join("")+
+
  }
 function renderRace(r){
  const fav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
