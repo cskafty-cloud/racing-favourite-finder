@@ -2074,6 +2074,11 @@ app.get("/api/races", async (_req, res) => {
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
      const exchangeWinQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="WIN").length,0),0);
      const exchangePlaceQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="PLACE").length,0),0);
+     const betfairConfigured=!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN);
+     const betfairFailure=(feed.feedErrors||[]).some(x=>typeof x==="object"&&/betfair exchange/i.test(String(x.feed||"")));
+     const betfairStatus=!betfairConfigured?"credentials-missing":
+       betfairFailure?"configured-but-unavailable":
+       exchangeWinQuotes+exchangePlaceQuotes>0?"connected-delayed":"configured-no-quotes";
     const sportsbetPlaceQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerPlaceQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
@@ -2104,7 +2109,7 @@ app.get("/api/races", async (_req, res) => {
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
-       betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":(failures.some(x=>x.feed==="Betfair Exchange")?"configured-but-unavailable":"configured"),exchangeWinQuotes,exchangePlaceQuotes,
+       betfairConfigured,betfairStatus,exchangeWinQuotes,exchangePlaceQuotes,
       sportsbetPreviewWinQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="WIN").length,0),0),
       sportsbetPreviewPlaceQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="PLACE").length,0),0),
       sportsbetStalePreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.verification_label==="STALE PUBLIC REFERENCE").length,0),0),
