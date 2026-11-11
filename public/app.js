@@ -76,13 +76,12 @@ function renderRunnerMarkets(r){
     '<div class="rf-source-meta"><span>DATA SOURCE</span> '+sourceLink+' <span class="rf-source-detail">('+esc(group.source)+')</span></div>'+
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange WIN · BACK / LAY":"Fixed WIN")+'</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange PLACE · BACK / LAY":"Fixed PLACE")+'</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
-  }).join("");+
+  }).join("")+
   ["WIN","PLACE"].map(m=>{
    const q=exchangeEstimate(rows,m);if(!q)return "";
    return '<div class="rf-price-box"><h4>'+m+' estimated bookmaker-equivalent price · $'+q.price.toFixed(2)+' <b>ESTIMATE</b></h4><div class="rf-muted">Indicative range $'+q.low.toFixed(2)+'–$'+q.high.toFixed(2)+' · assumed 5% margin · Betfair Exchange delayed source · '+esc(fmtTime(q.stamp))+' · '+esc(fmtAge(q.age))+' · NOT Sportsbet/Bet365 odds</div></div>';
-  }).join("")+
-
- }
+  }).join("");
+}
 function renderRace(r){
  const fav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
  const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
