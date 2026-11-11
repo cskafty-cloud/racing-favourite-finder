@@ -324,6 +324,13 @@ function indicativeMarketFavourite(race,field) {
  });
  return candidates.sort((a,b)=>a.price-b.price)[0]||null;
 }
+function sportsbetOfficialRaceUrl(race) {
+ const supplied=String(race?.sportsbet_url||"");
+ if(supplied.startsWith("https://www.sportsbet.com.au/"))return supplied;
+ const code=String(race?.category||race?.code||"").toLowerCase();
+ const category=code.includes("greyhound")||code==="g"?"greyhound":code.includes("harness")||code==="h"?"harness":"horse";
+ return "https://www.sportsbet.com.au/racing-schedule/"+category+"/today";
+}
 function sportsbetMarketPanels(race) {
  const markets=[
   ["FIXED WIN","fixed_win"],["FIXED PLACE","fixed_place"],["TOTE WIN","tote_win"],["TOTE PLACE","tote_place"]
@@ -336,7 +343,7 @@ function sportsbetMarketPanels(race) {
    ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>Sportsbet verified · '+(f.age==null?'age unknown':Math.round(f.age)+'s')+' · '+esc(label)+'</small>'
    : estimate
     ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>INDICATIVE '+esc(label)+' · cross-bookmaker median · NOT a Sportsbet quote · '+f.quoteCount+' quote(s)</small>'
-    : '<span class="book-fav-missing">No Sportsbet quote or current cross-bookmaker '+label.toLowerCase()+' estimate available.</span>';
+    : '<span class="book-fav-missing">No verified Sportsbet '+label.toLowerCase()+' quote is being supplied for this race. Open Sportsbet to check its current price.</span>';
   return '<div class="book-fav"><div class="book-fav-label">SPORTSBET '+label+' FAVOURITE</div>'+detail+'</div>';
  }).join("");
  const fixedWin=sportsbetMarketFavourite(race,"fixed_win")||indicativeMarketFavourite(race,"fixed_win");
@@ -344,7 +351,8 @@ function sportsbetMarketPanels(race) {
  const eachWay=fixedWin
   ? '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY · INDICATIVE ONLY</div><b>'+esc((fixedWin.number!=null?fixedWin.number+'. ':'')+fixedWin.name)+'</b><small>WIN '+(fixedWin.price?'$'+fixedWin.price.toFixed(2):'unavailable')+' · PLACE '+(place&&place.price?'$'+place.price.toFixed(2):'unavailable')+' · These are cross-bookmaker estimates, not Sportsbet each-way terms or prices.</small></div>'
   : '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY</div><span class="book-fav-missing">No current fixed WIN estimate available.</span></div>';
- return panels+eachWay;
+ const official='<a class="bookmaker-market-link" href="'+esc(sportsbetOfficialRaceUrl(race))+'" target="_blank" rel="noopener noreferrer">Check official Sportsbet prices ↗</a><small class="book-fav-missing">Sportsbet prices are not available in this feed; no Bet365 or market price is presented as a Sportsbet quote.</small>';
+ return panels+eachWay+official;
 }
 function sportsbetPlacePanel(favourite) {
  const exact=favourite||null;
