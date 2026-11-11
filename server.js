@@ -171,7 +171,10 @@ async function demoRacingFeed() {
     .map(r=>({...r,_publicDemo:true,runners:(r.runners||[]).map(x=>{
       const rawQuotes=x.bookmakers||x.odds||x.prices||[];
       const bookmakers=(Array.isArray(rawQuotes)?rawQuotes:[]).map(q=>{
-        const rawBook=q.key||q.bookmaker_key||q.bookmaker||q.bookmaker_name||q.site||q.name||"";
+        const rawBookValue=q.key||q.bookmaker_key||q.bookmaker||q.bookmaker_name||q.bookmakerName||q.site||q.book||q.operator||q.name||"";
+        const rawBook=rawBookValue&&typeof rawBookValue==="object"
+          ?(rawBookValue.key||rawBookValue.name||rawBookValue.slug||rawBookValue.title||rawBookValue.code||"")
+          :rawBookValue;
         const key=canonicalBookmakerKey(rawBook);
         const price=Number(q.win_price??q.fixed_win_price??q.fixed_win??q.win_odds??q.odds_decimal??q.win);
         const placePrice=sportsbetDemoPlacePrice(q);
@@ -1412,7 +1415,8 @@ async function loadSportsbetPublicRaceDemos(){
  // Bet365 is sourced separately from the MoviOdds Australian racing board; the
  // preview API does not list Bet365 or harness racing as supported combinations.
  const specs=[
-  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"]
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],
+  ["harness","harness-racing","sportsbet"]
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
@@ -1431,9 +1435,13 @@ async function loadSportsbetPublicRaceDemos(){
   }
  }
   sportsbetRacingDemoCache={at:Date.now(),races,errors};
+ const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>(x.bookmakers||[]).filter(q=>q.key==="sportsbet")));
  console.info("PUBLIC_BOOKMAKER_RACING_DEMO",JSON.stringify({raceItems:races.length,
-  sportsbet:races.filter(r=>(r.runners||[]).some(x=>x.bookmakers.some(q=>q.key==="sportsbet"))).length,
-  bet365:races.filter(r=>(r.runners||[]).some(x=>x.bookmakers.some(q=>q.key==="bet365"))).length,errors}));
+  sportsbet:races.filter(r=>(r.runners||[]).some(x=>(x.bookmakers||[]).some(q=>q.key==="sportsbet"))).length,
+  sportsbetWinQuotes:sportsbetQuotes.filter(q=>Number(q.win_price)>1&&!q.stale).length,
+  sportsbetPlaceQuotes:sportsbetQuotes.filter(q=>Number(q.place_price)>1&&!q.place_stale).length,
+  codes:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length])),
+  errors}));
  return races;
 }
 
