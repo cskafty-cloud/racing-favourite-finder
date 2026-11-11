@@ -301,6 +301,8 @@ document.addEventListener("DOMContentLoaded",()=>{
  if(enter){enter.addEventListener("click",()=>start(),{once:true});}
  const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
  const refreshBetfairSports=$("refreshBetfairSportsBtn");if(refreshBetfairSports)refreshBetfairSports.addEventListener("click",()=>loadBetfairSports());
+ const loadAllSportsButton=$("loadAllSportsBtn");if(loadAllSportsButton)loadAllSportsButton.addEventListener("click",()=>{lastSportsAt=0;loadSportsFixtures();});
+ const refreshLiveSportsButton=$("refreshLiveSportsBtn");if(refreshLiveSportsButton)refreshLiveSportsButton.addEventListener("click",()=>{loadLucasFox();loadBetfairSports();lastSportsAt=0;loadSportsFixtures();});
  document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
   filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
  }));
