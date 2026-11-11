@@ -510,16 +510,25 @@ function quoteAgeSecondsServer(q) {
   if(agedDirect!=null)return agedDirect;
   return stamped;
 }
+function racingWinPrice(q) {
+  // Never fall back to generic price/odds: those may be place, tote or another market.
+  const value=q?.win_price??q?.fixed_win_price??q?.fixed_win??q?.win_odds;
+  const price=Number(value);
+  return Number.isFinite(price)&&price>1?price:null;
+}
+function racingQuoteMaxAge(q) {
+  const tier=String(q?.refresh_tier||"").toLowerCase();
+  return tier==="live"?120:tier==="card"?1800:180;
+}
 function runnerQuotes(runner) {
-  // Unknown-age and older-than-three-minute prices are not current quotes.
+  // Compare fixed-win only, using the quote's own refresh tier and age.
   const unique=new Map();
   for(const q of (runner.bookmakers || runner.odds || [])) {
-    const price=Number(q.win_price ?? q.win ?? q.price), key=bookmakerKey(q), age=quoteAgeSecondsServer(q);
-    if(!key || !Number.isFinite(price) || price<=1 || q.stale===true || age==null || age>=180) continue;
+    const price=racingWinPrice(q),key=bookmakerKey(q),age=quoteAgeSecondsServer(q);
+    if(!key||price==null||q.stale===true||age==null||age>=racingQuoteMaxAge(q))continue;
     const previous=unique.get(key);
-    const stamp=Date.parse(q.last_update||q.updated_at||"")||0;
-    const previousStamp=Date.parse(previous?.last_update||previous?.updated_at||"")||0;
-    if(!previous || stamp>=previousStamp) unique.set(key,q);
+    const previousAge=previous?quoteAgeSecondsServer(previous):null;
+    if(!previous||previousAge==null||age<previousAge)unique.set(key,q);
   }
   return [...unique.values()];
 }
@@ -532,7 +541,7 @@ function selectFavourite(race) {
       if(!key||seen.has(key)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
       seen.add(key);return true;
     });
-    const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
+    const prices=quotes.map(racingWinPrice).filter(p=>p!=null);
     const fair=median(prices),spread=fair&&prices.length>1?(Math.max(...prices)-Math.min(...prices))/fair:1;
     return {runner:r,quotes,fair,spread};
   }).filter(x=>x.fair!=null).sort((a,b)=>a.fair-b.fair);
@@ -546,7 +555,7 @@ function selectFavourite(race) {
     :best.quotes.length>=2&&spreadPct<=25&&signalScore>=40?"CAUTION":"NO BET · WEAK SIGNAL";
   const r=best.runner;
   return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
-    price:best.fair,priceSource:"multi-bookmaker median",quoteCount:best.quotes.length,
+    price:best.fair,priceSource:"multi-bookmaker fixed-win median",quoteCount:best.quotes.length,
     spreadPct:+spreadPct.toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,signalLabel};
 }
 function winnerFromResult(r) {
@@ -1028,7 +1037,7 @@ function parseSportsbetRacePage(html,url){
    const runnerBlock=lines.slice(st+1,en);
    if(runnerBlock.some(x=>x.toLowerCase().startsWith("scratched")))continue;
    // Current Sportsbet race cards show fluctuation prices, then Win Fixed,
-   // then Place Fixed. The win quote is the second-last decimal price.
+   // then Place Fixed. Extract Win Fixed only; page retrieval time is not quote time.
    const trainer=runnerBlock.findIndex(x=>x.toUpperCase().startsWith("T:"));
    const speed=runnerBlock.findIndex(x=>x.toLowerCase().includes("early speed:"));
    const oddsStart=trainer>=0?trainer+1:(speed>=0?speed+1:0),oddsValues=[];
@@ -1041,7 +1050,7 @@ function parseSportsbetRacePage(html,url){
    if(!Number.isFinite(price)||price<=1)continue;
    runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{
     key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
-    last_update:new Date().toISOString(),age_seconds:0,stale:false,public_demo:true,
+    last_update:null,age_seconds:null,stale:false,public_demo:true,
     source_url:url,event_url:url
    }]});
   }
