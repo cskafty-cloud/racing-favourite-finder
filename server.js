@@ -827,7 +827,7 @@ function runnerMarketQuotes(runner,market="win"){
   const unique=new Map();
   for(const q of (runner.bookmakers||runner.odds||[])){
     const key=bookmakerKey(q),price=market==="place"?racingPlacePrice(q):racingWinPrice(q),age=racingMarketAge(q,market);
-    if(!key||price==null||q.stale===true||q.suspended===true||q.scratched===true||age==null||age>=racingQuoteMaxAge())continue;
+    if(key==="betfair"||!key||price==null||q.stale===true||q.suspended===true||q.scratched===true||age==null||age>=racingQuoteMaxAge())continue;
     const previous=unique.get(key),previousAge=previous?racingMarketAge(previous,market):null;
     if(!previous||previousAge==null||age<previousAge)unique.set(key,q);
   }
@@ -873,6 +873,7 @@ function runnerQuoteAudit(runner){
    const observedAge=Number.isFinite(observedMs)?Math.max(0,(Date.now()-observedMs)/1000):null;
    const capturedAt=market==="place"?(q.place_last_update||q.place_updated_at||q.place_captured_at||null):(q.last_update||q.updated_at||q.captured_at||q.timestamp||null);
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
+    market_type:marketType,exchange:q.exchange===true||book==="betfair",price_side:q.price_side||null,available_size:q.available_size??null,source_delay_max_seconds:q.source_delay_max_seconds??null,
     status:reasons.length?"unverified":"verified",age_seconds:age,observed_at:observedAt,observed_age_seconds:observedAge,
     captured_at:capturedAt,
     reasons,verification_label:(q.exchange===true||book==="betfair")?"DELAYED EXCHANGE":publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
@@ -2066,7 +2067,8 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, feedHealth:racingFeedHealth, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,\n       betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":(failures.some(x=>x.feed==="Betfair Exchange")?"configured-but-unavailable":"configured"),exchangeWinQuotes,exchangePlaceQuotes,
+      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
+       betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":(failures.some(x=>x.feed==="Betfair Exchange")?"configured-but-unavailable":"configured"),exchangeWinQuotes,exchangePlaceQuotes,
       sportsbetPreviewWinQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="WIN").length,0),0),
       sportsbetPreviewPlaceQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="PLACE").length,0),0),
       sportsbetStalePreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.verification_label==="STALE PUBLIC REFERENCE").length,0),0),
