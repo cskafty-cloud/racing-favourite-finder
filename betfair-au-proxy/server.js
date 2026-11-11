@@ -98,11 +98,24 @@ async function loadRaces() {
       target.exchange[kind]={back:quote(priced.ex?.availableToBack?.[0]),lay:quote(priced.ex?.availableToLay?.[0])};
     }
   }
-  const races=[...grouped.values()];
+  const races=[...grouped.values()].map(race=>{
+    const winFavourite=race.runners.filter(r=>Number(r.exchange?.win?.back?.price)>1)
+      .sort((a,b)=>a.exchange.win.back.price-b.exchange.win.back.price)[0]||null;
+    const placeFavourite=race.runners.filter(r=>Number(r.exchange?.place?.back?.price)>1)
+      .sort((a,b)=>a.exchange.place.back.price-b.exchange.place.back.price)[0]||null;
+    return {...race,
+      exchangeFavourite:winFavourite?{name:winFavourite.name,selectionId:winFavourite.selectionId,
+        price:winFavourite.exchange.win.back.price,side:"BACK",market:"WIN",
+        source:"Betfair Exchange Delayed API",capturedAt:race.captured_at,delayMaximumSeconds:180}:null,
+      exchangePlaceFavourite:placeFavourite?{name:placeFavourite.name,selectionId:placeFavourite.selectionId,
+        price:placeFavourite.exchange.place.back.price,side:"BACK",market:"PLACE",
+        source:"Betfair Exchange Delayed API",capturedAt:race.captured_at,delayMaximumSeconds:180}:null
+    };
+  });
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
     scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),horizonHours:48,
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
-    note:"Exchange BACK/LAY prices only. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
+    note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
 async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"]) {
   const filter = {
