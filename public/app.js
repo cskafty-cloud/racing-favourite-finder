@@ -561,7 +561,7 @@ function sportRankings(event,wantedBookmaker){
   const key=normaliseBookmakerKey(b.key||b.title||b.name||"unknown");
   if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
   if(b.stale===true)continue;
-  const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
+  const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())&&(m.outcomes||[]).length>=2)
    .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
    .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<15*60);
   if(!outcomes.length)continue;
