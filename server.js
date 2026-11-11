@@ -274,8 +274,14 @@ function normalizeBestOddsEvent(item,sport) {
     league:item.league||item.competition||"",sport_name:sport.title,commence_time:item.commence_time||item.start_time||null,
     in_play:item.in_play===true||/^(live|in.?play|running)$/i.test(String(item.status||"")),
     status:item.in_play===true?"LIVE":"UPCOMING",score:item.score||null,bookmakers:[],_publicDemo:true,_bestOddsDemo:true};
-  for(const selection of item.selections||[])addPublicOutcome(event,selection.best_bookmaker||selection.bookmaker||"best-odds",
-    selection.name||selection.selection,selection.best_price??selection.price,item.updated_at||null);
+  for(const selection of item.selections||[]){
+    const sourceBook=selection.best_bookmaker||selection.bookmaker;
+    // A best-price reference without a named bookmaker is not an independent book.
+    if(!sourceBook)continue;
+    addPublicOutcome(event,sourceBook,selection.name||selection.selection,
+      selection.best_price??selection.price,selection.last_update||item.updated_at||null,
+      selection.age_seconds??selection.quality?.age_seconds??item.age_seconds??null);
+  }
   return event;
 }
 async function loadPublicDemoSport(sport) {
