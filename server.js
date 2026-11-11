@@ -517,8 +517,8 @@ function racingWinPrice(q) {
   return Number.isFinite(price)&&price>1?price:null;
 }
 function racingQuoteMaxAge(q) {
-  const tier=String(q?.refresh_tier||"").toLowerCase();
-  return tier==="live"?120:tier==="card"?1800:180;
+  // A schedule/card refresh is not a bookmaker price refresh. Require the quote's own timestamp to be recent.
+  return 180;
 }
 function runnerQuotes(runner) {
   // Compare fixed-win only, using the quote's own refresh tier and age.
