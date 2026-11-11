@@ -1205,9 +1205,16 @@ async function loadSportsbetPublicRaceDemos(){
 
 async function getGlobalRaces() {
   const failures=[];
+  // A 402 is a hard monthly quota exhaustion, not a transient error. Do not
+  // keep entering the provider loader on every browser/background refresh while
+  // both racing endpoints are inside their cooldown; use the free feeds below.
+  const puntersEdgeQuotaPaused = API_KEY && Date.now() < providerRetryAt.schedule && Date.now() < providerRetryAt.odds;
+  if (puntersEdgeQuotaPaused) {
+    failures.push({feed:"PuntersEdge",message:"Monthly credits exhausted (HTTP 402); authenticated racing requests are paused until the provider cooldown expires. Continuing with available public feeds."});
+  }
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
   // through to the already-configured alternate providers rather than stopping.
-  if (API_KEY) { // use the already-configured key for actual Sportsbet-labelled racing quotes
+  if (API_KEY && !puntersEdgeQuotaPaused) { // use the already-configured key for actual Sportsbet-labelled racing quotes
     try {
       const primary=await loadPuntersEdgeRaces();
       const quotaBlocked=(primary.feedErrors||[]).some(x=>/\\b402\\b|quota|credit limit/i.test(typeof x==="string"?x:(x.message||"")));
