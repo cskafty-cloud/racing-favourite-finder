@@ -46,3 +46,11 @@ Railway supports Node services and server-side environment variables. This app i
 - Keep missing, stale, untimestamped, suspended or otherwise unverified prices unavailable or clearly marked as reference-only. Never infer one bookmaker's price from another bookmaker or from a market consensus.
 - The Betfair Exchange delayed feed is an exchange source, not a Sportsbet, Bet365 or TAB fixed-odds feed. Keep that distinction visible.
 - No paid subscriptions, API purchases, login bypasses, or bet-placement actions are part of this policy.
+
+
+## Betfair Exchange display
+
+- When valid `BETFAIR_APP_KEY` and `BETFAIR_SESSION_TOKEN` environment variables are configured, the server requests Australian horse, greyhound and harness WIN and PLACE markets from Betfair Exchange.
+- Best available BACK and LAY prices are preserved as separate exchange quotes, with available size and feed observation time. The delayed feed may be up to 180 seconds behind.
+- Exchange quotes are labelled **Betfair Exchange**, not Sportsbet, Bet365 or TAB. They are excluded from bookmaker fixed-odds favourite selection, bookmaker quote counts and fixed-odds comparisons.
+- If the two Betfair credentials are not configured, the dashboard reports that status instead of pretending the feed is connected. Do not add credentials unless the account owner supplies them.
