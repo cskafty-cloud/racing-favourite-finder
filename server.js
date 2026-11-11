@@ -63,7 +63,7 @@ async function loadBetfairRaces() {
       filter:{eventTypeIds:[type.id],marketCountries:["AU"],marketTypeCodes:["WIN","PLACE"],
         marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
       marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-      sort:"FIRST_TO_START",maxResults:"200"
+      sort:"FIRST_TO_START",maxResults:"1000"
     });
     return {type,markets:markets||[]};
   }));
@@ -92,16 +92,24 @@ async function loadBetfairRaces() {
       const priced=(book.runners||[]).find(x=>x.selectionId===r.selectionId);
       const back=priced?.ex?.availableToBack||[];
       const lay=priced?.ex?.availableToLay||[];
-      const quote=back[0]?.price||lay[0]?.price||null;
-      if(!quote||!Number.isFinite(Number(quote))||Number(quote)<=1||priced?.status==="REMOVED") return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[]};
-      return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[{
-        bookmaker:"Betfair Exchange (delayed)",name:"Betfair Exchange (delayed)",key:"betfair",
-        ...(isPlace?{place_price:Number(quote),place_market_type:"exchange_place",place_last_update:capturedAt,place_age_seconds:0}:
-          {win_price:Number(quote),market_type:"exchange_win",age_seconds:0}),
-        last_update:capturedAt,updated_at:capturedAt,source_delay_max_seconds:180,
-        price_side:back.length?"BACK":"LAY",available_size:back[0]?.size??lay[0]?.size??null,
-        source:"Betfair Exchange Delayed API"
-      }]};
+      if(priced?.status==="REMOVED") return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[]};
+      // Preserve both sides of the exchange book. A BACK quote and a LAY quote
+      // are distinct exchange prices, never bookmaker fixed odds.
+      const exchangeQuotes=[];
+      for(const side of [{name:"BACK",level:back[0]},{name:"LAY",level:lay[0]}]){
+        const price=Number(side.level?.price),size=Number(side.level?.size);
+        if(!Number.isFinite(price)||price<=1)continue;
+        exchangeQuotes.push({
+          bookmaker:"Betfair Exchange",name:"Betfair Exchange",key:"betfair",exchange:true,
+          ...(isPlace?{place_price:price,place_market_type:"exchange_place"}:
+            {win_price:price,market_type:"exchange_win"}),
+          observed_at:capturedAt,feed_observed_at:capturedAt,
+          source_delay_max_seconds:180,price_side:side.name,
+          available_size:Number.isFinite(size)?size:null,
+          source:"Betfair Exchange Delayed API"
+        });
+      }
+      return {number:r.sortPriority||null,name:r.runnerName,bookmakers:exchangeQuotes};
     });
     return {race_id:"betfair-"+m.marketId,id:"betfair-"+m.marketId,category,
       code:category==="horse"?"thoroughbred":category,venue:eventName,track:eventName,
@@ -867,7 +875,7 @@ function runnerQuoteAudit(runner){
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
     status:reasons.length?"unverified":"verified",age_seconds:age,observed_at:observedAt,observed_age_seconds:observedAge,
     captured_at:capturedAt,
-    reasons,verification_label:publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
+    reasons,verification_label:(q.exchange===true||book==="betfair")?"DELAYED EXCHANGE":publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
   }
  }
  return rows;
@@ -875,7 +883,7 @@ function runnerQuoteAudit(runner){
 function raceFavouriteDisplay(race){
  const verified=selectFavourite(race);
  if(verified)return {...verified,status:"verified",label:"VERIFIED MARKET FAVOURITE"};
- const unverified=(race.runners||[]).flatMap(r=>(r.bookmakerPriceAudit||[]).filter(q=>q.market==="WIN"&&q.status==="unverified").map(q=>({runner:r,quote:q}))).sort((a,b)=>a.quote.price-b.quote.price)[0];
+ const unverified=(race.runners||[]).flatMap(r=>(r.bookmakerPriceAudit||[]).filter(q=>q.market==="WIN"&&q.status==="unverified"&&q.bookmaker_key!=="betfair").map(q=>({runner:r,quote:q}))).sort((a,b)=>a.quote.price-b.quote.price)[0];
  if(unverified)return {name:unverified.runner.name||unverified.runner.runner_name||"Favourite",
    number:unverified.runner.number??unverified.runner.runner_number??null,status:"unverified",
    label:"UNVERIFIED MARKET FAVOURITE · NOT RANKED",price:unverified.quote.price,
@@ -1073,7 +1081,7 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:false, betfairMode:"disabled-unverified-403", storage:DATA_DIR}));
+app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"configured-delayed-exchange":"credentials-missing", betfairMarkets:["WIN","PLACE"], betfairBackLaySeparate:true, storage:DATA_DIR}));
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
@@ -2027,6 +2035,8 @@ app.get("/api/races", async (_req, res) => {
     const feedErrors=(feed.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x)));
     racingFeedHealth={ok:true,status:feedErrors.length?"partial":"active",fetchedAt,feedSource:feed.feedSource||"Public racing feeds",totalRaces:races.length,byCode,errors:feedErrors,scheduleFetchedAt:feed.scheduleFetchedAt||null,oddsFetchedAt:feed.oddsFetchedAt||null};
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
+     const exchangeWinQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="WIN").length,0),0);
+     const exchangePlaceQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="PLACE").length,0),0);
     const sportsbetPlaceQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerPlaceQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
@@ -2056,7 +2066,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, feedHealth:racingFeedHealth, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
+      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,\n       betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":(failures.some(x=>x.feed==="Betfair Exchange")?"configured-but-unavailable":"configured"),exchangeWinQuotes,exchangePlaceQuotes,
       sportsbetPreviewWinQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="WIN").length,0),0),
       sportsbetPreviewPlaceQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="PLACE").length,0),0),
       sportsbetStalePreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.verification_label==="STALE PUBLIC REFERENCE").length,0),0),
