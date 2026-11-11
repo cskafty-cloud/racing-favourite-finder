@@ -60,7 +60,7 @@ async function loadBetfairRaces() {
   const from=new Date(), to=new Date(Date.now()+24*60*60*1000);
   const catalogueGroups=await Promise.all(racingTypes.map(async type=>{
     const markets=await betfairRpc("listMarketCatalogue",{
-      filter:{eventTypeIds:[type.id],marketCountries:["AU"],marketTypeCodes:["WIN"],
+      filter:{eventTypeIds:[type.id],marketCountries:["AU"],marketTypeCodes:["WIN","PLACE"],
         marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
       marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
       sort:"FIRST_TO_START",maxResults:"200"
@@ -84,6 +84,8 @@ async function loadBetfairRaces() {
     if(!book) return null;
     const eventName=m.event?.name||"Unknown track";
     const marketName=m.marketName||"Win";
+    const marketType=String(m.description?.marketType||m.marketType||(/place|placed/i.test(marketName)?"PLACE":"WIN")).toUpperCase();
+    const isPlace=marketType==="PLACE"||/place|placed/i.test(marketName);
     const category=betfairCategory(m._eventTypeName,eventName,marketName);
     const raceNumberMatch=(eventName+" "+marketName).match(/(?:race|r)\s*(\d+)/i);
     const runners=(m.runners||[]).map(r=>{
@@ -94,7 +96,11 @@ async function loadBetfairRaces() {
       if(!quote||!Number.isFinite(Number(quote))||Number(quote)<=1||priced?.status==="REMOVED") return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[]};
       return {number:r.sortPriority||null,name:r.runnerName,bookmakers:[{
         bookmaker:"Betfair Exchange (delayed)",name:"Betfair Exchange (delayed)",key:"betfair",
-        win_price:Number(quote),age_seconds:null,last_update:capturedAt,source:"Betfair Exchange"
+        ...(isPlace?{place_price:Number(quote),place_market_type:"exchange_place",place_last_update:capturedAt,place_age_seconds:0}:
+          {win_price:Number(quote),market_type:"exchange_win",age_seconds:0}),
+        last_update:capturedAt,updated_at:capturedAt,source_delay_max_seconds:180,
+        price_side:back.length?"BACK":"LAY",available_size:back[0]?.size??lay[0]?.size??null,
+        source:"Betfair Exchange Delayed API"
       }]};
     });
     return {race_id:"betfair-"+m.marketId,id:"betfair-"+m.marketId,category,
@@ -770,16 +776,18 @@ function quoteAgeSecondsServer(q) {
 function racingWinPrice(q) {
   const type=String(q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
   if(/tote|totalisator|pari.?mutuel|place/.test(type))return null;
+  const exchangeWin=/exchange[_ -]?win/.test(type);
   const explicitlyFixed=q?.fixed_win_price??q?.fixed_win;
-  if(explicitlyFixed==null&&!/fixed.?win|win.?fixed/.test(type))return null;
+  if(explicitlyFixed==null&&!exchangeWin&&!/fixed.?win|win.?fixed/.test(type))return null;
   const price=Number(explicitlyFixed??q?.win_price??q?.win_odds);
   return Number.isFinite(price)&&price>1?price:null;
 }
 function racingPlacePrice(q) {
   const type=String(q?.place_market_type||q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
   if(/tote|totalisator|pari.?mutuel/.test(type))return null;
+  const exchangePlace=/exchange[_ -]?place/.test(type);
   const explicitlyFixed=q?.fixed_place_price??q?.fixed_place;
-  if(explicitlyFixed==null&&!/fixed.?place|place.?fixed/.test(type))return null;
+  if(explicitlyFixed==null&&!exchangePlace&&!/fixed.?place|place.?fixed/.test(type))return null;
   const price=Number(explicitlyFixed??q?.place_price??q?.place_odds);
   return Number.isFinite(price)&&price>1?price:null;
 }
