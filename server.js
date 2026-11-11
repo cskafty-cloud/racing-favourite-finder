@@ -1530,7 +1530,7 @@ app.get("/api/feed-status",(_req,res)=>{
   const racingAge=racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null;
   const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),qualityStatus:(racingFeedHealth.errors||[]).length?"partial":"good",ageSeconds:racingAge,
     byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{...(racingFeedHealth.byCode?.[code]||{races:0,live:0}),status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),ageSeconds:racingAge}]))};
-  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),qualityStatus:(value.errors||[]).length?"partial":"good",ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
+  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:value.status||feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),qualityStatus:(value.errors||[]).length?"partial":"good",ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
   const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[],liveSportsFeedHealth.ok),qualityStatus:(liveSportsFeedHealth.errors||[]).length?"partial":"good",ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
   res.set("Cache-Control","no-store").json({racing,sports,liveSports,checkedAt:new Date().toISOString()});
 });
@@ -1665,15 +1665,17 @@ app.get("/api/live-sports",async(_req,res)=>{
 let sportsCatalogueCache = { at:0, rows:[], meta:null };
 const sportsOddsCache = new Map();
 app.get("/api/sports", async (_req,res) => {
-  const sports=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id)).map(s=>({
-    key:s.key,title:s.title,name:s.title,category:"Sports",event_count:0,
-    provider:"Free public Sportsbet + Bet365 snapshots",active:true
-  }));
+  const sports=ODDS_DATA_SPORTS.filter(x=>![2,4].includes(x.id)).map(s=>{
+    const h=sportsFeedHealth[s.key]||{};
+    return {key:s.key,title:s.title,name:s.title,category:"Sports",event_count:h.eventCount||0,
+      live_count:h.liveCount||0,priced_count:h.pricedCount||0,verified_quote_count:h.verifiedQuoteCount||0,
+      feed_status:h.status||"catalogue-only",provider:h.provider||"MoviOdds public event board",active:(h.eventCount||0)>0};
+  });
   res.set("Cache-Control","no-store");
   res.json({sports,fetchedAt:new Date().toISOString(),
-    provider:"Free public Sportsbet + Bet365 snapshots",refreshSeconds:90,liveInPlayAvailable:true,
+    provider:"MoviOdds public event board + public bookmaker snapshots where available",refreshSeconds:90,liveInPlayAvailable:true,
     providerErrors:[],
-    note:"Free no-key public preview for the available sport catalogue. Sportsbet and Bet365 prices are shown where their public snapshot returns them; coverage is limited and not every sport has a live market."});
+    note:"The catalogue lists supported sport types only. A sport becomes active only when actual live/upcoming fixtures are returned. Fixture coverage and verified bookmaker-price coverage are reported separately."});
 });
 const RAPID_SPORT_ALIASES={
  nfl:"NFL",americanfootball_nfl:"NFL",nba:"NBA",basketball_nba:"NBA",wnba:"WNBA",mlb:"MLB",baseball_mlb:"MLB",nhl:"NHL",icehockey_nhl:"NHL",
@@ -1771,7 +1773,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       return {...b,key,name:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":b.name};
     })}));
     const errors=[...(data.errors||[])];
-    sportsFeedHealth[sport.key]={ok:true,status:errors.length?"partial":"active",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors};
+    sportsFeedHealth[sport.key]={ok:true,status:"checking",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,verifiedQuoteCount:0,errors,provider:data.provider||"public sports feeds"};
     // Public fixture coverage can be healthy while odds coverage is empty.
     // Enrich based on priced events, not raw fixture count.
     const pricedPublicEvents=events.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>
@@ -1807,12 +1809,17 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       else unique.get(key).bookmakers=[...(unique.get(key).bookmakers||[]),...(event.bookmakers||[])];
     }
     const rows=[...unique.values()].filter(e=>e.in_play===true||(Number.isFinite(Date.parse(e.commence_time||""))&&Date.parse(e.commence_time)>=Date.now()));
-    sportsFeedHealth[sport.key]={...sportsFeedHealth[sport.key],eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,pricedCount:rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length};
+    const pricedCount=rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length;
+    const verifiedQuoteCount=rows.reduce((n,e)=>n+(e.bookmakers||[]).reduce((m,b)=>m+(b.markets||[]).reduce((k,market)=>k+(market.outcomes||[]).filter(o=>{const age=quoteAgeSecondsServer(o);return age!=null&&age<180;}).length,0),0),0);
+    const feedStatus=errors.length?(rows.length?"partial":"feed-unavailable"):!rows.length?"no-upcoming-fixtures":verifiedQuoteCount?"fixtures-and-verified-prices":"fixtures-only";
+    sportsFeedHealth[sport.key]={...sportsFeedHealth[sport.key],ok:!errors.length||rows.length>0,status:feedStatus,
+      eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,pricedCount,verifiedQuoteCount,
+      errors,provider:data.provider||"public sports feeds"};
     res.set("Cache-Control","no-store");
     return res.json({sport:{key:sport.key,title:sport.title},events:rows,fetchedAt:new Date().toISOString(),
       provider:data.provider+(ODDS_API_TOKEN?" · Bet365 fallback when public coverage is thin":""),providerErrors:errors,publicDemo:true,
       eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,
-      pricedCount:rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length,
+      pricedCount,verifiedQuoteCount,feedStatus,
       note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 aliases are normalised. Only source-timestamped quotes younger than 180 seconds count as current; old or unknown-age prices are not live. Provider coverage varies by sport."});
   }catch(error){sportsFeedHealth[sport.key]={ok:false,status:"offline",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors:[error.message]};return res.status(502).json({error:error.message,publicDemo:true});}
 });
