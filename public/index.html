@@ -229,12 +229,12 @@ function fresh(q,field){
  const marketStale=field==="place"?q.place_stale===true:q.stale===true;
  return !marketStale&&!q.suspended&&timestamp(q,field)!=null&&a!=null&&a>=0&&a<180;
 }
-function quotes(r){return (r.runners||[]).flatMap(x=>x.bookmakers||x.odds||x.prices||[]);}
 function coverage(rows){
- const sb=rows.flatMap(r=>quotes(r).filter(isSportsbet).map(q=>({race:r,q})));
- const win=sb.filter(x=>price(x.q,"win")!=null&&fresh(x.q,"win"));
- const place=sb.filter(x=>price(x.q,"place")!=null&&fresh(x.q,"place"));
- const unverified=sb.filter(x=>(price(x.q,"win")!=null&&!fresh(x.q,"win"))||(price(x.q,"place")!=null&&!fresh(x.q,"place")));
+ const sb=rows.flatMap(r=>(r.runners||[]).flatMap(runner=>(runner.bookmakerPriceAudit||[])
+  .filter(q=>q.bookmaker_key==="sportsbet").map(q=>({race:r,runner,q}))));
+ const win=sb.filter(x=>x.q.market==="WIN"&&x.q.status==="verified");
+ const place=sb.filter(x=>x.q.market==="PLACE"&&x.q.status==="verified");
+ const unverified=sb.filter(x=>x.q.status==="unverified");
  return {sb,win,place,unverified};
 }
 function paint(data){
@@ -259,6 +259,6 @@ function paint(data){
 window.addEventListener("racing-data-updated",event=>{if(event.detail)paint(event.detail);});
 })();
 </script>
-  <script src="/app.js?v=calculated-racing-win-place-model-20261111"></script>
+  <script src="/app.js?v=verified-unverified-price-groups-20261111"></script>
 </body>
 </html>
