@@ -834,31 +834,35 @@ async function getKrokRaces() {
     return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
       oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
       feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
-      feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
+      feedSource:"Krok Odds direct Sportsbet + Bet365 racing feeds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
   }
   if(!krokRacingCache.at || now-krokRacingCache.at>=60000) {
-    const codes=["T","G","H"];
-    const results=await Promise.all(codes.map(async code=>{
-      try { return await fetchKrokRacing(today,code,"sportsbet"); }
-      catch(error) { return {races:[],meta:null,creditsRemaining:null,error:code+": "+error.message}; }
+    // Query each bookmaker explicitly for every Australian racing code. This
+    // prevents a small default response window being filled by other books.
+    // The provider's free-tier cap is respected; we do not paginate or bypass it.
+    const requests=["sportsbet","bet365"].flatMap(bookmaker=>["T","G","H"].map(code=>({bookmaker,code})));
+    const results=await Promise.all(requests.map(async ({bookmaker,code})=>{
+      try { return {...await fetchKrokRacing(today,code,bookmaker),bookmaker,code}; }
+      catch(error) { return {races:[],meta:null,creditsRemaining:null,bookmaker,code,error:bookmaker+" "+code+": "+error.message}; }
     }));
-    const races=results.flatMap(x=>x.races||[]);
+    const races=dedupeRaces(results.flatMap(x=>x.races||[]));
     const errors=results.filter(x=>x.error).map(x=>x.error);
-    const quotaBlocked=errors.some(message=>/429|monthly api limit|credit limit/i.test(message));
+    const quotaBlocked=errors.some(message=>/429|monthly api limit|credit limit|402|quota/i.test(message));
     krokRetryAt=quotaBlocked?now+24*60*60*1000:0;
     krokRacingCache={at:now,races,meta:results.map(x=>x.meta).filter(Boolean),
       creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
+    const quoteCount=book=>races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.filter(q=>bookmakerKey(q)===book).length,0),0);
     console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
       raceCount:races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,races.filter(r=>r.category===k).length])),
-      pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.some(q=>bookmakerKey(q)==="sportsbet"))).length,
-      sportsbetQuotes:races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.filter(q=>bookmakerKey(q)==="sportsbet").length,0),0),
+      sportsbetQuotes:quoteCount("sportsbet"),bet365Quotes:quoteCount("bet365"),
+      bookmakerCoverage:Object.fromEntries(["sportsbet","bet365"].map(book=>[book,Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code&&r.runners.some(x=>x.bookmakers.some(q=>bookmakerKey(q)===book))).length]))])),
       runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,
       retryAt:krokRetryAt?new Date(krokRetryAt).toISOString():null,errors}));
   }
   return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
     oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
     feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
-    feedSource:"Krok Odds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
+    feedSource:"Krok Odds direct Sportsbet + Bet365 racing feeds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
 }
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
 let rapidRacingCache = { at:0, races:[], errors:[] };
