@@ -351,31 +351,26 @@ function renderFullCoverage(rows) {
     return '<details class="full-race-row" '+(live?"open":"")+'><summary><span><b>'+esc(venue)+' R'+esc(number)+'</b><small>'+esc(categoryOf(r))+' · '+esc(r.country||"Country n/a")+' · '+esc(fmtDate(r.start_time))+' '+esc(fmtTime(r.start_time))+(live?' · LIVE NOW':'')+'</small></span><strong>'+raceQuoteCount+' quotes · '+(r.runners||[]).length+' runners</strong><span class="detail-chevron">⌄</span></summary><div class="full-race-runners">'+(all||'<div class="no-odds">No runners supplied by the provider for this race yet.</div>')+'</div></details>';
   }).join("") : '<div class="empty">No races returned by the provider.</div>';
 }
-function sportFavourite(event, wantedBookmaker){
- const prices=new Map();
+function sportFavourite(event,wantedBookmaker){const rows=sportRankings(event,wantedBookmaker);return rows[0]||null;}
+function sportRankings(event,wantedBookmaker){
+ const books=new Map();
  for(const b of event.bookmakers||[]){
-  if(wantedBookmaker&&!bookmakerMatches(b.key||b.title||b.name,wantedBookmaker))continue;
-  const stamp=b.last_update||b.updated_at||b.lastUpdate||null;
-  const age=stamp?Math.max(0,(Date.now()-Date.parse(stamp))/1000):null;
-  if(age!=null&&Number.isFinite(age)&&age>=180)continue;
-  for(const m of b.markets||[]) if(["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())) for(const o of m.outcomes||[]){const p=Number(o.price);if(p>1){if(!prices.has(o.name))prices.set(o.name,[]);prices.get(o.name).push(p);}}
+  const key=normaliseBookmakerKey(b.key||b.title||b.name||'unknown');if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
+  const stamp=b.last_update||b.updated_at||b.lastUpdate||null,parsed=stamp?Date.parse(stamp):NaN,age=Number.isFinite(parsed)?Math.max(0,(Date.now()-parsed)/1000):null;
+  if(age!=null&&age>=180)continue;
+  const outcomes=(b.markets||[]).filter(m=>['h2h','head_to_head'].includes(String(m.key||'').toLowerCase())).flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||''),price:Number(o.price)})).filter(o=>o.name&&o.price>1&&Number.isFinite(o.price));
+  if(!outcomes.length)continue;const old=books.get(key);if(!old||(age??999999)<(old.age??999999))books.set(key,{age,outcomes});
  }
- return [...prices.entries()].map(([name,v])=>{v.sort((a,b)=>a-b);return {name,price:v[Math.floor((v.length-1)/2)],books:v.length};}).sort((a,b)=>a.price-b.price)[0]||null;
-}
-function sportRankings(event) {
- const prices=new Map();
- for(const book of event.bookmakers||[]) {
-  const stamp=book.last_update||book.updated_at||book.lastUpdate||null;
-  const age=stamp?Math.max(0,(Date.now()-Date.parse(stamp))/1000):null;
-  if(age!=null&&Number.isFinite(age)&&age>=180)continue;
-  for(const market of book.markets||[]) {
-   if(!["h2h","head_to_head"].includes(String(market.key||"").toLowerCase())) continue;
-   for(const o of market.outcomes||[]) {const p=Number(o.price);if(p>1){if(!prices.has(o.name))prices.set(o.name,[]);prices.get(o.name).push(p);}}
-  }
- }
- const rows=[...prices.entries()].map(([name,values])=>{values.sort((a,b)=>a-b);const mid=values[Math.floor((values.length-1)/2)];return {name,price:mid,books:values.length,spread:values.length>1?(values[values.length-1]-values[0])/mid:1};}).sort((a,b)=>a.price-b.price);
- if(rows.length){const gap=rows[1]?Math.max(0,(1/rows[0].price-1/rows[1].price)/(1/rows[0].price)):0;rows[0].score=Math.round(Math.min(40,rows[0].books/3*40)+Math.max(0,30*(1-rows[0].spread/.35))+Math.min(30,gap/.15*30));}
- return rows;
+ if(wantedBookmaker){const values=new Map();for(const b of books.values())for(const o of b.outcomes){if(!values.has(o.name))values.set(o.name,[]);values.get(o.name).push(o.price);}return [...values.entries()].map(([name,p])=>({name,price:p.reduce((a,b)=>a+b,0)/p.length,books:p.length,score:0})).sort((a,b)=>a.price-b.price);}
+ const names=new Set([...books.values()].flatMap(b=>b.outcomes.map(o=>o.name))),stats=new Map([...names].map(n=>[n,{prob:[],votes:0,prices:[],ages:[]}]));
+ for(const b of books.values()){const total=b.outcomes.reduce((s,o)=>s+1/o.price,0),leader=b.outcomes.slice().sort((a,z)=>(1/z.price)-(1/a.price))[0];for(const o of b.outcomes){const s=stats.get(o.name);s.prob.push((1/o.price)/total);s.prices.push(o.price);s.ages.push(b.age);if(leader&&leader.name===o.name)s.votes++;}}
+ return [...stats.entries()].map(([name,s])=>{
+  const avg=s.prob.reduce((a,b)=>a+b,0)/s.prob.length,sorted=s.prob.slice().sort((a,b)=>a-b),mid=sorted[Math.floor((sorted.length-1)/2)],spread=s.prob.length>1?Math.max(...s.prob)-Math.min(...s.prob):1,support=s.votes/Math.max(1,books.size);
+  const coverage=Math.min(1,s.prices.length/Math.min(5,Math.max(2,books.size))),known=s.ages.filter(x=>x!=null),fresh=known.length?Math.max(0,1-known.reduce((a,b)=>a+b,0)/known.length/180):.35,consistency=Math.max(0,1-spread/Math.max(mid,.01));
+  const rank=[...stats.values()].filter(x=>x.prob.reduce((a,b)=>a+b,0)/x.prob.length<avg).length,strength=stats.size>1?rank/(stats.size-1):1,score=Math.round(35*support+25*strength+15*coverage+15*fresh+10*consistency);
+  const p=s.prices.slice().sort((a,b)=>a-b),price=p.length%2?p[(p.length-1)/2]:(p[p.length/2-1]+p[p.length/2])/2;
+  return {name,price,books:s.prices.length,score,agreementPct:Math.round(support*100),impliedProbability:+(avg*100).toFixed(1),spread:+(spread*100).toFixed(1)};
+ }).sort((a,b)=>b.score-a.score||b.agreementPct-a.agreementPct||b.impliedProbability-a.impliedProbability||b.books-a.books);
 }
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
@@ -389,14 +384,14 @@ function renderTopTips() {
   const b365=bookmakerFavourite(r,"bet365");
   bet365Picks.push({kind:"RACING",category,event,selection:b365?(b365.number?b365.number+". ":"")+b365.name:"No verified Bet365 favourite",odds:b365?b365.price:null,time,source:b365?"Bet365-labelled public quote":"No current Bet365 quote returned",score:0,quotes:b365?1:0,signal:b365?"PRICE RETURNED":"PRICE UNAVAILABLE"});
   const fav=marketFavourite(r);
-  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource,time,quotes:fav.quoteCount||0,signal:"MARKET FAVOURITE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
+  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource+" · "+(fav.agreementPct||0)+"% bookmaker agreement · "+(fav.meanQuoteAge??"n/a")+"s average quote age",time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"MARKET FAVOURITE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
   racePicks.push(tip);if(fav)pricedTips.push(tip);
  }
  for(const e of state.sportEvents||[]){
   const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
   const ranks=sportRankings(e);if(!ranks.length)continue;
   const f=ranks[0],books=f.books||0;
-  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s"),time:e.commence_time,quotes:books,signal:"MARKET FAVOURITE"};
+  const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s")+" · "+(f.agreementPct||0)+"% market agreement · "+(f.impliedProbability||0)+"% implied probability",time:e.commence_time,quotes:books,signal:"MARKET AGREEMENT"};
   sportPicks.push(tip);pricedTips.push(tip);
   const sbSport=sportFavourite(e,"sportsbet");if(sbSport)sportsbetSportPicks.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:sbSport.name,odds:sbSport.price,score:0,source:"Sportsbet-labelled public sports quote",time:e.commence_time,quotes:sbSport.books||1,signal:"SPORTSBET PUBLIC PRICE"});
  }
