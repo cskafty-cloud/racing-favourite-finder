@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'desktop/**'
+      - 'public/app.js'
       - 'package.json'
       - '.github/workflows/windows-app.yml'
   workflow_dispatch:
