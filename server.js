@@ -378,7 +378,7 @@ async function loadPublicDemoSport(sport) {
       }));
     })()
   ];
-  const [sportsbetResult,bet365Result,bestOddsResult,moviResult]=await Promise.allSettled(jobs);
+  const [sportsbetResult,bet365Result,bestOddsResult,moviResult,rapidResult]=await Promise.allSettled(jobs);
   const rowsByKey=new Map(),errors=[];
   for(const [index,result] of [sportsbetResult,bet365Result].entries()){
     const book=index===0?"sportsbet":"bet365";
@@ -405,7 +405,6 @@ async function loadPublicDemoSport(sport) {
       }
     }
   }
-  const rapidResult=await Promise.resolve(jobs[4]).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason}));
   if(rapidResult.status==="rejected")errors.push("RapidOddsAPI Sportsbet: "+rapidResult.reason.message);
   else for(const response of (rapidResult.value||[])){
     const payload=response.data||{};
