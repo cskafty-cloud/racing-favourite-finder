@@ -31,7 +31,7 @@ function auditRows(r){return Array.isArray(r.bookmakerPriceAudit)?r.bookmakerPri
 function sourceDetails(q){
   const source=String(q.source||"Connected public feed"),lower=source.toLowerCase();
   let url=String(q.source_url||"");
-  if(!/^https?:\\/\\//i.test(url)){
+  if(!/^https?:\/\//i.test(url)){
    if(/movi.?odds/.test(lower))url="https://moviodds.com/racing";
    else if(/punters.?edge/.test(lower))url="https://puntersedge.online/";
    else if(/sportsbet/.test(lower))url="https://www.sportsbet.com.au/";
@@ -39,8 +39,8 @@ function sourceDetails(q){
    else if(/b337/.test(lower))url="https://www.b337.bet/pricing";
     else if(/betfair/.test(lower))url="https://www.betfair.com/exchange/plus/";
   }
-  const safeUrl=/^https?:\\/\\//i.test(url)?url:"";let host=source;
-  if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\\./,"")}catch{}}
+  const safeUrl=/^https?:\/\//i.test(url)?url:"";let host=source;
+  if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\./,"")}catch{}}
   return {source,host,url:safeUrl};
  }
  function renderRunnerMarkets(r){
