@@ -173,15 +173,18 @@ async function demoRacingFeed() {
       const bookmakers=(Array.isArray(rawQuotes)?rawQuotes:[]).map(q=>{
         const rawBook=q.key||q.bookmaker_key||q.bookmaker||q.bookmaker_name||q.site||q.name||"";
         const key=canonicalBookmakerKey(rawBook);
-        const price=Number(q.win_price??q.fixed_win_price??q.fixed_win??q.win_odds??q.odds_decimal??q.odds??q.price??q.win);
+        const price=Number(q.win_price??q.fixed_win_price??q.fixed_win??q.win_odds??q.odds_decimal??q.win);
+        const placePrice=sportsbetDemoPlacePrice(q);
         const age=q.age_seconds??q.quote_age_seconds??null;
         const updated=q.last_update||q.updated_at||q.captured_at||q.timestamp||null;
         return {...q,key,bookmaker:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":q.bookmaker||q.name||rawBook,
-          win_price:price,age_seconds:age==null?null:Number(age),last_update:updated,
+          ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
+          ...(placePrice?{place_price:placePrice,place_market_type:"fixed_place"}:{}),
+          age_seconds:age==null?null:Number(age),last_update:updated,
           source:q.source||"PuntersEdge public live racing teaser",
           source_url:q.source_url||q.url||null,event_url:q.source_url||q.url||null,
           stale:q.stale===true||(age!=null&&Number(age)>=180),public_demo:true};
-      }).filter(q=>q.key&&Number.isFinite(q.win_price)&&q.win_price>1);
+      }).filter(q=>q.key&&(Number.isFinite(q.win_price)&&q.win_price>1||Number.isFinite(q.place_price)&&q.place_price>1));
       return {...x,bookmakers};
     })}));
   // An empty array is a valid off-hours response (Australian racing has no cards 24/7).
