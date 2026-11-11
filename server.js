@@ -1425,12 +1425,11 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
- // This public preview endpoint supports Sportsbet horse and greyhound only.
- // Bet365 is sourced separately from the MoviOdds Australian racing board; the
- // preview API does not list Bet365 or harness racing as supported combinations.
+ // This public bookmaker-specific preview documents horse and greyhound only.
+ // Harness cards continue to come from the all-code racing schedule feed; do not
+ // request an unsupported bookmaker/code combination or imply it has Sportsbet prices.
  const specs=[
-  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],
-  ["harness","harness-racing","sportsbet"]
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"]
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
