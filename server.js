@@ -236,37 +236,43 @@ const PUNTERS_EDGE_BOOK_SPORTS = {
 const PUNTERS_EDGE_BEST_SPORTS = {...PUNTERS_EDGE_BOOK_SPORTS};
 function addPublicOutcome(event, bookKey, name, price, updatedAt=null, ageSeconds=null) {
   if(!Number.isFinite(Number(price))||Number(price)<=1||!name)return;
-  const key=String(bookKey||"unknown").toLowerCase().replace(/[^a-z0-9]/g,"");
-  let book=(event.bookmakers||[]).find(b=>String(b.key||b.name||"").toLowerCase().replace(/[^a-z0-9]/g,"")===key);
-  if(!book){book={key:String(bookKey||"unknown").toLowerCase(),name:String(bookKey||"Unknown").replace(/[_-]/g," "),last_update:updatedAt,age_seconds:ageSeconds,markets:[]};event.bookmakers.push(book);}
-  else if(ageSeconds!=null&&(book.age_seconds==null||ageSeconds<book.age_seconds)){book.age_seconds=ageSeconds;book.last_update=updatedAt||book.last_update;}
+  const key=canonicalBookmakerKey(bookKey);
+  let book=(event.bookmakers||[]).find(b=>canonicalBookmakerKey(b.key||b.name)===key);
+  if(!book){book={key,name:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":String(bookKey||"Unknown"),last_update:updatedAt,age_seconds:ageSeconds,source:"PuntersEdge public best-market endpoint",markets:[]};event.bookmakers.push(book);}
   let market=book.markets.find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
   if(!market){market={key:"h2h",name:"Head to head",outcomes:[]};book.markets.push(market);}
+  const candidate={name:String(name),price:Number(price),age_seconds:ageSeconds,last_update:updatedAt,source:"PuntersEdge public best-market endpoint"};
   const existing=market.outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-  if(existing)existing.price=Number(price);else market.outcomes.push({name:String(name),price:Number(price)});
+  const oldAge=existing?quoteAgeSecondsServer(existing):null,newAge=quoteAgeSecondsServer(candidate);
+  if(!existing||newAge!=null&&(oldAge==null||newAge<oldAge)) {
+    if(existing)Object.assign(existing,candidate);else market.outcomes.push(candidate);
+  }
+  const ages=market.outcomes.map(quoteAgeSecondsServer).filter(x=>x!=null);
+  book.age_seconds=ages.length?Math.max(...ages):null;
 }
 function normalizePublicBookSport(item, book, sport) {
-  const sourceMarkets=(item.markets||[]).filter(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.market_key||m.name||"").toLowerCase().replace(/\s+/g,"_")));
+  const sourceMarkets=(item.markets||[]).filter(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.market_key||m.name||"").toLowerCase().replace(/\\s+/g,"_")));
   const prices=Array.isArray(item.prices)?item.prices:Array.isArray(item.odds)?item.odds:
     sourceMarkets.flatMap(m=>(m.outcomes||m.selections||[]).map(o=>({...o,_market:m})));
-  const outcomes=prices.map(p=>({name:p.name||p.selection||p.label||"",price:Number(p.price??p.odds??p.decimal??p.best_price),
-    ageSeconds:p.age_seconds??p.quality?.age_seconds??p._market?.age_seconds??p._market?.quality?.age_seconds??item.age_seconds??item.quality?.age_seconds??null,
-    updatedAt:p.last_update||p.updated_at||p._market?.last_update||p._market?.updated_at||item.last_update||item.updated_at||null}))
-    .filter(p=>p.name&&Number.isFinite(p.price)&&p.price>1);
+  const outcomes=prices.map(p=>{
+    const updatedAt=p.last_update||p.updated_at||p.captured_at||p.timestamp||p._market?.last_update||p._market?.updated_at||item.last_update||item.updated_at||item.captured_at||item.timestamp||null;
+    const ageSeconds=p.age_seconds??p.quote_age_seconds??p.quality?.age_seconds??p._market?.age_seconds??p._market?.quality?.age_seconds??item.age_seconds??item.quote_age_seconds??item.quality?.age_seconds??null;
+    return {name:p.name||p.selection||p.label||"",price:Number(p.price??p.odds??p.decimal??p.best_price),age_seconds:ageSeconds==null?null:Number(ageSeconds),last_update:updatedAt,source:p.source||p.source_name||item.source||"PuntersEdge public bookmaker-specific endpoint"};
+  }).filter(p=>p.name&&Number.isFinite(p.price)&&p.price>1);
   const home=item.home_team||item.home||item.homeTeam||"";
   const away=item.away_team||item.away||item.awayTeam||"";
   const start=item.commence_time||item.start_time||item.kickoff||item.time||null;
   const explicitLive=item.in_play===true||item.inplay===true||/^(live|in.?play|running)$/i.test(String(item.status||""));
   const canonical=canonicalBookmakerKey(book);
-  const ages=outcomes.map(o=>o.ageSeconds).filter(x=>x!=null&&Number.isFinite(Number(x))).map(Number);
-  const age=ages.length?Math.min(...ages):null;
-  const stamp=outcomes.find(o=>o.updatedAt)?.updatedAt||null;
-  const cleanOutcomes=outcomes.map(({name,price})=>({name,price}));
+  const knownAges=outcomes.map(o=>quoteAgeSecondsServer(o)).filter(x=>x!=null);
+  const cleanOutcomes=outcomes.map(({name,price,age_seconds,last_update,source})=>({name,price,age_seconds,last_update,source}));
   return {id:String(item.id||item.event_id||[home,away,start].join("|")),home_team:home||"Event",away_team:away,
     league:item.league||item.competition||item.tournament||"",sport_name:sport.title,commence_time:start,
     in_play:explicitLive,status:explicitLive?"LIVE":"UPCOMING",score:item.score||item.ss||null,
-    bookmakers:cleanOutcomes.length?[{key:canonical,name:canonical==="sportsbet"?"Sportsbet":"Bet365",age_seconds:age,last_update:stamp,
-      stale:item.stale===true||(age!=null&&age>=180),markets:[{key:"h2h",name:"Head to head",outcomes:cleanOutcomes}]}]:[],_publicDemo:true};
+    bookmakers:cleanOutcomes.length?[{key:canonical,name:canonical==="sportsbet"?"Sportsbet":"Bet365",
+      age_seconds:knownAges.length?Math.max(...knownAges):null,last_update:item.last_update||item.updated_at||null,
+      source:"PuntersEdge public bookmaker-specific endpoint",stale:item.stale===true,
+      markets:[{key:"h2h",name:"Head to head",outcomes:cleanOutcomes}]}]:[],_publicDemo:true};
 }
 function normalizeBestOddsEvent(item,sport) {
   const home=item.home_team||item.home||"",away=item.away_team||item.away||"";
@@ -279,8 +285,8 @@ function normalizeBestOddsEvent(item,sport) {
     // A best-price reference without a named bookmaker is not an independent book.
     if(!sourceBook)continue;
     addPublicOutcome(event,sourceBook,selection.name||selection.selection,
-      selection.best_price??selection.price,selection.last_update||item.updated_at||null,
-      selection.age_seconds??selection.quality?.age_seconds??item.age_seconds??null);
+      selection.best_price??selection.price,selection.last_update||selection.updated_at||item.updated_at||item.last_update||null,
+      selection.age_seconds??selection.quote_age_seconds??selection.quality?.age_seconds??item.age_seconds??item.quote_age_seconds??null);
   }
   return event;
 }
@@ -311,7 +317,7 @@ async function loadPublicDemoSport(sport) {
     const payload=result.value;if(!payload)continue;
     for(const item of publicDemoItems(payload)){
       const event=normalizePublicBookSport(item,book,sport);
-      const key=[event.home_team,event.away_team].join("|").toLowerCase();
+      const key=[normalizeName(event.home_team),normalizeName(event.away_team),String(event.commence_time||"").slice(0,13),normalizeName(event.league)].join("|");
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
       else for(const b of event.bookmakers)if(!rowsByKey.get(key).bookmakers.some(x=>x.key===b.key))rowsByKey.get(key).bookmakers.push(b);
     }
@@ -321,7 +327,7 @@ async function loadPublicDemoSport(sport) {
   else if(bestOddsResult.value){
     const payload=bestOddsResult.value;
     for(const item of publicDemoItems(payload)){
-      const event=normalizeBestOddsEvent(item,sport),key=[event.home_team,event.away_team].join("|").toLowerCase();
+      const event=normalizeBestOddsEvent(item,sport),key=[normalizeName(event.home_team),normalizeName(event.away_team),String(event.commence_time||"").slice(0,13),normalizeName(event.league)].join("|");
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
       else{
         const target=rowsByKey.get(key);
