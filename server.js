@@ -846,9 +846,13 @@ function runnerQuoteAudit(runner){
    if(age==null)reasons.push(q.public_demo===true?"Sportsbet public preview has no runner-level quote timestamp; preview only, not live verified":"missing market-specific capture timestamp");
    else if(age>=racingQuoteMaxAge())reasons.push("stale: "+Math.round(age)+" seconds old");
    if(age!=null&&age<0)reasons.push("invalid timestamp");
+   const observedAt=q.feed_observed_at||q.observed_at||null;
+   const observedMs=observedAt?Date.parse(observedAt):NaN;
+   const observedAge=Number.isFinite(observedMs)?Math.max(0,(Date.now()-observedMs)/1000):null;
+   const capturedAt=market==="place"?(q.place_last_update||q.place_updated_at||q.place_captured_at||null):(q.last_update||q.updated_at||q.captured_at||q.timestamp||null);
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
-    status:reasons.length?"unverified":"verified",age_seconds:age,
-    captured_at:market==="place"?(q.place_last_update||q.place_updated_at||q.place_captured_at||null):(q.last_update||q.updated_at||q.captured_at||q.timestamp||null),
+    status:reasons.length?"unverified":"verified",age_seconds:age,observed_at:observedAt,observed_age_seconds:observedAge,
+    captured_at:capturedAt,
     reasons,verification_label:q.public_demo===true&&age==null?"UNTIMESTAMPED PREVIEW":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
   }
  }
@@ -1628,7 +1632,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   runners,bookmaker_source_url:sourceUrl,sportsbet_url:bookKey==="sportsbet"?sourceUrl:null,bet365_url:bookKey==="bet365"?sourceUrl:null,public_bookmaker:bookKey,updated_at:item.updated_at||updatedAt||null};
 }
 async function loadSportsbetPublicRaceDemos(){
- if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
+ if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<110000)return sportsbetRacingDemoCache.races;
  // This public bookmaker-specific preview documents horse and greyhound only.
  // Harness cards continue to come from the all-code racing schedule feed; do not
  // request an unsupported bookmaker/code combination or imply it has Sportsbet prices.
@@ -2470,5 +2474,5 @@ app.listen(PORT,"0.0.0.0",()=>{
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
-  setInterval(refreshBackgroundRacingFeed, 5 * 60 * 1000);
+  setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
 });
