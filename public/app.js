@@ -38,9 +38,6 @@ function renderRunnerMarkets(r){
    const observed=x.observed_at?"Feed observed "+fmtTime(x.observed_at)+" · "+fmtAge(x.observed_age_seconds):"Feed observation time unavailable";
    const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
    return '<div class="rf-price-line"><span>'+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(x.source||"Feed")+'</span></div>';
-   const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):
-    (x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
-   return '<div class="rf-price-line"><span>'+market+' · 
   }).join("");
   const winVerified=line("WIN","verified"),winUnverified=line("WIN","unverified");
   const placeVerified=line("PLACE","verified"),placeUnverified=line("PLACE","unverified");
