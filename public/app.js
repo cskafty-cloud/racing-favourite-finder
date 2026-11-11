@@ -1018,7 +1018,7 @@ window.startFullDashboardFeeds=function(){
   loadMarketHistory();
 };
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,60*1000);
+setInterval(loadRaces,5*60*1000);
 setInterval(loadFeedStatus,15000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
@@ -1692,7 +1692,7 @@ window.startFullDashboardFeeds=function(){
   loadMarketHistory();
 };
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,60*1000);
+setInterval(loadRaces,5*60*1000);
 setInterval(loadFeedStatus,15000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
