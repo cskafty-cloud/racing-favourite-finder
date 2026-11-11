@@ -1513,11 +1513,11 @@ async function getGlobalRaces() {
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   try {
     // Request each Australian code separately: the combined public board's
-    // near=200 cap can otherwise let one busy code crowd out the others.
+    // Keep a larger per-code window so busy thoroughbred cards do not crowd out later meetings.
     // This is still the same free, no-key MoviOdds source; it only broadens
     // schedule coverage and never turns its Bet365 prices into Sportsbet prices.
     const boardResults=await Promise.all(["horse","greyhound","harness"].map(async code=>{
-      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=200",{
+      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=500",{
         headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error(code+" board invalid JSON (HTTP "+response.status+").");}
