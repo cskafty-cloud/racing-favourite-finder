@@ -75,7 +75,7 @@
       <div class="stat"><span class="stat-label">GREYHOUND RACES</span><strong id="dogCount">—</strong></div><div class="stat"><span class="stat-label">HARNESS RACES</span><strong id="harnessCount">—</strong></div>
       <div class="stat"><span class="stat-label">LAST UPDATED</span><strong class="small-stat" id="updatedAt">Waiting…</strong></div>
     </section>
-    <div id="dashboardFeedStatuses" class="feed-status-grid"><div class="feed-status-item"><span class="feed-dot checking"></span><span><b>CHECKING FEEDS</b><small>HORSE · GREYHOUND · HARNESS · SPORTS</small></span></div></div><div id="feedFreshness" class="feed-freshness">Racing data refreshes about every 60 seconds. Free-feed coverage is limited by provider availability and per-code request caps; each bookmaker price has its own update time. Missing prices are not estimated.</div>
+    <div id="dashboardFeedStatuses" class="feed-status-grid"><div class="feed-status-item"><span class="feed-dot checking"></span><span><b>CHECKING FEEDS</b><small>HORSE · GREYHOUND · HARNESS · SPORTS</small></span></div></div><div id="feedFreshness" class="feed-freshness">The dashboard checks connected racing feeds every 2 minutes. Each displayed price keeps its own bookmaker/source timestamp where supplied; server observation time is shown separately and never counts as a bookmaker quote timestamp. Missing or unverified prices are never estimated.</div>
     <div id="notice" class="notice hidden"></div>
     <section class="history-panel">
       <div class="history-heading"><div><div class="eyebrow">TRACK RECORD</div><h2>Favourite results</h2><p class="sub">Recorded selections are compared with official race results.</p></div><button id="syncHistoryBtn" class="secondary-btn">↻ Update results</button></div>
@@ -235,7 +235,9 @@ function coverage(rows){
  const win=sb.filter(x=>x.q.market==="WIN"&&x.q.status==="verified");
  const place=sb.filter(x=>x.q.market==="PLACE"&&x.q.status==="verified");
  const unverified=sb.filter(x=>x.q.status==="unverified");
- return {sb,win,place,unverified};
+ const untimestamped=sb.filter(x=>x.q.public_demo===true&&x.q.age_seconds==null&&!x.q.captured_at);
+ const observed=sb.map(x=>x.q.observed_at).filter(Boolean).map(x=>({raw:x,ms:Date.parse(x)})).filter(x=>Number.isFinite(x.ms)).sort((a,b)=>b.ms-a.ms)[0]?.raw||null;
+ return {sb,win,place,unverified,untimestamped,observed};
 }
 function paint(data){
  const races=data.races||[],stats=coverage(races);
@@ -244,21 +246,24 @@ function paint(data){
   [String(races.length),"Race cards"],
   [String(stats.win.length),"Verified WIN quotes"],
   [String(stats.place.length),"Verified PLACE quotes"],
-  [String(stats.unverified.length),"Unverified / stale quote rows"]
+  [String(stats.unverified.length),"Unverified quote rows"],
+  [String(stats.untimestamped.length),"Untimestamped preview quotes"]
  ].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
  $("sbCoverageByCode").innerHTML=categories.map(([key,label])=>{
   const rows=races.filter(r=>category(r)===key),code=coverage(rows);
   return '<div class="source-link"><b>'+label+'</b><small>'+rows.length+' race cards · '+code.win.length+' verified WIN · '+code.place.length+' verified PLACE · '+code.unverified.length+' unverified quote rows</small></div>';
  }).join("");
- $("sbCoverageDetail").textContent="Latest response: "+new Date(data.fetchedAt||Date.now()).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+
-  ". Sportsbet-labelled quote rows: "+stats.sb.length+
-  ". Verification requires a market-specific source timestamp younger than 3 minutes; feed receipt time and age-only values do not qualify.";
+ $("sbCoverageDetail").textContent="Dashboard feed check: "+new Date(data.fetchedAt||Date.now()).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+
+  " · automatic check every 2 minutes. Sportsbet-labelled quote rows: "+stats.sb.length+
+  " · untimestamped previews: "+stats.untimestamped.length+
+  (stats.observed?" · latest server observation: "+new Date(stats.observed).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}):"")+
+  ". The preview source does not supply runner-level quote timestamps, so observation time is not treated as a Sportsbet quote timestamp. Verification requires the individual market's own fresh source timestamp; age-only and feed-receipt values do not qualify.";
  const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[]).map(x=>typeof x==="string"?x:x.message||JSON.stringify(x))];
  $("sbCoverageErrors").textContent=errors.length?"Feed blockers: "+[...new Set(errors)].slice(0,7).join(" · "):"No provider errors were reported by the combined racing endpoint.";
 }
 window.addEventListener("racing-data-updated",event=>{if(event.detail)paint(event.detail);});
 })();
 </script>
-  <script src="/app.js?v=verified-price-observation-two-minute-poll-20261111b"></script>
+  <script src="/app.js?v=verified-price-audit-two-minute-refresh-20261111c"></script>
 </body>
 </html>
