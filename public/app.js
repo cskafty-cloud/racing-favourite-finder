@@ -197,7 +197,7 @@ async function loadBetfairSports(){
   betfairSportsEvents=[];
   if(state)state.textContent="FEED UNAVAILABLE · "+error.message;
   if(list)list.innerHTML='<div class="rf-empty">'+esc(error.message)+' · No Betfair sports prices are being estimated.</div>';
-  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent="Check that the Railway Betfair app key and session token are valid and that the delayed Exchange API is authorised.";
+  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent=error.message+" The application will not show estimated prices or label unavailable data as connected.";
  }
 }
 async function loadSportsFixtures(){
