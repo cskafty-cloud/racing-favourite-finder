@@ -124,6 +124,12 @@ async function getBetfairRaces() {
 }
 const PROVIDER_PLAN = String(process.env.PUNTERSEDGE_PLAN || "free").toLowerCase();
 const SCHEDULE_HORIZON_HOURS = PROVIDER_PLAN === "standard" ? 48 : (["plus","premium","pro","enterprise"].includes(PROVIDER_PLAN) ? 168 : 24);
+// Protect the 1,500-credit free allowance: authenticated full racing polls are
+// intentionally infrequent on Free. Public no-key previews continue separately.
+// Fresh quote timestamps are still enforced; old quotes are never displayed as live.
+const FREE_PLAN = PROVIDER_PLAN === "free";
+const PUNTERS_SCHEDULE_REFRESH_MS = FREE_PLAN ? 12*60*60*1000 : 10*60*1000;
+const PUNTERS_ODDS_REFRESH_MS = FREE_PLAN ? 3*60*60*1000 : 60*1000;
 const BASE = "https://api.puntersedge.online";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
@@ -1168,7 +1174,7 @@ async function fetchPuntersEdge(pathname, params, cacheName) {
 async function loadPuntersEdgeRaces() {
   const errors=[];
   const now=Date.now();
-  if((!puntersEdgeCache.schedule.at || now-puntersEdgeCache.schedule.at>=10*60*1000) && now>=providerRetryAt.schedule) {
+  if((!puntersEdgeCache.schedule.at || now-puntersEdgeCache.schedule.at>=PUNTERS_SCHEDULE_REFRESH_MS) && now>=providerRetryAt.schedule) {
     try {
       await fetchPuntersEdge("/v1/racing/events",{
         hours_ahead:SCHEDULE_HORIZON_HOURS,country:"AU",include_unresolved:"true",
@@ -1183,7 +1189,7 @@ async function loadPuntersEdgeRaces() {
     errors.push("Schedule refresh paused after provider quota response; retrying after "+new Date(providerRetryAt.schedule).toISOString());
   }
   // Conditional ETag reads return HTTP 304 at no credit cost when the board is unchanged.
-  if((!puntersEdgeCache.priced.at || now-puntersEdgeCache.priced.at>=60000) && now>=providerRetryAt.odds) {
+  if((!puntersEdgeCache.priced.at || now-puntersEdgeCache.priced.at>=PUNTERS_ODDS_REFRESH_MS) && now>=providerRetryAt.odds) {
     try {
       await fetchPuntersEdge("/v1/racing/next-to-go",{
         num_races:200,country:"AU",include_unresolved:"true",
