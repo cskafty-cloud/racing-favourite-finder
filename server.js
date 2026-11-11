@@ -362,6 +362,7 @@ async function loadPublicDemoSport(sport) {
     bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport:bookSlug}):Promise.resolve(null),
     // Bet365 is already supplied by MoviOdds' documented no-key all-sports feed.
     // Avoid spending the public demo's small shared request allowance on a duplicate book.
+    Promise.resolve(null),
     bestSlug?publicDemoRequest("/v1/demo/best-odds",{sport:bestSlug}):Promise.resolve(null),
     (async()=>{
       const all=await loadMoviOddsAllSports();
