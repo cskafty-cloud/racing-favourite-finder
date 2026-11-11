@@ -1640,14 +1640,31 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
     })}));
     const errors=[...(data.errors||[])];
     sportsFeedHealth[sport.key]={ok:true,status:errors.length?"partial":"active",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors};
-    if(ODDS_API_TOKEN&&events.length<3){
+    // Public fixture coverage can be healthy while odds coverage is empty.
+    // Enrich based on priced events, not raw fixture count.
+    const pricedPublicEvents=events.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>
+      ["h2h","head_to_head"].includes(String(m.key||"").toLowerCase())&&
+      (m.outcomes||[]).some(o=>Number(o.price)>1)))).length;
+    if(ODDS_API_TOKEN&&pricedPublicEvents<3){
       try{
         const fallback=await loadOddsDataSport(sport,{bulk:true});
         for(const incoming of fallback.rows||[]){
           const home=normalizeName(incoming.home_team),away=normalizeName(incoming.away_team);
-          const existing=events.find(e=>normalizeName(e.home_team)===home&&normalizeName(e.away_team)===away);
-          if(existing)existing.bookmakers=[...(existing.bookmakers||[]),...(incoming.bookmakers||[])];
-          else events.push(incoming);
+          const start=String(incoming.commence_time||"").slice(0,13);
+          const existing=events.find(e=>normalizeName(e.home_team)===home&&normalizeName(e.away_team)===away&&
+            (!start||!e.commence_time||String(e.commence_time).slice(0,13)===start));
+          if(existing){
+            for(const book of incoming.bookmakers||[]){
+              const key=canonicalBookmakerKey(book.key||book.name);
+              const previous=(existing.bookmakers||[]).find(x=>canonicalBookmakerKey(x.key||x.name)===key);
+              if(!previous)(existing.bookmakers||(existing.bookmakers=[])).push(book);
+              else{
+                const oldStamp=Date.parse(previous.last_update||previous.updated_at||"");
+                const newStamp=Date.parse(book.last_update||book.updated_at||"");
+                if(Number.isFinite(newStamp)&&(!Number.isFinite(oldStamp)||newStamp>oldStamp))Object.assign(previous,book);
+              }
+            }
+          }else events.push(incoming);
         }
       }catch(error){errors.push("Bet365 fixture fallback: "+error.message);}
     }
