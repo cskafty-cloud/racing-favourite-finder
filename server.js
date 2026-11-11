@@ -1293,7 +1293,7 @@ async function getGlobalRaces() {
     const body=await response.text();let payload;
     try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds racing board returned invalid JSON (HTTP "+response.status+").");}
     if(!response.ok)throw new Error("MoviOdds racing board HTTP "+response.status+": "+(payload.error||"request failed"));
-    payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country}))));
+    payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country})));
 
     const raw=payload.races;
     const races=raw.map(r=>{
