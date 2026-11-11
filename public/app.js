@@ -179,6 +179,24 @@ function allBookFavouritePanel(f){
  return '<div class="book-fav"><div class="book-fav-label">'+esc(f.bookmaker)+' public favourite</div><div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+f.price.toFixed(2)+'</div><div class="book-fav-age">'+esc(age)+' · '+(f.age==null?"shortest returned public price · age unverified":"shortest current price returned by this bookmaker")+"</div>"+link+'</div>';
 }
 
+function provisionalMarketFavourite(race) {
+ const candidates=[];
+ for(const runner of race.runners||[]){
+  if(runner.scratched===true)continue;
+  for(const q of fixedRunnerPrices(runner)){
+   const age=quoteAgeSeconds(q),price=racingWinPrice(q);
+   if(age!=null||q.stale===true||q.suspended===true||!Number.isFinite(price)||price<=1)continue;
+   const key=bookmakerKeyForLink(q),book=bookmakerDisplayName(key,q);
+   candidates.push({name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
+    number:runner.number??runner.runner_number??runner.box??null,consensus:price,quoteCount:1,agreementPct:0,
+    impliedProbability:+(100/price).toFixed(1),meanQuoteAge:null,spreadPct:100,signalScore:0,
+    signalLabel:"PROVISIONAL · AGE UNVERIFIED",priceSource:book+" labelled price · timestamp missing",
+    provisional:true,sourceBook:book,sourcePrice:price});
+  }
+ }
+ return candidates.sort((a,b)=>a.consensus-b.consensus)[0]||null;
+}
+function displayMarketFavourite(race){return marketFavourite(race)||provisionalMarketFavourite(race);}
 function marketFavourite(race) {
   const rows=(race.runners||[]).filter(r=>r.scratched!==true).map(r=>({...r,_quotes:freshestQuotesByBook(r)}));
   const books=[...new Set(rows.flatMap(r=>r._quotes.map(q=>q.key)))];
@@ -234,7 +252,7 @@ function filteredRaces() {
   return rows;
 }
 function raceCard(r, live=false) {
-  const fav = marketFavourite(r);
+  const fav = displayMarketFavourite(r);
   const bet365Fav = bookmakerFavourite(r,"bet365")||bookmakerUnverifiedFavourite(r,"bet365");
   const sportsbetFav = sportsbetDisplayFavourite(r)||bookmakerUnverifiedFavourite(r,"sportsbet");
   const bookFavourites = allBookmakerFavourites(r).filter(f=>f.key!=="sportsbet"&&f.key!=="bet365");
@@ -413,7 +431,7 @@ function sportRankings(event,wantedBookmaker){
   if(b.stale===true)continue;
   const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
    .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
-   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<racingQuoteMaxAge(q));
+   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<racingQuoteMaxAge(o));
   if(!outcomes.length)continue;
   const old=books.get(key);
   const age=Math.max(...outcomes.map(o=>o.age));
@@ -464,8 +482,8 @@ function renderTopTips() {
    source:b365?(b365.source||"Bet365-labelled public quote")+" · "+Math.round(b365.age)+"s verified quote age · "+(b365Signal?.agreementPct||0)+"% cross-book agreement":b365Display?"Bet365-labelled price · UNVERIFIED · source timestamp missing":"No current Bet365 quote returned",
    score:b365Signal?.score||0,quotes:b365Signal?.quoteCount||0,signal:b365?(b365Signal?.signal||"PROVISIONAL · BET365 PRICE"):b365Display?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
   bet365Picks.push(b365Tip);if(b365)bet365Priced.push(b365Tip);
-  const fav=marketFavourite(r);
-  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource+" · "+(fav.agreementPct||0)+"% bookmaker agreement · "+(fav.meanQuoteAge??"n/a")+"s average quote age",time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"MARKET FAVOURITE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
+  const fav=displayMarketFavourite(r);
+  const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource+" · "+(fav.agreementPct||0)+"% bookmaker agreement · "+(fav.meanQuoteAge??"n/a")+"s average quote age",time,quotes:fav.quoteCount||0,signal:fav.provisional?"PROVISIONAL · AGE UNVERIFIED":(fav.signalLabel||"MARKET FAVOURITE")}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
   racePicks.push(tip);if(fav)pricedTips.push(tip);
  }
  for(const e of state.sportEvents||[]){
@@ -488,8 +506,10 @@ function renderTopTips() {
  const bestDay=(todays.length?todays:pricedTips).slice().sort(ranked).slice(0,10);
  const topTips=pricedTips.slice().sort(ranked).slice(0,20);
  const bet365Today=bet365Priced.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
- const bet365UnverifiedToday=bet365Picks.filter(t=>/UNVERIFIED/.test(String(t.signal||""))&&(!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today));
- const sportsbetUnverifiedToday=sportsbetPicks.filter(t=>/UNVERIFIED/.test(String(t.signal||""))&&(!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today));
+ const bet365UnverifiedAll=bet365Picks.filter(t=>/UNVERIFIED/.test(String(t.signal||"")));
+ const bet365UnverifiedToday=bet365UnverifiedAll.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
+ const sportsbetUnverifiedAll=sportsbetPicks.filter(t=>/UNVERIFIED/.test(String(t.signal||"")));
+ const sportsbetUnverifiedToday=sportsbetUnverifiedAll.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
  const bet365BestDay=[...(bet365Today.length?bet365Today:bet365Priced),...bet365SportPicks.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today)].sort(ranked).slice(0,10);
  const bet365TopTips=[...bet365Priced,...bet365SportPicks].slice().sort(ranked).slice(0,20);
  const sportsbetBestOfDay=[...sportsbetPriced,...sportsbetSportPicks].filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today)
@@ -499,11 +519,11 @@ function renderTopTips() {
  const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
  el.innerHTML=section("BEST OF THE DAY · RACING + SPORTS","Top 10 selections ranked by bookmaker agreement, normalised implied probability, quote coverage, freshness and price consistency — not shortest odds. Market indicator only, not a prediction.",bestDay,"No fresh priced race or sports favourites are available for today's shortlist.")
  +section("SPORTSBET BEST OF THE DAY","Verified Sportsbet prices only are ranked. Unknown-age prices are excluded from this verified list.",sportsbetBestOfDay,"No timestamp-verified Sportsbet prices were returned for today's races.")
- +section("SPORTSBET PROVISIONAL PICKS · AGE UNVERIFIED","Sportsbet-labelled public prices with no source quote timestamp. These are not live-confirmed and are kept separate from verified Best of the Day.",sportsbetUnverifiedToday.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,10),"No unverified Sportsbet prices were returned for today's races.")
+ +section("SPORTSBET PROVISIONAL PICKS · AGE UNVERIFIED","Sportsbet-labelled public prices with no source quote timestamp. These are not live-confirmed and are kept separate from verified Best of the Day.",sportsbetUnverifiedAll.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,20),"No unverified Sportsbet prices were returned for today's races.")
  +section("SPORTSBET TOP TIPS · ALL RACES","Sportsbet's verified prices only. Unknown-age public snapshots are shown separately as UNVERIFIED, not ranked as live tips.",sportsbetTopTips,"No Sportsbet-labelled public runner prices are available in the returned racing sample.")
  +section("SPORTSBET FAVOURITES · EVERY RACE","One entry for every returned race. Sportsbet-labelled public prices with missing timestamps are visibly marked UNVERIFIED, never confirmed live.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
  +section("BET365 BEST OF THE DAY","Exact timestamp-verified Bet365 prices ranked by market support and freshness. Unknown-age references are excluded from this verified list.",bet365BestDay,"No timestamp-verified Bet365 prices were returned.")
- +section("BET365 PROVISIONAL PICKS · AGE UNVERIFIED","Bet365-labelled public prices with no source quote timestamp. These are not live-confirmed and are kept separate from verified Best of the Day.",bet365UnverifiedToday.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,10),"No unverified Bet365 prices were returned for today's races.")
+ +section("BET365 PROVISIONAL PICKS · AGE UNVERIFIED","Bet365-labelled public prices with no source quote timestamp. These are not live-confirmed and are kept separate from verified Best of the Day.",bet365UnverifiedAll.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,20),"No unverified Bet365 prices were returned for today's races.")
  +section("BET365 TOP TIPS · ALL RACES","Bet365's verified racing and sports prices ranked by market agreement and data quality; unknown-age references are not ranked.",bet365TopTips,"No Bet365-labelled public runner prices are available.")
  +section("BET365 FAVOURITES · EVERY RACE","Separate Bet365-labelled favourite for every returned upcoming/live race. Missing timestamps are clearly marked UNVERIFIED.",bet365Picks,"No upcoming races were returned by the racing feed.")
  +section("TOP TIPS · ALL RACES + SPORTS","Top 20 selections across all returned horse, greyhound, harness and sports events, ranked by market agreement and data quality rather than shortest odds.",topTips,"No priced favourites are available from the current public feeds.")
@@ -711,7 +731,7 @@ function render() {
     const number=r.race_number||r.race_no||r.raceNumber||"—";
     const date=r.start_time?fmtDate(r.start_time):"Date/time TBA", time=r.start_time?fmtTime(r.start_time):"Jump time TBA";
     const publicDetails=[r.race_name||r.name,r.distance?(r.distance+"m"):null,r.grade||r.class||null,r.track_condition||r.trackCondition?("Track "+(r.track_condition||r.trackCondition)):null,r.weather?("Weather "+r.weather):null,r.prize_money?("Prize "+r.prize_money):null].filter(Boolean).map(esc).join(" · ");
-    const fav=marketFavourite(r), favName=fav?(fav.name||fav.runner_name||fav.horse_name||fav.greyhound_name||"Runner"):"";
+    const fav=displayMarketFavourite(r), favName=fav?(fav.name||fav.runner_name||fav.horse_name||fav.greyhound_name||"Runner"):"";
     const bookFavourites=allBookmakerFavourites(r);
     const favPanel=fav?'<div class="race-list-favourite"><div class="favourite-label">★ TOP MARKET CONSENSUS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>':'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
     const runners=(r.runners||[]).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999));
