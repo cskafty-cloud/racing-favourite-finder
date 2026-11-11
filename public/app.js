@@ -258,7 +258,7 @@ function raceCard(r, live=false) {
     const estimate=mid==null
       ? '<span class="market-estimate unavailable">Estimate unavailable · no verified fresh quotes (unverified prices excluded)</span>'
       : '<span class="market-estimate">Market estimate $'+mid.toFixed(2)+' · median of '+fresh.length+' fresh quote'+(fresh.length===1?'':'s')+'</span>';
-    const quoteHtml=quotes.length?quotes.map(q=>`<span class="bookmaker-quote ${q.stale||(q.age!=null&&Number(q.age)>=180)?"stale-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${q.age==null?"age n/a":Math.round(Number(q.age))+"s old"}${q.stale||(q.age!=null&&Number(q.age)>=180)?" · STALE":""}</small>${q.url && /^https?:\/\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
+    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=180),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && /^https?:\\/\\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
     return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
   }).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
@@ -328,14 +328,15 @@ function renderCoverage(rows) {
 }
 
 function rawRunnerQuotes(runner) {
-  return (runner.bookmakers || runner.odds || []).map(q => ({
-    name:q.bookmaker || q.name || q.key || "Bookmaker",
-    key:q.key || q.bookmaker || q.name || "Bookmaker",
-    price:Number(q.win_price ?? q.win ?? q.price),
-    age:q.age_seconds ?? null,
-    stale:!!q.stale,
-    url:q.source_link || q.source_url || null
-  })).filter(q=>Number.isFinite(q.price)&&q.price>1);
+  return (runner.bookmakers || runner.odds || []).map(q => {
+    const age=quoteAgeSeconds(q);
+    return {name:q.bookmaker || q.name || q.key || "Bookmaker",
+      key:q.key || q.bookmaker || q.name || "Bookmaker",
+      price:Number(q.win_price ?? q.win ?? q.price),age,
+      stale:!!q.stale || (age!=null&&age>=180),
+      unverified:age==null&&!q.stale,
+      url:q.source_link || q.source_url || null};
+  }).filter(q=>Number.isFinite(q.price)&&q.price>1);
 }
 function isExplicitlyLive(r) {
   const status=String(r.status || r.market_status || r.race_status || r.event_status || "").toLowerCase();
@@ -376,8 +377,8 @@ function renderFullCoverage(rows) {
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const qs=rawRunnerQuotes(runner).sort((a,b)=>a.name.localeCompare(b.name));
       const quoteHtml=qs.map(q=>{
-        const age=q.age==null?"age n/a":Math.round(Number(q.age))+"s old";
-        const stale=q.stale || (q.age!=null && Number(q.age)>=180);
+        const age=q.age==null?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";
+        const stale=q.stale || (q.age!=null && Number(q.age)>=180),unverified=q.age==null&&!q.stale;
         const link=q.url && /^https?:\/\//i.test(q.url) ? ' · <a class="bet-link" href="'+esc(q.url)+'" target="_blank" rel="noopener noreferrer">Open site</a>' : "";
         return '<span class="bookmaker-quote '+(stale?"stale-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":" · returned")+'</small>'+link+'</span>';
       }).join("");
