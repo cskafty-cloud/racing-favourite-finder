@@ -36,7 +36,7 @@ function renderRunnerMarkets(r){
    const detail=status==="verified"?"Captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):
     (x.reasons||["Not verified"]).join(", ")+(x.age_seconds!=null?" · "+fmtAge(x.age_seconds):"");
    const observed=x.observed_at?"Feed observed "+fmtTime(x.observed_at)+" · "+fmtAge(x.observed_age_seconds):"Feed observation time unavailable";
-   const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
+   const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.public_demo?"PUBLIC REFERENCE ONLY · ":"")+(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
    return '<div class="rf-price-line"><span>'+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(x.source||"Feed")+'</span></div>';
   }).join("");
   const winVerified=line("WIN","verified"),winUnverified=line("WIN","unverified");
@@ -95,12 +95,13 @@ function renderRaces(data){
   const count=(book,market,status)=>audits.filter(q=>q.bookmaker_key===book&&q.market===market&&(!status||q.status===status)).length;
   const sbWin=count("sportsbet","WIN","verified"),sbPlace=count("sportsbet","PLACE","verified");
   const sbPreviewWin=count("sportsbet","WIN","unverified"),sbPreviewPlace=count("sportsbet","PLACE","unverified");
+  const sbStale=Number(data.sportsbetStalePreviewQuotes||0);
   const b365Win=count("bet365","WIN","verified"),b365Place=count("bet365","PLACE","verified");
   const warningText=errors.length?errors.slice(0,3).join(" · "):"No upstream provider warnings reported.";
   $("dashboardFeedStatuses").innerHTML=
    '<div class="feed-status-item"><span class="feed-dot connected"></span><span><b>DASHBOARD CONNECTION · CONNECTED</b><small>/api/races responded successfully · '+active.length+' race cards loaded</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(errors.length?"checking":"connected")+'"></span><span><b>UPSTREAM FEED COVERAGE · '+(errors.length?"LIMITED · FALLBACK FEEDS ACTIVE":"HEALTHY")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+(errors.length?esc(warningText):"No reported feed errors")+'</small></span></div>'+
-   '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · public preview WIN '+sbPreviewWin+' (unverified) · public preview PLACE '+sbPreviewPlace+' (unverified). Preview prices are reference-only, not verified current Sportsbet odds.</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · public preview WIN '+sbPreviewWin+' (unverified) · public preview PLACE '+sbPreviewPlace+' (unverified) · stale preview rows '+sbStale+'. Timestamp-missing or stale Sportsbet-attributed quotes stay visible as reference only; they are never treated as live prices.</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(b365Win||b365Place?"connected":"checking")+'"></span><span><b>BET365 FIXED WIN / PLACE</b><small>Verified WIN '+b365Win+' · verified PLACE '+b365Place+'</small></span></div>';
  }
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
