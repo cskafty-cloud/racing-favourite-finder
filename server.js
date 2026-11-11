@@ -89,7 +89,7 @@ async function loadBetfairRaces() {
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:x.eventType.name}));
   const racingTypes=types.filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
   if (!racingTypes.length) throw new Error("Betfair returned no Australian horse, greyhound or harness event types.");
-  const from=new Date(), to=new Date(Date.now()+24*60*60*1000);
+  const from=new Date(), to=new Date(Date.now()+48*60*60*1000);
   const catalogueGroups=await Promise.all(racingTypes.map(async type=>{
     const markets=await betfairRpc("listMarketCatalogue",{
       filter:{eventTypeIds:[type.id],marketCountries:["AU"],marketTypeCodes:["WIN","PLACE"],
@@ -135,7 +135,7 @@ async function loadBetfairRaces() {
           bookmaker:"Betfair Exchange",name:"Betfair Exchange",key:"betfair",exchange:true,
           ...(isPlace?{place_price:price,place_market_type:"exchange_place"}:
             {win_price:price,market_type:"exchange_win"}),
-          observed_at:capturedAt,feed_observed_at:capturedAt,
+          observed_at:book.publishTime||capturedAt,feed_observed_at:capturedAt,source_quote_timestamp:book.publishTime||null,
           source_delay_max_seconds:180,price_side:side.name,
           available_size:Number.isFinite(size)?size:null,
           source:"Betfair Exchange Delayed API"
@@ -176,7 +176,7 @@ async function loadBetfairSports(){
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
   const eventTypes=await betfairRpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
-    .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name)).slice(0,30);
+    .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name)).slice(0,40);
   const catalogues=await Promise.all(types.map(async type=>{
     try{
       const markets=await betfairRpc("listMarketCatalogue",{
@@ -215,7 +215,7 @@ async function loadBetfairSports(){
     return {id:"betfair-sport-"+m.marketId,marketId:m.marketId,eventId:m.event?.id||null,
       sport:m._sportName,event:m.event?.name||"Event",competition:m.event?.venue||null,
       startTime:m.marketStartTime,marketName:m.marketName||"Match odds",marketType:m.description?.marketType||null,
-      status:book.inplay?"in_play":"upcoming",inPlay:!!book.inplay,capturedAt,
+      status:book.inplay?"in_play":"upcoming",inPlay:!!book.inplay,capturedAt,marketPublishedAt:book.publishTime||null,isMarketDataDelayed:!!book.isMarketDataDelayed,lastMatchTime:book.lastMatchTime||null,
       source:"Betfair Exchange Delayed API",sourceDelayMaxSeconds:180,
       runners,favourite:favourite?{name:favourite.name,price:favourite.back.price,side:"BACK"}:null};
   }).filter(Boolean).sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
