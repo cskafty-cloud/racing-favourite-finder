@@ -12,13 +12,16 @@ const fmtDate = value => {
 };
 function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => Number(b.win_price ?? b.win ?? b.price) > 1); }
 function quoteAgeSeconds(q) {
- const direct=q?.age_seconds;
- if(direct!=null&&Number.isFinite(Number(direct)))return Math.max(0,Number(direct));
+ const direct=q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds))?Math.max(0,Number(q.age_seconds)):null;
  const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
- if(stamp==null)return null;
- const numeric=Number(stamp);
- const ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
- return Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+ const numeric=Number(stamp),ms=stamp==null?NaN:(Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp));
+ const stamped=Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+ const observed=q?.observed_at?Date.parse(q.observed_at):NaN;
+ const elapsed=Number.isFinite(observed)?Math.max(0,(Date.now()-observed)/1000):0;
+ const agedDirect=direct==null?null:direct+elapsed;
+ if(agedDirect!=null&&stamped!=null)return Math.max(agedDirect,stamped);
+ if(agedDirect!=null)return agedDirect;
+ return stamped;
 }
 function isBetfairQuote(q) { return /betfair|exchange/i.test(String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"")); }
 function fixedRunnerPrices(runner) { return runnerPrices(runner).filter(q=>!isBetfairQuote(q)); }
