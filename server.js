@@ -1391,12 +1391,20 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const winMarket=(item.markets||[]).find(m=>/win|winner/i.test(String(m.name||m.key||m.market_name||"")));
   if(winMarket)rawRunners=(winMarket.outcomes||winMarket.selections||[]).map(o=>({...o,name:o.name||o.selection||o.label,win_price:o.price??o.odds}));
  }
+ // The no-key bookmaker-specific racing preview can return a compact prices[]
+ // array instead of runners[]. Because this request is explicitly book=sportsbet
+ // and sport=horse-racing/greyhound-racing, its runner price is Sportsbet's quote.
+ if((!Array.isArray(rawRunners)||!rawRunners.length)&&Array.isArray(item.prices)){
+  rawRunners=item.prices.map(o=>({...o,name:o.name||o.runner_name||o.selection||o.label,
+   win_price:o.win_price??o.fixed_win_price??o.win_odds??o.price??o.odds,
+   place_price:o.place_price??o.fixed_place_price??o.place_odds??o.place?.price??o.place?.odds}));
+ }
  const bookKey=canonicalBookmakerKey(bookmaker);
  const runners=(Array.isArray(rawRunners)?rawRunners:[]).map(r=>{
   const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
   if(!name)return null;
-  const price=sportsbetDemoPrice(r);
-  const placePrice=canonicalBookmakerKey(bookmaker)==="sportsbet"?sportsbetDemoPlacePrice(r):null;
+  const price=sportsbetDemoPrice(r)??(bookKey==="sportsbet"&&Number(r.price)>1?Number(r.price):null);
+  const placePrice=bookKey==="sportsbet"?(sportsbetDemoPlacePrice(r)??(Number(r.place)>1?Number(r.place):null)):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
   const winUpdated=r.win_last_update||r.win_updated_at||r.last_update||r.updated_at||r.timestamp||null;
@@ -1436,6 +1444,7 @@ async function loadSportsbetPublicRaceDemos(){
    ?(category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":"https://www.sportsbet.com.au/racing-schedule/harness/today")
    :(category==="horse"?"https://www.bet365.com.au/#/HO/":category==="greyhound"?"https://www.bet365.com.au/#/HO/": "https://www.bet365.com.au/#/HO/");
   for(const item of items){
+   if(i===0)console.info("SPORTSBET_PUBLIC_DEMO_SCHEMA",JSON.stringify({category,payloadKeys:Object.keys(payload||{}),itemKeys:Object.keys(items[0]||{}),runnerKeys:Object.keys((items[0]?.runners||items[0]?.prices||[])[0]||{}),firstRunner:(items[0]?.runners||items[0]?.prices||[])[0]||null}));
    const race=normalizeSportsbetDemoRace(item,category,sourceUrl,null,book);
    if(race.race_number||race.runners.length)races.push(race);
   }
