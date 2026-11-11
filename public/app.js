@@ -563,7 +563,7 @@ function sportRankings(event,wantedBookmaker){
   if(b.stale===true)continue;
   const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
    .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
-   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<racingQuoteMaxAge(o));
+   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<15*60);
   if(!outcomes.length)continue;
   const old=books.get(key);
   const age=Math.max(...outcomes.map(o=>o.age));
@@ -618,7 +618,7 @@ function renderTopTips() {
   const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource+" · "+(fav.agreementPct||0)+"% bookmaker agreement · "+(fav.meanQuoteAge??"n/a")+"s average quote age",time,quotes:fav.quoteCount||0,signal:fav.provisional?"PROVISIONAL · AGE UNVERIFIED":(fav.signalLabel||"MARKET FAVOURITE")}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
   racePicks.push(tip);if(fav)pricedTips.push(tip);
  }
- for(const e of state.sportEvents||[]){
+ for(const e of [...(state.sportEvents||[]),...(state.lucasFoxSportEvents||[])]){
   const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
   const ranks=sportRankings(e),category=e._sport||e.sport||e.sport_name||"SPORT",event=(e.away_team||"")+(e.home_team?" @ "+e.home_team:"");
   const sbSport=sportFavourite(e,"sportsbet");
@@ -1013,7 +1013,7 @@ window.startFullDashboardFeeds=function(){
   dashboardFeedsStarted=true;
   loadRaces();
   loadFeedStatus();
-  loadSports().then(loadLiveSports);
+  loadSports().then(()=>{loadLucasFoxSports();loadLiveSports();});
   loadHistory();
   loadMarketHistory();
 };
@@ -1701,3 +1701,38 @@ setInterval(syncHistory,15*60*1000);
 // Start background checks before the welcome screen is dismissed so its activity dots are real.
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>window.startFullDashboardFeeds(),{once:true});
 else window.startFullDashboardFeeds();
+
+
+async function loadLucasFoxSports(){
+ const stateEl=$("lucasFoxSportsState"),statsEl=$("lucasFoxSportsStats"),rowsEl=$("lucasFoxSportsMarkets"),detailEl=$("lucasFoxSportsDetail");
+ if(!rowsEl)return;
+ try{
+  const response=await fetch("/api/lucasfox/sports",{cache:"no-store"}),data=await response.json();
+  if(!response.ok)throw Error(data.error||"LucasFox feed unavailable");
+  state.lucasFoxSportEvents=data.events||[];
+  const allQuotes=state.lucasFoxSportEvents.flatMap(e=>(e.bookmakers||[]).flatMap(b=>(b.markets||[]).flatMap(m=>(m.outcomes||[]).map(o=>({event:e,market:m,outcome:o})))));
+  const age=o=>Math.max(0,Number(o.age_seconds)||0);
+  const fresh=allQuotes.filter(x=>age(x.outcome)<15*60).length;
+  if(statsEl)statsEl.innerHTML='<div class="stat"><b>'+data.eventCount+'</b><span>Sports fixtures</span></div><div class="stat"><b>'+data.quoteCount+'</b><span>Sportsbet quotes</span></div><div class="stat"><b>'+fresh+'</b><span>Fresh under 15m</span></div><div class="stat"><b>'+data.dailyLimit+'</b><span>Free requests/day</span></div>';
+  if(stateEl){stateEl.textContent="FREE FEED · "+fresh+" FRESH";stateEl.classList.toggle("warning",fresh===0);}
+  const marketName=k=>k==="h2h"?"HEAD TO HEAD":k.toUpperCase();
+  const rows=allQuotes.sort((a,b)=>age(a.outcome)-age(b.outcome)).slice(0,100);
+  rowsEl.innerHTML=rows.length?rows.map(x=>{
+   const o=x.outcome,e=x.event,m=x.market,old=age(o)>=900;
+   const matchup=[e.away_team,e.home_team].filter(Boolean).join(" @ ");
+   const time=e.commence_time?fmtDate(e.commence_time)+" "+fmtTime(e.commence_time):"Time TBA";
+   const line=m.line==null?"":(" · line "+m.line);
+   const link=o.deep_link&&/^https?:\/\//i.test(o.deep_link)?' · <a href="'+esc(o.deep_link)+'" target="_blank" rel="noopener noreferrer">Open market ↗</a>':"";
+   return '<div class="history-row"><div><b>'+esc(o.name)+'</b><small>'+esc(matchup)+' · '+esc(e.league||e.sport_name||"Sport")+' · '+esc(time)+' · '+marketName(m.key)+line+'</small><small>'+esc(o.last_update||"Capture timestamp unavailable")+' · '+Math.round(age(o))+'s old · LucasFox / Sportsbet'+link+'</small></div><strong>$'+Number(o.price).toFixed(2)+(old?' · STALE':'')+'</strong></div>';
+  }).join(""):'<div class="empty">LucasFox returned no Sportsbet main-market quotes for the current scan.</div>';
+  if(detailEl)detailEl.textContent=data.note+" Last API response: "+fmtDate(data.fetchedAt)+" "+fmtTime(data.fetchedAt)+". Markets: "+Object.entries(data.marketCounts||{}).map(([k,v])=>k+" "+v).join(" · ")+".";
+  renderTopTips();
+ }catch(error){
+  if(stateEl)stateEl.textContent="FEED UNAVAILABLE";
+  if(rowsEl)rowsEl.innerHTML='<div class="empty">'+esc(error.message)+'</div>';
+  if(detailEl)detailEl.textContent="No LucasFox prices have been substituted from another bookmaker.";
+ }
+}
+
+
+setInterval(loadLucasFoxSports,15*60*1000);
