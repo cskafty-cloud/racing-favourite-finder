@@ -215,7 +215,7 @@ async function loadSportsFixtures(){
 }
 function start(){
  if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
- setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);loadBetfairSports();setInterval(loadBetfairSports,60*1000);
 }
 window.startFullDashboardFeeds=start;
 document.addEventListener("DOMContentLoaded",()=>{
@@ -224,6 +224,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  const enter=$("enterWebsiteBtn");
  if(enter){enter.addEventListener("click",()=>start(),{once:true});}
  const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ const refreshBetfairSports=$("refreshBetfairSportsBtn");if(refreshBetfairSports)refreshBetfairSports.addEventListener("click",()=>loadBetfairSports());
  document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
   filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
  }));
