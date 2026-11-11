@@ -330,3 +330,16 @@ body.site-entered .dashboard-start-menu{display:none!important}
 /* Activity indicators: green means the feed endpoint has responded successfully within 3 minutes. */
 .feed-dot.active,.live-dot.active,.entry-status-dot,.entry-horse-status.active .entry-horse-light{background:#5be09a!important;box-shadow:0 0 0 3px #5be09a20,0 0 12px #5be09a!important}
 .feed-status-item small{line-height:1.4}
+
+
+/* Compact race cards: show each race's market/bookmaker favourite and WIN prices only. */
+.race-runners-ranked,
+.exchange-reference,
+.runner-estimates,
+.runner-price-chips,
+.runner-estimate-list { display:none!important; }
+.race-list-favourite { grid-template-columns:minmax(0,1fr) auto; }
+.race-list-favourite .favourite-label { grid-column:1/-1; }
+.race-bookmaker-favourites { margin-top:8px; }
+.race-bookmaker-favourites .book-fav { min-width:0; }
+.book-fav-price { font-size:22px; font-weight:800; }
