@@ -104,10 +104,10 @@ async function loadRaces() {
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
     note:"Exchange BACK/LAY prices only. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
-async function fetchSportCatalogue(type, from, to) {
+async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"]) {
   const filter = {
     eventTypeIds:[type.id],
-    marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"],
+    marketTypeCodes,
     marketStartTime:{from:from.toISOString(),to:to.toISOString()}
   };
   try {
@@ -120,13 +120,30 @@ async function fetchSportCatalogue(type, from, to) {
     return {markets:markets||[],errors:[]};
   } catch (error) {
     if (!/TOO_MUCH_DATA/i.test(error.message)) return {markets:[],errors:[error.message]};
+
+    // Soccer can exceed Betfair's response-size limit even though the API
+    // returns HTTP 200. Reduce query breadth first by splitting market types;
+    // then split the requested time range. This avoids repeatedly asking for
+    // the same oversized all-market Soccer response.
+    if (marketTypeCodes.length > 1) {
+      const middle = Math.ceil(marketTypeCodes.length / 2);
+      const left = await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(0,middle));
+      const right = await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(middle));
+      const unique = new Map();
+      for (const market of [...left.markets,...right.markets]) unique.set(String(market.marketId),market);
+      return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
+    }
+
     const span = to.getTime() - from.getTime();
-    // Split oversized sport requests into smaller time windows. Stop at 30 minutes
-    // so one exceptionally busy window cannot create an unbounded retry loop.
-    if (span <= 30 * 60 * 1000) return {markets:[],errors:["Still too much data in a 30-minute window: "+error.message]};
+    // Narrow a single market-type query to at most five-minute windows.
+    // The recursion is bounded by the minimum window and always retains any
+    // successful sibling results if one dense interval still fails.
+    if (span <= 5 * 60 * 1000) {
+      return {markets:[],errors:["Soccer/sport catalogue remained oversized at five-minute resolution ("+marketTypeCodes[0]+"): "+error.message]};
+    }
     const midpoint = new Date(from.getTime() + Math.floor(span / 2));
-    const left = await fetchSportCatalogue(type, from, midpoint);
-    const right = await fetchSportCatalogue(type, midpoint, to);
+    const left = await fetchSportCatalogue(type,from,midpoint,marketTypeCodes);
+    const right = await fetchSportCatalogue(type,midpoint,to,marketTypeCodes);
     const unique = new Map();
     for (const market of [...left.markets,...right.markets]) unique.set(String(market.marketId),market);
     return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
