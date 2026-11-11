@@ -353,6 +353,14 @@ async function loadPublicDemoSport(sport) {
       const all=await loadMoviOddsAllSports();
       const matches=all.filter(item=>moviSportMatches(item,sport));
       return {matches,source:"MoviOdds /odds?sport=all",has_data:matches.length>0};
+    })(),
+    (async()=>{
+      const ids=RAPID_SPORT_IDS[sport.key]||[];
+      if(!RAPID_ODDS_KEY||!ids.length)return [];
+      return Promise.all(ids.map(async id=>{
+        const result=await rapidOdds("/sports/"+id+"/markets",{market_type:"head_to_head",bookmaker:"Sportsbet"});
+        return {sportId:id,data:result.data};
+      }));
     })()
   ];
   const [sportsbetResult,bet365Result,bestOddsResult,moviResult]=await Promise.allSettled(jobs);
@@ -379,6 +387,44 @@ async function loadPublicDemoSport(sport) {
         const target=rowsByKey.get(key);
         for(const book of event.bookmakers)for(const market of book.markets||[])for(const outcome of market.outcomes||[])
           addPublicOutcome(target,book.key,outcome.name,outcome.price,book.last_update);
+      }
+    }
+  }
+  const rapidResult=await Promise.resolve(jobs[4]).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason}));
+  if(rapidResult.status==="rejected")errors.push("RapidOddsAPI Sportsbet: "+rapidResult.reason.message);
+  else for(const response of (rapidResult.value||[])){
+    const payload=response.data||{};
+    for(const entry of payload.games||[]){
+      const game=entry.game||{},start=game.commence_time||null;
+      if(!start||!Number.isFinite(Date.parse(start)))continue;
+      const sourceBook=(entry.bookmakers||[]).find(b=>canonicalBookmakerKey(b.name||b.bookmaker)==="sportsbet");
+      if(!sourceBook)continue;
+      const lastUpdate=sourceBook.last_update||null;
+      const age=lastUpdate?Math.max(0,Math.floor((Date.now()-Date.parse(lastUpdate))/1000)):null;
+      const markets=(sourceBook.markets||[]).map(m=>({key:m.key,name:m.key,outcomes:(m.outcomes||[]).filter(o=>Number(o.price)>1).map(o=>({
+        name:o.name,price:Number(o.price),point:o.point??null,last_update:lastUpdate,age_seconds:age,
+        timestamp_status:lastUpdate?"bookmaker_timestamp":"unknown",stale:age==null||age>=180
+      }))})).filter(m=>m.outcomes.length);
+      if(!markets.length)continue;
+      const event={id:String(game.game_id||[response.sportId,game.home_team,game.away_team,start].join("|")),
+        home_team:game.home_team||"Team TBA",away_team:game.away_team||"Team TBA",league:game.league||"",
+        sport_name:sport.title,commence_time:start,in_play:false,status:"UPCOMING",
+        bookmakers:[{key:"sportsbet",name:"Sportsbet",last_update:lastUpdate,age_seconds:age,stale:age==null||age>=180,
+          markets,source:"RapidOddsAPI Sportsbet bookmaker feed",public_demo:false}]};
+      const key=[normalizeName(event.home_team),normalizeName(event.away_team),String(start).slice(0,13),normalizeName(event.league)].join("|");
+      if(!rowsByKey.has(key))rowsByKey.set(key,event);
+      else{
+        const target=rowsByKey.get(key);
+        const old=target.bookmakers.find(b=>canonicalBookmakerKey(b.key||b.name)==="sportsbet");
+        if(!old)target.bookmakers.push(...event.bookmakers);
+        else for(const market of markets){
+          const prior=old.markets.find(m=>m.key===market.key);
+          if(!prior)old.markets.push(market);
+          else for(const outcome of market.outcomes){
+            const index=prior.outcomes.findIndex(o=>o.name===outcome.name);
+            if(index<0)prior.outcomes.push(outcome);else prior.outcomes[index]=outcome;
+          }
+        }
       }
     }
   }
@@ -1007,6 +1053,7 @@ async function loadSupplementalAustralianRaces() {
   // MoviOdds Bet365 separately. Never relabel Bet365 or a public preview as Sportsbet.
   const jobs=[
     ["PuntersEdge public racing demo",()=>demoRacingFeed()],
+    ["Sportsbet public racing pages",()=>loadSportsbetPublicRaces()],
     ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.reject(new Error("RAPIDODDSAPI_API_KEY is not configured in Railway."))],
     ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
@@ -1153,8 +1200,8 @@ function parseSportsbetRacePage(html,url){
    if(!Number.isFinite(price)||price<=1)continue;
    runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{
     key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
-    last_update:null,age_seconds:null,stale:false,public_demo:true,
-    source_url:url,event_url:url
+    last_update:null,age_seconds:null,stale:true,timestamp_status:"unknown",observed_at:new Date().toISOString(),public_demo:true,
+    source:"Sportsbet public race-page snapshot (quote timestamp unavailable)",source_url:url,event_url:url
    }]});
   }
  }
@@ -1628,6 +1675,10 @@ const RAPID_ODDS_KEY = process.env.RAPIDODDSAPI_API_KEY || "";
 const RAPID_ODDS_BASE = "https://api.rapidoddsapi.com";
 const RAPID_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","PickleBet","Dabble","Amused","Betmakers","GenWeb","AllBets","PuntersTech","BetCloud"];
 const RAPID_LIVE_SPORTS = ["AFL","NRL","NBA","NFL","MLB","WNBA"];
+const RAPID_SPORT_IDS = {
+  oddsdata_12:["NFL"], oddsdata_16:["MLB"], oddsdata_18:["NBA","WNBA"],
+  oddsdata_19:["NRL"], oddsdata_36:["AFL"]
+};
 let liveSportsCache={at:0,events:[],error:null,credits:null,bySport:{},resultsAt:0,resultsBySport:{}};
 let liveSportsRefresh=null;
 let liveResultsRefresh=null;
