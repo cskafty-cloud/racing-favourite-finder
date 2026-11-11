@@ -300,3 +300,23 @@ body.site-entered .dashboard-start-menu{display:none!important}
 .sportsbet-view-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.sportsbet-view-tabs .active{border-color:var(--accent,#d7b46a);color:var(--accent,#d7b46a)}
 
 .entry-horse-status{display:flex;align-items:center;gap:12px;margin:0 0 20px;padding:11px 18px;border:1px solid #38534b;border-radius:999px;background:#10251f;box-shadow:0 0 24px #48d69a12;text-align:left}.entry-horse-light{width:12px;height:12px;flex:0 0 12px;border-radius:50%;background:#d6ad50;box-shadow:0 0 0 4px #d6ad5020,0 0 14px #d6ad50}.entry-horse-copy{display:flex;flex-direction:column;gap:3px}.entry-horse-copy b{font:700 11px "Space Grotesk";letter-spacing:1.2px;color:#f0f5f3}.entry-horse-copy small{font:700 9px "DM Sans";letter-spacing:1px;color:#a9bdaf}.entry-horse-status.active{border-color:#3e9d72;background:#10291f}.entry-horse-status.active .entry-horse-light{background:#5be09a;box-shadow:0 0 0 4px #5be09a22,0 0 18px #5be09a;animation:horseLivePulse 1.7s infinite}.entry-horse-status.active .entry-horse-copy small{color:#79e6aa}.entry-horse-status.upcoming .entry-horse-light{background:#e4bd61;box-shadow:0 0 0 4px #e4bd6122,0 0 15px #e4bd61}@keyframes horseLivePulse{50%{box-shadow:0 0 0 8px #5be09a08,0 0 22px #5be09a}}
+
+/* Per-code feed activity: green confirms a recent successful refresh, not a live race. */
+.feed-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0 16px}
+.feed-status-item{display:flex;align-items:center;gap:9px;min-width:0;padding:10px 12px;border:1px solid #2b3c49;border-radius:8px;background:#111a23}
+.feed-status-item>span:last-child{display:flex;flex-direction:column;gap:3px;min-width:0}
+.feed-status-item b{font-size:9px;letter-spacing:.7px;color:#e2ebf0}
+.feed-status-item small{font-size:9px;color:#93a3b0;white-space:normal}
+.feed-dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;background:#c69d4a;box-shadow:0 0 0 3px #c69d4a20}
+.feed-dot.active{background:#5be09a;box-shadow:0 0 0 3px #5be09a20,0 0 12px #5be09a}
+.feed-dot.partial{background:#e2b85d;box-shadow:0 0 0 3px #e2b85d20}
+.feed-dot.offline{background:#df6e6e;box-shadow:0 0 0 3px #df6e6e20}
+.feed-dot.checking{background:#8a9aa8;box-shadow:0 0 0 3px #8a9aa820}
+.live-dot.partial{background:#e2b85d;box-shadow:0 0 12px #e2b85d}
+.live-dot.offline{background:#df6e6e;box-shadow:0 0 12px #df6e6e}
+.live-dot.checking{background:#8a9aa8;box-shadow:0 0 12px #8a9aa8}
+.entry-feed-grid{width:min(100%,570px);grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 22px}
+.entry-feed-grid .feed-status-item{background:#0d1a22cc;border-color:#314650;text-align:left}
+.entry-horse-status.partial .entry-horse-light{background:#e2b85d;box-shadow:0 0 12px #e2b85d}
+.entry-horse-status.offline .entry-horse-light{background:#df6e6e;box-shadow:0 0 12px #df6e6e}
+@media(max-width:700px){.feed-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
