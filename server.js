@@ -843,13 +843,13 @@ function runnerQuoteAudit(runner){
    if(/tote|totalisator|pari.?mutuel/.test(marketType))reasons.push("tote market, not fixed odds");
    if(market==="place"&&!q.place_market_type&&!q.fixed_place_price&&!q.place_price&&!q.fixed_place&&!q.place_odds)reasons.push("fixed PLACE market not identified");
    if(market==="win"&&!q.market_type&&!q.fixed_win_price&&!q.fixed_win&&!q.win_odds)reasons.push("fixed WIN market not identified");
-   if(age==null)reasons.push("missing market-specific capture timestamp");
+   if(age==null)reasons.push(q.public_demo===true?"Sportsbet public preview has no runner-level quote timestamp; preview only, not live verified":"missing market-specific capture timestamp");
    else if(age>=racingQuoteMaxAge())reasons.push("stale: "+Math.round(age)+" seconds old");
    if(age!=null&&age<0)reasons.push("invalid timestamp");
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
     status:reasons.length?"unverified":"verified",age_seconds:age,
     captured_at:market==="place"?(q.place_last_update||q.place_updated_at||q.place_captured_at||null):(q.last_update||q.updated_at||q.captured_at||q.timestamp||null),
-    reasons,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
+    reasons,verification_label:q.public_demo===true&&age==null?"UNTIMESTAMPED PREVIEW":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
   }
  }
  return rows;
@@ -2027,7 +2027,7 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, feedHealth:racingFeedHealth, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
+      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,\n      sportsbetUntimestampedPreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.age_seconds==null&&q.market==="WIN").length,0),0),
       verifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.verifiedBookmakerPrices||[]).length,0),
       unverifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.unverifiedBookmakerPrices||[]).length,0),
       quotaRecheckAt:([puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).sort((a,b)=>a-b)[0]||null)?new Date([puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).sort((a,b)=>a-b)[0]).toISOString():null,
