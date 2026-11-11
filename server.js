@@ -1886,7 +1886,7 @@ async function getGlobalRaces() {
       failures.push({feed:"Krok Odds",message:error.message});
     }
   }
-  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
+  if (false && BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
@@ -2301,6 +2301,26 @@ app.get("/api/live-sports",async(_req,res)=>{
 let sportsCatalogueCache = { at:0, rows:[], meta:null };
 const sportsOddsCache = new Map();
 
+app.get("/api/betfair/au/races",async(_req,res)=>{
+  const feedUrl=process.env.BETFAIR_FEED_URL||"";
+  if(!feedUrl)return res.status(503).json({status:"adapter-url-missing",error:"Set BETFAIR_FEED_URL to the Australian adapter /api/races URL."});
+  try{
+    const response=await fetch(feedUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+    const body=await response.text();let data;
+    try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair racing adapter returned invalid JSON (HTTP "+response.status+").");}
+    if(!response.ok)throw new Error(data.error||"Australian Betfair racing adapter HTTP "+response.status);
+    const races=Array.isArray(data.races)?data.races:[];
+    const backOffers=races.reduce((n,r)=>n+(r.runners||[]).filter(x=>x.exchange?.win?.back||x.exchange?.place?.back).length,0);
+    const layOffers=races.reduce((n,r)=>n+(r.runners||[]).filter(x=>x.exchange?.win?.lay||x.exchange?.place?.lay).length,0);
+    const pricedMarkets=races.filter(r=>(r.runners||[]).some(x=>x.exchange?.win?.back||x.exchange?.win?.lay||x.exchange?.place?.back||x.exchange?.place?.lay)).length;
+    return res.set("Cache-Control","no-store").json({...data,status:pricedMarkets?"connected-delayed":"configured-no-quotes",
+      pricedMarkets,backOffers,layOffers,provider:"Betfair Exchange Delayed API · Australian adapter",
+      note:"Exchange WIN/PLACE BACK/LAY only; separate from fixed bookmaker prices."});
+  }catch(error){
+    console.error("BETFAIR_AU_RACING_ADAPTER_FAILED",error.message);
+    return res.status(503).json({status:"configured-but-unavailable",error:error.message,races:[]});
+  }
+});
 app.get("/api/betfair/sports",async(_req,res)=>{
   try{
     const sportsFeedUrl=process.env.BETFAIR_SPORTS_FEED_URL||"";
