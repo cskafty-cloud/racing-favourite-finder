@@ -1639,11 +1639,11 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<110000)return sportsbetRacingDemoCache.races;
- // This public bookmaker-specific preview documents horse and greyhound only.
- // Harness cards continue to come from the all-code racing schedule feed; do not
- // request an unsupported bookmaker/code combination or imply it has Sportsbet prices.
+ // Probe all three Australian racing codes independently.
+ // A no-data response is recorded as unavailable, never filled with another bookmaker.
  const specs=[
-  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"]
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],
+  ["harness","harness-racing","sportsbet"]
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
@@ -1675,6 +1675,7 @@ async function loadSportsbetPublicRaceDemos(){
   sportsbetWinQuotes:sportsbetQuotes.filter(q=>Number(q.win_price)>1&&!q.stale).length,
   sportsbetPlaceQuotes:sportsbetQuotes.filter(q=>Number(q.place_price)>1&&!q.place_stale).length,
   codes:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length])),
+  quoteCounts:{win:sportsbetQuotes.filter(q=>Number(q.win_price)>1).length,place:sportsbetQuotes.filter(q=>Number(q.place_price)>1).length},
   errors}));
  return races;
 }
