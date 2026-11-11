@@ -35,3 +35,14 @@ Railway supports Node services and server-side environment variables. This app i
 - A market favourite is not a prediction or a guarantee.
 - This dashboard is not betting advice and never places bets.
 - 18+ only. Gambling Help Online (Australia): 1800 858 858.
+
+
+## Free racing-source policy
+
+- B337 is a separate reference for publicly accessible racing information. Compare its limited free Sportsbet/TAB view manually where available.
+- Do not bypass B337 login restrictions or scrape protected pages. Import B337 quotes only if an authorised public machine-readable export/feed is available.
+- Automatically combine only accessible public racing fixtures and genuine bookmaker-labelled odds. Keep bookmaker identity separate from the data provider.
+- Compare Sportsbet, Bet365 and TAB independently, and only where a source returns an actual quote for that bookmaker and market.
+- Keep missing, stale, untimestamped, suspended or otherwise unverified prices unavailable or clearly marked as reference-only. Never infer one bookmaker's price from another bookmaker or from a market consensus.
+- The Betfair Exchange delayed feed is an exchange source, not a Sportsbet, Bet365 or TAB fixed-odds feed. Keep that distinction visible.
+- No paid subscriptions, API purchases, login bypasses, or bet-placement actions are part of this policy.
