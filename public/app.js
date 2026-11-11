@@ -23,7 +23,7 @@ function quoteAgeSeconds(q) {
 function isBetfairQuote(q) { return /betfair|exchange/i.test(String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"")); }
 function fixedRunnerPrices(runner) { return runnerPrices(runner).filter(q=>!isBetfairQuote(q)); }
 function runnerFixedOdds(runner) {
- const ps=fixedRunnerPrices(runner).filter(q=>{const age=quoteAgeSeconds(q);return !q.stale&&(age==null?q.public_demo===true:age<180);}).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
+ const ps=fixedRunnerPrices(runner).filter(q=>{const age=quoteAgeSeconds(q);return quoteIsCurrent(q);}).map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1).sort((a,b)=>a-b);
  return ps.length?ps[Math.floor((ps.length-1)/2)]:null;
 }
 function exchangeRunnerPrice(runner) {
@@ -49,8 +49,7 @@ function quoteIsCurrent(q) {
 function freshestQuotesByBook(runner) {
   const byBook=new Map();
   for(const q of fixedRunnerPrices(runner)){
-    const raw=[q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).join(" ");
-    const key=normaliseBookmakerKey(raw),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q);
+    const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q);
     if(!key||!Number.isFinite(price)||price<=1||!quoteIsCurrent(q))continue;
     const previous=byBook.get(key);
     if(!previous||age<previous.age)byBook.set(key,{q,key,price,age});
