@@ -176,6 +176,7 @@ async function getBetfairRaces() {
 
 let betfairSportsCache={at:0,events:[],eventTypes:[],error:null};
 let betfairSportsRefresh=null;
+let betfairSportsRetryAt=0;
 async function loadBetfairSports(){
   await ensureBetfairSession();
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
@@ -228,13 +229,15 @@ async function loadBetfairSports(){
     errors:catalogues.filter(x=>x.error).map(x=>({sport:x.type.name,message:x.error}))};
 }
 async function getBetfairSports(){
+  if(Date.now()<betfairSportsRetryAt&&betfairSportsCache.error)throw new Error("Betfair sports API temporarily paused after the previous response: "+betfairSportsCache.error);
   if(!betfairSportsCache.at||Date.now()-betfairSportsCache.at>=30000){
     if(!betfairSportsRefresh)betfairSportsRefresh=(async()=>{
       const result=await loadBetfairSports();
+      betfairSportsRetryAt=0;
       betfairSportsCache={at:Date.now(),events:result.events,eventTypes:result.eventTypes,error:null,errors:result.errors||[]};
       console.info("BETFAIR_SPORTS_FEED",JSON.stringify({events:result.events.length,sports:result.eventTypes.length,
         live:result.events.filter(x=>x.inPlay).length,priced:result.events.filter(x=>x.runners.some(r=>r.back||r.lay)).length}));
-    })().catch(error=>{betfairSportsCache.error=error.message;throw error;}).finally(()=>{betfairSportsRefresh=null;});
+    })().catch(error=>{betfairSportsCache.error=error.message;betfairSportsRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );throw error;}).finally(()=>{betfairSportsRefresh=null;});
     await betfairSportsRefresh;
   }
   return {events:betfairSportsCache.events,eventTypes:betfairSportsCache.eventTypes,
