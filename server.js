@@ -1815,12 +1815,58 @@ async function loadSportsbetPublicRaceDemos(){
  return races;
 }
 
+function normalizeBetfairAdapterRaces(data) {
+  const capturedAt=data?.oddsFetchedAt||data?.scheduleFetchedAt||new Date().toISOString();
+  return (Array.isArray(data?.races)?data.races:[]).map(race=>({
+    ...race,
+    runners:(race.runners||[]).map(runner=>{
+      const bookmakers=[...(runner.bookmakers||runner.odds||[])];
+      for(const market of ["win","place"]) for(const side of ["back","lay"]) {
+        const level=runner.exchange?.[market]?.[side];
+        const price=Number(level?.price);
+        if(!Number.isFinite(price)||price<=1)continue;
+        bookmakers.push({
+          key:"betfair",bookmaker:"Betfair Exchange",name:"Betfair Exchange",exchange:true,
+          ...(market==="win"?{win_price:price,market_type:"exchange_win"}:
+            {place_price:price,place_market_type:"exchange_place"}),
+          last_update:capturedAt,feed_observed_at:capturedAt,
+          price_side:side.toUpperCase(),available_size:Number(level.size)||0,
+          source_delay_max_seconds:180,source:"Betfair Exchange Delayed API · Australian adapter"
+        });
+      }
+      return {...runner,bookmakers};
+    })
+  }));
+}
+
 async function getGlobalRaces() {
   const failures=[];
   // Add the user's authorised delayed Betfair Exchange markets as a separate
   // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
   let betfairSupplementalRows=[];
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()>=betfairRetryAt) {
+  // Prefer the user's Australian-hosted adapter. Railway's US egress is blocked
+  // by Betfair, so do not waste requests on the direct API when the adapter is set.
+  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
+    try {
+      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
+      const body=await response.text();let data;
+      try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair adapter returned invalid JSON (HTTP "+response.status+").");}
+      if(!response.ok)throw new Error(data.error||"Australian Betfair adapter HTTP "+response.status);
+      betfairSupplementalRows=normalizeBetfairAdapterRaces(data);
+      betfairFeedRetryAt=0;
+      if(!betfairSupplementalRows.length)failures.push({feed:"Betfair AU adapter",message:"Connected, but no Australian WIN/PLACE markets were returned."});
+      console.info("BETFAIR_AU_ADAPTER_RACING",JSON.stringify({races:betfairSupplementalRows.length,
+        runners:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).length,0),
+        exchangeQuotes:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>q.exchange===true).length,0),0)}));
+    } catch(error) {
+      console.warn("BETFAIR_AU_ADAPTER_FAILED",error.message);
+      betfairFeedRetryAt=Date.now()+( /401|403/.test(error.message)?5*60*1000:60*1000 );
+      failures.push({feed:"Betfair AU adapter",message:error.message});
+    }
+  } else if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairFeedRetryAt) {
+    failures.push({feed:"Betfair AU adapter",message:"Retry paused after the previous adapter failure."});
+  }
+  if (!BETFAIR_FEED_URL && BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
       betfairSupplementalRows=exchange.races||[];
@@ -1885,20 +1931,6 @@ async function getGlobalRaces() {
     } catch(error) {
       failures.push({feed:"Krok Odds",message:error.message});
     }
-  }
-  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
-    try {
-      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
-      const data=await response.json();
-      if(response.ok && Array.isArray(data.races) && data.races.length) return {...data,feedErrors:failures,feedSource:data.feedSource||"Betfair Exchange"};
-      failures.push({feed:"Betfair feed adapter",message:data.error||"No Australian markets returned (HTTP "+response.status+")."});
-      betfairFeedRetryAt=Date.now()+6*60*60*1000;
-    } catch(error) {
-      failures.push({feed:"Betfair feed adapter",message:error.message});
-      betfairFeedRetryAt=Date.now()+6*60*60*1000;
-    }
-  } else if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairFeedRetryAt) {
-    failures.push({feed:"Betfair feed adapter",message:"Connection temporarily paused after the previous network failure."});
   }
   // Combine the public multi-bookmaker teaser with an independent Bet365-only racing board.
   let publicRaceRows=[];
