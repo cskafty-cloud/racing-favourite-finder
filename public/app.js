@@ -330,8 +330,11 @@ function modelMarketFavourite(race){
 }
 function modelSportsbetEstimatePanel(race){
  const fav=modelMarketFavourite(race);
- if(!fav)return '<div class="book-fav"><div class="book-fav-label">SPORTSBET PRICE ESTIMATE · MODEL ONLY</div><div class="book-fav-missing">No recent, timestamped multi-bookmaker market available to calculate a fair-price estimate.</div></div>';
- const place=Object.entries(fav.placeOdds||{}).map(([n,p])=>'Top '+n+' finish fair odds 
+ if(!fav)return '<div class="book-fav"><div class="book-fav-label">SPORTSBET PRICE ESTIMATE · MODEL ONLY</div><div class="book-fav-missing">No recent timestamped bookmaker market is available for a fair-price estimate.</div></div>';
+ const place=Object.entries(fav.placeOdds||{}).map(([n,p])=>'Top '+n+' finish fair odds $'+p.toFixed(2)).join(' · ');
+ return '<div class="book-fav"><div class="book-fav-label">SPORTSBET REFERENCE ESTIMATE · NOT A SPORTSBET QUOTE</div><div class="book-fav-runner">'+esc((fav.number!=null?fav.number+'. ':'')+fav.name)+'</div><div class="book-fav-price">WIN $'+fav.fairWin.toFixed(2)+'</div><div class="book-fav-age">'+esc(place||'No place estimate for this field')+'</div><div class="book-fav-age">Calculated from '+fav.books+' bookmaker group(s) · source quotes up to '+Math.round(fav.ageSeconds/60)+' minutes old · fair odds before bookmaker margin</div></div>';
+}
+function marketFavourite(race) {
   const rows=(race.runners||[]).filter(r=>r.scratched!==true).map(r=>({...r,_quotes:freshestQuotesByBook(r)}));
   const books=[...new Set(rows.flatMap(r=>r._quotes.map(q=>q.key)))];
   if(!books.length)return null;
@@ -11277,7 +11280,6 @@ async function loadLucasFoxSports(){
 
 setInterval(loadLucasFoxSports,15*60*1000);
 +fav.fairWin.toFixed(2)+'</div><div class="book-fav-age">'+esc(place||'No place estimate for this field')+'</div><div class="book-fav-age">Calculated from '+fav.books+' independent bookmaker groups · source quotes up to '+Math.round(fav.ageSeconds/60)+' minutes old · fair odds before bookmaker margin</div></div>';
-}
 function displayMarketFavourite(race){return marketFavourite(race)||modelMarketFavourite(race)||provisionalMarketFavourite(race);}
 function marketFavourite(race) {
   const rows=(race.runners||[]).filter(r=>r.scratched!==true).map(r=>({...r,_quotes:freshestQuotesByBook(r)}));
