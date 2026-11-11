@@ -1230,10 +1230,12 @@ async function getGlobalRaces() {
       const runners=rawRunners.map(x=>{
         const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
         const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
+        const priceRows=Array.isArray(x.prices)?x.prices:[];
+        const priceRow=priceRows.find(p=>/win|fixed/i.test(String(p.market||p.market_name||p.type||"win")))||priceRows[0]||{};
         const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.decimal_odds??
-          x.win_price_decimal??x.fixed_odds_decimal??x.odds_dec??x.odds??x.price??x.fixedOdds??x.win??
+          x.win_price_decimal??x.fixed_odds_decimal??x.odds_dec??(typeof x.odds==="object"?null:x.odds)??x.price??x.fixedOdds??x.win??
           nested.win??nested.fixed_win??nested.win_price??nested.decimal??nested.price??
-          fixed.win??fixed.win_price??fixed.decimal??fixed.price??null;
+          fixed.win??fixed.win_price??fixed.decimal??fixed.price??priceRow.price??priceRow.odds??priceRow.decimal??null;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
         const winFraction=x.win_frac??x.fixed_win_frac??x.odds_fractional??null;
         const fractionText=typeof winFraction==="string"&&winFraction.includes("/")?winFraction.split("/").map(Number):null;
