@@ -164,7 +164,7 @@ async function getBetfairRaces() {
     await betfairRacingRefresh;
   }
   return {races:betfairRacingCache.races,scheduleFetchedAt:new Date(betfairRacingCache.at).toISOString(),
-    oddsFetchedAt:new Date(betfairRacingCache.at).toISOString(),horizonHours:24,
+    oddsFetchedAt:new Date(betfairRacingCache.at).toISOString(),horizonHours:48,
     feedErrors:[],feedSource:"Betfair Exchange Delayed API",scope:"Australia",
     note:"Australian racing markets and exchange prices from Betfair's delayed application key. Prices are delayed and may not represent current bookmaker odds. Display-only integration; no betting actions are enabled."};
 }
