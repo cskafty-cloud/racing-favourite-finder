@@ -279,7 +279,7 @@ function raceModelEstimates(race,maxAgeSeconds=15*60){
  });
  const minCoverage=Math.max(3,Math.ceil(runners.length*0.5));
  const usable=[...books.entries()].filter(([,rows])=>rows.size>=minCoverage);
- if(usable.length<2)return new Map();
+ if(!usable.length)return new Map();
  const probabilities=runners.map(()=>[]),ages=runners.map(()=>[]),votes=runners.map(()=>0);
  for(const [,rows] of usable){
   const total=[...rows.values()].reduce((sum,q)=>sum+1/q.price,0);
@@ -307,12 +307,13 @@ function raceModelEstimates(race,maxAgeSeconds=15*60){
   const ownAges=ages[index],age=ownAges.length?Math.max(...ownAges):Math.max(...usable.flatMap(([,rows])=>[...rows.values()].map(q=>q.age)));
   const quoteCount=probabilities[index].length;
   const agreementPct=Math.round(votes[index]/usable.length*100);
-  const score=Math.min(72,42+usable.length*6+Math.round((1-age/maxAgeSeconds)*10)+Math.min(8,quoteCount*2));
+  const rawScore=42+usable.length*6+Math.round((1-age/maxAgeSeconds)*10)+Math.min(8,quoteCount*2);
+  const score=Math.min(usable.length===1?45:72,rawScore);
   out.set(modelRunnerKey(runner),{
    name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
    number:runner.number??runner.runner_number??runner.box??null,
    probability:p,fairWin:1/p,placeOdds,quoteCount,books:usable.length,ageSeconds:age,
-   agreementPct,score,signalLabel:"MODEL ESTIMATE · "+usable.length+" INDEPENDENT BOOK GROUPS",
+   agreementPct,score,signalLabel:usable.length===1?"MODEL ESTIMATE · SINGLE BOOK GROUP":"MODEL ESTIMATE · "+usable.length+" INDEPENDENT BOOK GROUPS",
    source:"Plackett-Luce/Harville fair-price model · timestamped cross-bookmaker WIN quotes"
   });
  });
