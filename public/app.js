@@ -37,6 +37,7 @@ function sourceDetails(q){
    else if(/sportsbet/.test(lower))url="https://www.sportsbet.com.au/";
    else if(/bet365/.test(lower))url="https://www.bet365.com.au/";
    else if(/b337/.test(lower))url="https://www.b337.bet/pricing";
+    else if(/betfair/.test(lower))url="https://www.betfair.com/exchange/plus/";
   }
   const safeUrl=/^https?:\\/\\//i.test(url)?url:"";let host=source;
   if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\\./,"")}catch{}}
@@ -52,17 +53,18 @@ function sourceDetails(q){
    groups.get(key).rows.push(row);
   }
   return [...groups.values()].map(group=>{
-   const selected=group.rows;
+   const selected=group.rows,isExchange=selected.some(x=>x.exchange||x.bookmaker_key==="betfair");
    const line=(market,status)=>selected.filter(x=>x.market===market&&x.status===status).map(x=>{
     const observed=x.observed_at?"Feed observed "+fmtTime(x.observed_at)+" · "+fmtAge(x.observed_age_seconds):"Feed observation time unavailable";
-    const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.public_demo?"PUBLIC REFERENCE ONLY · ":"")+(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
-    return '<div class="rf-price-line"><span>'+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(group.host)+'</span></div>';
+    const exchangeDetail=isExchange?(x.price_side||"EXCHANGE SIDE")+" · available size "+(x.available_size==null?"not supplied":Number(x.available_size).toFixed(2))+" · delayed feed (up to "+(x.source_delay_max_seconds||180)+"s)":"";
+    const explanation=isExchange?exchangeDetail+" · "+observed:(status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.public_demo?"PUBLIC REFERENCE ONLY · ":"")+(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:""));
+    return '<div class="rf-price-line"><span>'+(isExchange?(x.price_side||"EXCHANGE"):"")+' '+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(group.host)+'</span></div>';
    }).join("");
    const sourceLink=group.url?'<a class="rf-source-link" href="'+esc(group.url)+'" target="_blank" rel="noopener noreferrer">'+esc(group.host)+' ↗</a>':esc(group.host);
-   return '<div class="rf-price-box"><h4>'+esc(group.name)+' <span class="rf-book-label">BOOKMAKER</span></h4>'+
+   return '<div class="rf-price-box"><h4>'+esc(group.name)+' <span class="rf-book-label">'+(isExchange?"EXCHANGE":"BOOKMAKER")+'</span></h4>'+
     '<div class="rf-source-meta"><span>DATA SOURCE</span> '+sourceLink+' <span class="rf-source-detail">('+esc(group.source)+')</span></div>'+
-    '<div class="rf-market-section"><div class="rf-market-title">Fixed WIN</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
-    '<div class="rf-market-section"><div class="rf-market-title">Fixed PLACE</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
+    '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange WIN · BACK / LAY":"Fixed WIN")+'</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
+    '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange PLACE · BACK / LAY":"Fixed PLACE")+'</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
   }).join("");
  }
 function renderRace(r){
@@ -117,12 +119,16 @@ function renderRaces(data){
   const sbPreviewWin=count("sportsbet","WIN","unverified"),sbPreviewPlace=count("sportsbet","PLACE","unverified");
   const sbStale=Number(data.sportsbetStalePreviewQuotes||0);
   const b365Win=count("bet365","WIN","verified"),b365Place=count("bet365","PLACE","verified");
+   const exchangeWin=count("betfair","WIN"),exchangePlace=count("betfair","PLACE");
+   const betfairState=String(data.betfairStatus||"unknown");
+   const betfairLabel=betfairState==="configured"?"CONNECTED · DELAYED":betfairState==="configured-but-unavailable"?"CONFIGURED · UNAVAILABLE":"NOT CONFIGURED";
   const warningText=errors.length?errors.slice(0,3).join(" · "):"No upstream provider warnings reported.";
   $("dashboardFeedStatuses").innerHTML=
    '<div class="feed-status-item"><span class="feed-dot connected"></span><span><b>DASHBOARD CONNECTION · CONNECTED</b><small>/api/races responded successfully · '+active.length+' race cards loaded</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(errors.length?"checking":"connected")+'"></span><span><b>UPSTREAM FEED COVERAGE · '+(errors.length?"LIMITED · FALLBACK FEEDS ACTIVE":"HEALTHY")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+(errors.length?esc(warningText):"No reported feed errors")+'</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · public preview WIN '+sbPreviewWin+' (unverified) · public preview PLACE '+sbPreviewPlace+' (unverified) · stale preview rows '+sbStale+'. Timestamp-missing or stale Sportsbet-attributed quotes stay visible as reference only; they are never treated as live prices.</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(b365Win||b365Place?"connected":"checking")+'"></span><span><b>BET365 FIXED WIN / PLACE</b><small>Verified WIN '+b365Win+' · verified PLACE '+b365Place+'</small></span></div>'+
+    '<div class="feed-status-item"><span class="feed-dot '+(betfairState==="configured"?"connected":"checking")+'"></span><span><b>BETFAIR EXCHANGE · '+betfairLabel+'</b><small>Exchange WIN quotes '+exchangeWin+' · exchange PLACE quotes '+exchangePlace+'. BACK and LAY are shown separately with available size. Delayed exchange prices are never counted as Sportsbet, Bet365 or TAB fixed odds. '+(betfairState==="credentials-missing"?"Add a valid Betfair app key and session token in Railway to enable this feed.":"")+'</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot checking"></span><span><b>B337 PUBLIC REFERENCE · MANUAL COMPARISON</b><small><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">B337 free account</a> may show limited live Sportsbet and TAB racing information with price history. It remains a separate reference: no B337 prices are imported or counted as verified quotes. Automatic import is allowed only from an authorised public machine-readable source.</small></span></div>';
  }
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
