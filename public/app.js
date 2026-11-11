@@ -1016,8 +1016,8 @@ setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
 // Start background checks before the welcome screen is dismissed so its activity dots are real.
-if(document.readyState==="complete")window.startFullDashboardFeeds();
-else window.addEventListener("load",()=>window.startFullDashboardFeeds(),{once:true});
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>window.startFullDashboardFeeds(),{once:true});
+else window.startFullDashboardFeeds();
 +f.price.toFixed(2)+'</strong><small>Sportsbet '+esc(label)+' · '+(f.unverified?'UNVERIFIED · source timestamp missing · feed snapshot '+Math.round(f.feedSeenAge)+'s old':Math.round(f.age)+'s · timestamp-verified')+'</small>'
    : '<span class="book-fav-missing">No Sportsbet '+label.toLowerCase()+' quote returned. No other bookmaker is substituted.</span>';
   return '<div class="book-fav"><div class="book-fav-label">SPORTSBET '+label+' FAVOURITE</div>'+detail+'</div>';
