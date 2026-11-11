@@ -216,7 +216,14 @@ function renderSportsBookmaker(event,book) {
   if(!markets.length)return "";
   const main=markets.find(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.name||"").toLowerCase().replace(/[\s-]+/g,"_")))||markets[0];
   const outcomes=(main.outcomes||[]).filter(o=>Number(o.price)>1&&!o.suspended&&!o.removed);
-  const favourite=[...outcomes].sort((a,b)=>Number(a.price)-Number(b.price))[0]||null;
+  // Only call a sports selection the current favourite when its source quote
+  // has a known age under 180 seconds. Unknown/stale prices remain visible,
+  // but cannot win the live-favourite label.
+  const freshOutcomes=outcomes.filter(o=>{
+    const age=sportQuoteAge(o,book);
+    return age!=null&&age>=0&&age<180&&o.stale!==true&&book.stale!==true;
+  });
+  const favourite=[...freshOutcomes].sort((a,b)=>Number(a.price)-Number(b.price))[0]||null;
   const age=favourite?sportQuoteAge(favourite,book):null;
   const freshness=age==null?"QUOTE AGE UNKNOWN · NOT VERIFIED":age<180?"SOURCE QUOTE "+Math.round(age)+"s OLD":"STALE SOURCE QUOTE · "+Math.round(age)+"s";
   const lines=markets.map(m=>{
