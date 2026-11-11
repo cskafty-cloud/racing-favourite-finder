@@ -1537,9 +1537,16 @@ async function getGlobalRaces() {
         const price=Number(fractionPrice??rawPrice);
         // price_ts is the MoviOdds runner-level price timestamp; race.updated_at is not.
         const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||null;
+        const placeUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||updated||null;
+        const rawPlace=x.place_odds??x.fixed_place_odds??x.place_price??null;
+        const placeFraction=typeof x.place_frac==="string"&&x.place_frac.includes("/")?x.place_frac.split("/").map(Number):null;
+        const placeFractionPrice=placeFraction&&placeFraction.length===2&&placeFraction[1]>0?placeFraction[0]/placeFraction[1]+1:null;
+        const placePrice=Number(placeFractionPrice??rawPlace);
+        const validPlacePrice=Number.isFinite(placePrice)&&placePrice>1?placePrice:null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
+        const placeAge=placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):age;
         if(quoteIsBet365&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedBet365Quotes++;
         if(quoteIsSportsbet&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedSportsbetQuotes++;
         const raceId=r.id||r.race_id||"";
@@ -1548,6 +1555,7 @@ async function getGlobalRaces() {
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:Number.isFinite(price)&&price>1&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:quoteBook==="bet365"?"Bet365":"Sportsbet",name:quoteBook==="bet365"?"Bet365":"Sportsbet",win_price:price,market_type:"fixed_win",
+            ...(validPlacePrice?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge}:{}),
             last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed-win public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
