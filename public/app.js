@@ -524,18 +524,35 @@ function setMainView(view){
  document.querySelectorAll(".main-tab").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
  if(state.sportsMode)loadSports();
 }
+function raceActivityScore(r) {
+  const runners=Array.isArray(r.runners)?r.runners:[];
+  const quotes=runners.reduce((n,x)=>n+fixedRunnerPrices(x).filter(q=>!q.stale&&(quoteAgeSeconds(q)==null?q.public_demo===true:quoteAgeSeconds(q)<180)).length,0);
+  return runners.length*2+quotes*3+(marketFavourite(r)?8:0);
+}
+function updateEntryHorseStatus() {
+  const el=$("entryHorseStatus"); if(!el)return;
+  const horses=state.races.filter(r=>categoryOf(r)==="horse" && (isExplicitlyLive(r)||!Number.isFinite(Date.parse(r.start_time||""))||Date.parse(r.start_time)>=Date.now()));
+  const live=horses.filter(isExplicitlyLive).length, upcoming=horses.length-live;
+  el.classList.remove("checking","active","upcoming");
+  if(live){el.classList.add("active");el.querySelector("small").textContent=live+" LIVE NOW · "+upcoming+" UPCOMING";}
+  else if(upcoming){el.classList.add("upcoming");el.querySelector("small").textContent=upcoming+" UPCOMING · HORSE RACING ACTIVE";}
+  else {el.classList.add("checking");el.querySelector("small").textContent="NO ACTIVE HORSE RACES RETURNED · FEED CHECKING";}
+}
 function render() {
   const rows = filteredRaces().filter(r => {
-    const t = new Date(r.start_time).getTime();
+    const t = Date.parse(r.start_time||"");
     return isExplicitlyLive(r) || !Number.isFinite(t) || t >= Date.now();
   }).sort((a,b) => {
-    if(state.sort==="odds") return (marketFavourite(a)?.consensus??999)-(marketFavourite(b)?.consensus??999)||Date.parse(a.start_time||0)-Date.parse(b.start_time||0);
-    const ta=Date.parse(a.start_time||"");
-    const tb=Date.parse(b.start_time||"");
-    if(!Number.isFinite(ta)) return 1;
-    if(!Number.isFinite(tb)) return -1;
-    return ta-tb;
+    const al=isExplicitlyLive(a), bl=isExplicitlyLive(b);
+    if(al!==bl)return al?-1:1;
+    if(al&&bl)return raceActivityScore(b)-raceActivityScore(a)||(Date.parse(a.start_time||0)-Date.parse(b.start_time||0));
+    const ta=Date.parse(a.start_time||""), tb=Date.parse(b.start_time||"");
+    if(!Number.isFinite(ta)&&!Number.isFinite(tb))return raceActivityScore(b)-raceActivityScore(a);
+    if(!Number.isFinite(ta))return 1;
+    if(!Number.isFinite(tb))return -1;
+    return ta-tb||raceActivityScore(b)-raceActivityScore(a);
   });
+  updateEntryHorseStatus();
   const live=rows.filter(isExplicitlyLive);
   const upcoming=rows.filter(r=>!isExplicitlyLive(r));
   $("raceCount").textContent=rows.length;
@@ -543,42 +560,28 @@ function render() {
   $("dogCount").textContent=rows.filter(r=>categoryOf(r)==="greyhound").length;
   $("harnessCount").textContent=rows.filter(r=>categoryOf(r)==="harness").length;
   const rowHtml=(r,isLive)=>{
-    const type=categoryOf(r);
-    const venue=r.venue||r.track_name||r.venue_canonical||"Track TBA";
+    const type=categoryOf(r), venue=r.venue||r.track_name||r.venue_canonical||"Track TBA";
     const number=r.race_number||r.race_no||r.raceNumber||"—";
-    const date=r.start_time?fmtDate(r.start_time):"Date/time TBA";
-    const time=r.start_time?fmtTime(r.start_time):"Jump time TBA";
-     const publicDetails=[r.race_name||r.name,r.distance?(r.distance+"m"):null,r.grade||r.class||null,r.track_condition||r.trackCondition?("Track "+(r.track_condition||r.trackCondition)):null,r.weather?("Weather "+r.weather):null,r.prize_money?("Prize "+r.prize_money):null].filter(Boolean).map(esc).join(" · ");
-    const fav=marketFavourite(r);
-    const favName=fav?(fav.name||fav.runner_name||fav.horse_name||fav.greyhound_name||"Runner"):"";
+    const date=r.start_time?fmtDate(r.start_time):"Date/time TBA", time=r.start_time?fmtTime(r.start_time):"Jump time TBA";
+    const publicDetails=[r.race_name||r.name,r.distance?(r.distance+"m"):null,r.grade||r.class||null,r.track_condition||r.trackCondition?("Track "+(r.track_condition||r.trackCondition)):null,r.weather?("Weather "+r.weather):null,r.prize_money?("Prize "+r.prize_money):null].filter(Boolean).map(esc).join(" · ");
+    const fav=marketFavourite(r), favName=fav?(fav.name||fav.runner_name||fav.horse_name||fav.greyhound_name||"Runner"):"";
     const bookFavourites=allBookmakerFavourites(r);
-    const favPanel=fav
-      ? '<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE · SHORTEST FIXED ODDS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>'
-      : '<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
+    const favPanel=fav?'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE · SHORTEST FIXED ODDS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>':'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
     const runners=(r.runners||[]).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999));
     const runnerRows=runners.map((runner,rank)=>{
-      const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale}))
-        .filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180);
-      const prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
+      const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
+      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
-      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
-      const num=runner.number??runner.runner_number;
-      const isFav=!!fav&&String(name)===String(favName);
+      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner", num=runner.number??runner.runner_number, isFav=!!fav&&String(name)===String(favName);
       const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
-      const priceLabel=estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2);
-      return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+priceLabel+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
+      return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+(estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2))+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
-    const bet365RaceFav=bookmakerFavourite(r,"bet365"),sportsbetRaceFav=sportsbetDisplayFavourite(r);
-     const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bookmaker favourites · prices and estimates clearly source-labelled</b>'+bookFavourites.map(allBookFavouritePanel).join("")+(!bet365RaceFav?raceBookmakerPanel("Bet365",null,fav):"")+raceBookmakerPanel("Sportsbet",sportsbetRaceFav,fav)+'</div>';
+    const bet365RaceFav=bookmakerFavourite(r,"bet365"), sportsbetRaceFav=sportsbetDisplayFavourite(r);
+    const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bookmaker favourites · prices and estimates clearly source-labelled</b>'+bookFavourites.map(allBookFavouritePanel).join("")+(!bet365RaceFav?raceBookmakerPanel("Bet365",null,fav):"")+raceBookmakerPanel("Sportsbet",sportsbetRaceFav,fav)+'</div>';
     const typeLabel=type==="horse"?"🐎 HORSE RACING":type==="greyhound"?"🐕 GREYHOUND RACING":"🏇 HARNESS RACING";
     return '<article class="race-list-card '+(isLive?"is-live":"")+'"><div class="race-list-card-head"><div><div class="race-type">'+typeLabel+'</div><h3>'+esc(venue)+' · R'+esc(number)+'</h3><div class="race-meta">'+esc(date)+' · '+esc(time)+'</div>'+(publicDetails?'<div class="race-meta race-public-details">'+publicDetails+'</div>':"")+'</div><span class="race-status">'+(isLive?"LIVE NOW":"UPCOMING")+'</span></div>'+favPanel+bookFavHtml+'<div class="race-runners-ranked"><div class="race-runners-heading">ALL RUNNERS · RANKED LOWEST FIXED ODDS FIRST</div>'+(runnerRows||'<div class="empty compact-empty">No runners supplied by the feed yet.</div>')+'</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are separate from bookmaker fixed odds and are not used to rank this list.</span></div></article>';
   };
-  $("raceList").innerHTML=rows.length
-    ? '<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">No races currently marked live by the feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>'
-    : (state.feedMode === "public-widgets"
-      ? '<div class="empty">No imported race cards are available from the connected licensed feeds at this refresh. The live public racing board is displayed above under Live racing odds & next to jump. <a href="#racingWidgets">Jump to the free live racing board ↗</a></div>'
-      : (state.feedMode === "demo" ? '<div class="empty">The free public preview has no Australian race cards at this moment. This is not a website outage; check the live widgets above and refresh for the next sample.</div>' : '<div class="empty">No Australian races returned by the connected feed at this refresh.</div>'));
+  $("raceList").innerHTML=rows.length?'<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">The feed has not marked any race as live at this refresh.</div>')+'</section><section class="race-list-group"><h3>UPCOMING · SOONEST FIRST <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>':(state.feedMode==="public-widgets"?'<div class="empty">No imported race cards are available from the connected feeds at this refresh. Check the free live racing board above. <a href="#racingWidgets">Open live racing board ↗</a></div>':(state.feedMode==="demo"?'<div class="empty">No races in the free public preview at this moment.</div>':'<div class="empty">No Australian races returned by the connected feed at this refresh.</div>'));
   renderTopTips();
 }
 function esc(v) { return String(v??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -591,6 +594,7 @@ async function loadRaces() {
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
     state.feedMode = data.mode || "live";
+    updateEntryHorseStatus();
     $("feedStatus").textContent = state.feedMode === "public-widgets" ? "PUBLIC WIDGETS" : state.feedMode === "demo" ? "FREE PUBLIC DEMO · NO KEY" : (data.feedErrors && data.feedErrors.length ? "LIVE FEED · PARTIAL" : "LIVE FEED");
     $("updatedAt").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     const books = (data.providerBookmakers || []).length;
@@ -604,7 +608,9 @@ async function loadRaces() {
     render();
   } catch (err) {
     state.feedMode = "public-widgets";
-    $("feedStatus").textContent = "FREE PUBLIC FEEDS";
+    state.races = [];
+    updateEntryHorseStatus();
+    $("feedStatus").textContent = "FEED UNAVAILABLE";
     $("updatedAt").textContent = new Date().toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
     $("feedFreshness").textContent = "The imported race-card API is temporarily unavailable. Free public widgets remain available on this page; no odds are estimated.";
     $("notice").textContent = "Use the free live public racing board above for current fields and prices. Imported bookmaker race cards will return when a connected provider is available.";
@@ -688,7 +694,7 @@ window.startFullDashboardFeeds=function(){
   loadMarketHistory();
 };
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
-setInterval(loadRaces,5*60*1000);
+setInterval(loadRaces,60*1000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
