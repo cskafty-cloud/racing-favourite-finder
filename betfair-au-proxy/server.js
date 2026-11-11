@@ -66,7 +66,7 @@ async function loadRaces() {
     const markets=await rpc("listMarketCatalogue",{filter:{eventTypeIds:[type.id],marketCountries:["AU"],
       marketTypeCodes:["WIN","PLACE"],marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
       marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-      sort:"FIRST_TO_START",maxResults:"200"});
+      sort:"FIRST_TO_START",maxResults:"1000"});
     return {type,markets:markets||[]};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_type:g.type.name})));
@@ -108,14 +108,14 @@ async function loadSports() {
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
   const eventTypes=await rpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
-    .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name)).slice(0,40);
+    .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
     try{
       const markets=await rpc("listMarketCatalogue",{filter:{eventTypeIds:[type.id],
         marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"],
         marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
         marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-        sort:"FIRST_TO_START",maxResults:"300"});
+        sort:"FIRST_TO_START",maxResults:"1000"});
       return {type,markets:markets||[]};
     }catch(error){return {type,markets:[],error:error.message};}
   }));
