@@ -293,6 +293,75 @@ function publicDemoItems(payload) {
   for(const key of ["items","events","results","data","matches","races","meetings"]) if(Array.isArray(payload?.[key])) return payload[key];
   return [];
 }
+
+// LucasFox is a free, no-key sports-only feed; it does not provide racing WIN/PLACE.
+// One shared request every 30 minutes stays below its published 100 requests/day/IP.
+const LUCASFOX_URL="https://lucasfox.dev/odds-api/v1/latest";
+const LUCASFOX_REFRESH_MS=30*60*1000;
+const LUCASFOX_MAX_AGE_SECONDS=15*60;
+let lucasFoxCache={at:0,events:[],error:null,excluded:0,tier:null,remaining:null};
+let lucasFoxRefresh=null;
+const LUCASFOX_SPORT_IDS={
+ basketball_nba:"oddsdata_18",basketball_nbl:"oddsdata_18",
+ americanfootball_nfl:"oddsdata_12",aussierules_afl:"oddsdata_36",
+ soccer_epl:"oddsdata_1",soccer_australia_aleague:"oddsdata_1",
+ mma_mixed_martial_arts:"oddsdata_162"
+};
+function validLucasSelection(market,selection,event){
+ const selected=normalizeName(selection),home=normalizeName(event.home_team),away=normalizeName(event.away_team);
+ if(!selected)return false;
+ if(market==="h2h")return selected===home||selected===away||selected==="draw";
+ if(market==="spreads")return selected===home||selected===away;
+ if(market==="totals")return /^(over|under)/.test(String(selection).trim().toLowerCase());
+ return false;
+}
+async function loadLucasFoxSports(){
+ if(lucasFoxCache.at&&Date.now()-lucasFoxCache.at<LUCASFOX_REFRESH_MS)return lucasFoxCache;
+ if(lucasFoxRefresh)return lucasFoxRefresh;
+ lucasFoxRefresh=(async()=>{
+  const url=new URL(LUCASFOX_URL);
+  url.searchParams.set("bookmaker_key","sportsbet");url.searchParams.set("limit","100");url.searchParams.set("since_hours","24");
+  const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(15000)});
+  const body=await response.text();let payload;
+  try{payload=JSON.parse(body);}catch{throw new Error("LucasFox returned invalid JSON (HTTP "+response.status+").");}
+  if(!response.ok)throw new Error("LucasFox "+response.status+": "+(payload.error||body.slice(0,180)));
+  if(payload.tier!=="free"||payload.market_scope!=="main")throw new Error("LucasFox response did not confirm the free main-market tier.");
+  const grouped=new Map();let excluded=0;
+  for(const q of (Array.isArray(payload.quotes)?payload.quotes:[])){
+   if(String(q.bookmaker_key||"").toLowerCase()!=="sportsbet"||String(q.bookmaker_region||q.book?.region||"").toLowerCase()!=="au"){excluded++;continue;}
+   const market=String(q.market_key||"").toLowerCase();if(!["h2h","spreads","totals"].includes(market)){excluded++;continue;}
+   const event=q.event||{},sportId=LUCASFOX_SPORT_IDS[String(event.sport_key||"").toLowerCase()];
+   const eventId=String(q.event_id||event.event_id||""),home=String(event.home_team||"").trim(),away=String(event.away_team||"").trim();
+   const start=event.commence_time||null,captured=q.captured_at||null,stamp=captured?Date.parse(captured):NaN;
+   const explicitAge=Number(q.freshness_seconds),age=Number.isFinite(explicitAge)?explicitAge:(Number.isFinite(stamp)?(Date.now()-stamp)/1000:NaN);
+   const price=Number(q.decimal_odds);
+   if(!sportId||!eventId||!home||!away||!start||!Number.isFinite(Date.parse(start))||!Number.isFinite(stamp)||
+      !Number.isFinite(age)||age<0||age>LUCASFOX_MAX_AGE_SECONDS||!Number.isFinite(price)||price<=1||
+      !validLucasSelection(market,q.selection,{home_team:home,away_team:away})||
+      /cancel|abandon|closed|finished|settled/i.test(String(event.status||""))){excluded++;continue;}
+   const key=[eventId,sportId].join("|");
+   if(!grouped.has(key))grouped.set(key,{id:eventId,event_id:eventId,sport_id:sportId,
+    sport_name:event.league_title||event.sport_key,home_team:home,away_team:away,league:event.league_title||"",
+    commence_time:start,in_play:/live|in.?play/i.test(String(event.status||"")),status:event.status||"scheduled",
+    bookmakers:[{key:"sportsbet",name:"Sportsbet",source:"LucasFox free Sportsbet sports odds",markets:[]}]});
+   const book=grouped.get(key).bookmakers[0];let target=book.markets.find(m=>m.key===market);
+   if(!target){target={key:market,name:market==="h2h"?"Head to head":market==="spreads"?"Spread":"Total",outcomes:[]};book.markets.push(target);}
+   const outcome={name:String(q.selection),price,line:q.line??null,last_update:captured,captured_at:captured,
+    timestamp_ms:Number(q.timestamp_ms)||stamp,age_seconds:age,freshness_seconds:age,observed_at:new Date().toISOString(),
+    stale:false,market_type:market,source:"LucasFox free Sportsbet sports feed",source_url:"https://lucasfox.dev/odds/docs/"};
+   const old=target.outcomes.find(x=>normalizeName(x.name)===normalizeName(outcome.name)&&x.line===outcome.line);
+   if(!old)target.outcomes.push(outcome);else if(age<old.age_seconds)Object.assign(old,outcome);
+  }
+  const events=[...grouped.values()];
+  lucasFoxCache={at:Date.now(),events,excluded,error:null,tier:payload.tier,remaining:response.headers.get("X-RateLimit-Remaining")};
+  console.info("LUCASFOX_FREE_SPORTS",JSON.stringify({events:events.length,
+   quotes:events.reduce((n,e)=>n+e.bookmakers[0].markets.reduce((m,x)=>m+x.outcomes.length,0),0),
+   excluded,tier:payload.tier,remaining:lucasFoxCache.remaining,maxAgeSeconds:LUCASFOX_MAX_AGE_SECONDS}));
+  return lucasFoxCache;
+ })().catch(error=>{lucasFoxCache={...lucasFoxCache,error:error.message};console.warn("LUCASFOX_FREE_SPORTS_FAILED",error.message);return lucasFoxCache;})
+   .finally(()=>{lucasFoxRefresh=null;});
+ return lucasFoxRefresh;
+}
 const PUNTERS_EDGE_BOOK_SPORTS = {
   // The no-key bookmaker sandbox accepts display slugs, not ODDS_DATA sport IDs.
   oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",
@@ -520,12 +589,31 @@ async function loadPublicDemoSport(sport) {
       }
     }
   }else errors.push("MoviOdds: "+moviResult.reason.message);
+  // LucasFox Sportsbet quotes are merged into supported sports only, never racing.
+  const lucas=await loadLucasFoxSports();
+  if(lucas.error)errors.push("LucasFox free Sportsbet sports feed: "+lucas.error);
+  for(const incoming of (lucas.events||[]).filter(e=>e.sport_id===sport.key)){
+    const key=[normalizeName(incoming.home_team),normalizeName(incoming.away_team),String(incoming.commence_time||"").slice(0,13),normalizeName(incoming.league)].join("|");
+    if(!rowsByKey.has(key))rowsByKey.set(key,incoming);
+    else{
+      const target=rowsByKey.get(key),existing=target.bookmakers.find(b=>canonicalBookmakerKey(b.key||b.name)==="sportsbet");
+      if(!existing)target.bookmakers.push(...incoming.bookmakers);
+      else for(const market of incoming.bookmakers[0].markets){
+        let prior=existing.markets.find(m=>m.key===market.key);
+        if(!prior){existing.markets.push(market);continue;}
+        for(const outcome of market.outcomes){
+          const old=prior.outcomes.find(o=>normalizeName(o.name)===normalizeName(outcome.name)&&o.line===(outcome.line??null));
+          if(!old)prior.outcomes.push(outcome);else if(outcome.age_seconds<old.age_seconds)Object.assign(old,outcome);
+        }
+      }
+    }
+  }
   const rows=[...rowsByKey.values()].filter(e=>{
     if(e.in_play===true)return true;
     const t=Date.parse(e.commence_time||"");
     return Number.isFinite(t)&&t>=Date.now();
   }).sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
-  const result={at:Date.now(),rows,errors,provider:"MoviOdds public event board + PuntersEdge bookmaker snapshots where available"};
+  const result={at:Date.now(),rows,errors,provider:"LucasFox free Sportsbet sports feed + MoviOdds public event board + PuntersEdge previews where available"};
   publicDemoCache.set(sport.key,result);
   console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,bookSlug,bestSlug,events:rows.length,live:rows.filter(x=>x.in_play).length,
     sportsbet:rows.filter(x=>x.bookmakers.some(b=>b.key==="sportsbet")).length,
@@ -675,27 +763,38 @@ function quoteAgeSecondsServer(q) {
   return null;
 }
 function racingWinPrice(q) {
-  // Never fall back to generic price/odds: those may be place, tote or another market.
-  const value=q?.win_price??q?.fixed_win_price??q?.fixed_win??q?.win_odds;
-  const price=Number(value);
-  return Number.isFinite(price)&&price>1?price:null;
+  const type=String(q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
+  if(/tote|totalisator|pari.?mutuel|place/.test(type))return null;
+  const value=q?.fixed_win_price??q?.win_price??q?.fixed_win??q?.win_odds;
+  const price=Number(value);return Number.isFinite(price)&&price>1?price:null;
 }
-function racingQuoteMaxAge(q) {
-  // A schedule/card refresh is not a bookmaker price refresh. Require the quote's own timestamp to be recent.
-  return 180;
+function racingPlacePrice(q) {
+  const type=String(q?.place_market_type||q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
+  if(/tote|totalisator|pari.?mutuel/.test(type))return null;
+  const value=q?.fixed_place_price??q?.place_price??q?.fixed_place??q?.place_odds;
+  const price=Number(value);return Number.isFinite(price)&&price>1?price:null;
 }
-function runnerQuotes(runner) {
-  // Compare fixed-win only, using the quote's own refresh tier and age.
+function racingQuoteMaxAge(){return 180;}
+function racingMarketAge(q,market){
+  if(market==="place"){
+    if(q?.place_age_seconds!=null&&Number.isFinite(Number(q.place_age_seconds)))return Math.max(0,Number(q.place_age_seconds));
+    return q?.place_last_update||q?.place_updated_at?quoteAgeSecondsServer({last_update:q.place_last_update||q.place_updated_at}):null;
+  }
+  return quoteAgeSecondsServer(q);
+}
+function runnerMarketQuotes(runner,market="win"){
+  if(runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
   const unique=new Map();
-  for(const q of (runner.bookmakers || runner.odds || [])) {
-    const price=racingWinPrice(q),key=bookmakerKey(q),age=quoteAgeSecondsServer(q);
-    if(!key||price==null||q.stale===true||age==null||age>=racingQuoteMaxAge(q))continue;
-    const previous=unique.get(key);
-    const previousAge=previous?quoteAgeSecondsServer(previous):null;
+  for(const q of (runner.bookmakers||runner.odds||[])){
+    const key=bookmakerKey(q),price=market==="place"?racingPlacePrice(q):racingWinPrice(q),age=racingMarketAge(q,market);
+    if(!key||price==null||q.stale===true||q.suspended===true||q.scratched===true||age==null||age>=racingQuoteMaxAge())continue;
+    const previous=unique.get(key),previousAge=previous?racingMarketAge(previous,market):null;
     if(!previous||previousAge==null||age<previousAge)unique.set(key,q);
   }
   return [...unique.values()];
 }
+function runnerQuotes(runner){return runnerMarketQuotes(runner,"win");}
+function runnerPlaceQuotes(runner){return runnerMarketQuotes(runner,"place");}
 function selectFavourite(race) {
   const median = values => { const x=values.slice().sort((a,b)=>a-b); return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null; };
   const entries=(race.runners||[]).map(r=>{
@@ -1782,6 +1881,7 @@ app.get("/api/races", async (_req, res) => {
     const feedErrors=(feed.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x)));
     racingFeedHealth={ok:true,status:feedErrors.length?"partial":"active",fetchedAt,feedSource:feed.feedSource||"Public racing feeds",totalRaces:races.length,byCode,errors:feedErrors,scheduleFetchedAt:feed.scheduleFetchedAt||null,oddsFetchedAt:feed.oddsFetchedAt||null};
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
+    const sportsbetPlaceQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerPlaceQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
     const history = await readHistory();
@@ -1810,7 +1910,8 @@ app.get("/api/races", async (_req, res) => {
     res.json({races, feedHealth:racingFeedHealth, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
-      note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Sportsbet exact public quotes: "+sportsbetQuotes+"; no-key Sportsbet race snapshots: "+sportsbetDemoRaces.length+". The public Sportsbet snapshot returned no full national card on the last check; the official horse, greyhound and harness schedule links remain available. No other bookmaker price is substituted."});
+      verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
+      note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Verified Sportsbet fixed WIN quotes: "+sportsbetQuotes+"; verified fixed PLACE quotes: "+sportsbetPlaceQuotes+". Each market requires explicit Sportsbet identity, a valid runner/price match, its own quote timestamp or age, and freshness under 180 seconds. Scratched, suspended, stale, unknown-age, tote and non-Sportsbet prices are excluded. LucasFox is sports-only and is never used for racing."});
   } catch (err) {
     const raw=String(err.message||"");
     racingFeedHealth={ok:false,status:"offline",fetchedAt:new Date().toISOString(),feedSource:"Unavailable",totalRaces:0,byCode:{horse:{races:0,live:0},greyhound:{races:0,live:0},harness:{races:0,live:0}},errors:[raw]};
@@ -2052,7 +2153,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
     }
     const rows=[...unique.values()].filter(e=>e.in_play===true||(Number.isFinite(Date.parse(e.commence_time||""))&&Date.parse(e.commence_time)>=Date.now()));
     const pricedCount=rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length;
-    const verifiedQuoteCount=rows.reduce((n,e)=>n+(e.bookmakers||[]).reduce((m,b)=>m+(b.markets||[]).reduce((k,market)=>k+(market.outcomes||[]).filter(o=>{const age=quoteAgeSecondsServer(o);return age!=null&&age<180;}).length,0),0),0);
+    const verifiedQuoteCount=rows.reduce((n,e)=>n+(e.bookmakers||[]).reduce((m,b)=>m+(b.markets||[]).reduce((k,market)=>k+(market.outcomes||[]).filter(o=>{const age=quoteAgeSecondsServer(o);return age!=null&&age<LUCASFOX_MAX_AGE_SECONDS&&o.stale!==true;}).length,0),0),0);
     const feedStatus=errors.length?(rows.length?"partial":"feed-unavailable"):!rows.length?"no-upcoming-fixtures":verifiedQuoteCount?"fixtures-and-verified-prices":"fixtures-only";
     sportsFeedHealth[sport.key]={...sportsFeedHealth[sport.key],ok:!errors.length||rows.length>0,status:feedStatus,
       eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,pricedCount,verifiedQuoteCount,
@@ -2062,7 +2163,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       provider:data.provider+(ODDS_API_TOKEN?" · Bet365 fallback when public coverage is thin":""),providerErrors:errors,publicDemo:true,
       eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,
       pricedCount,verifiedQuoteCount,feedStatus,
-      note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 aliases are normalised. Only source-timestamped quotes younger than 180 seconds count as current; old or unknown-age prices are not live. Provider coverage varies by sport."});
+      note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 remain separate. LucasFox quotes require explicit Sportsbet AU identity, valid event and selection match, decimal price above 1.00, capture timestamp and age no greater than 15 minutes. Stale and unsupported markets are excluded. LucasFox does not provide racing WIN/PLACE."});
   }catch(error){sportsFeedHealth[sport.key]={ok:false,status:"offline",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors:[error.message]};return res.status(502).json({error:error.message,publicDemo:true});}
 });
 app.get("/api/sports/:sportKey", async (req,res) => {
