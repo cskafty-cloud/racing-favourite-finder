@@ -1639,11 +1639,11 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<110000)return sportsbetRacingDemoCache.races;
- // Probe all three Australian racing codes independently.
- // A no-data response is recorded as unavailable, never filled with another bookmaker.
+ // The no-key bookmaker preview currently documents horse and greyhound only.
+ // Harness is still covered by the separate all-code race-card feed; do not call
+ // an unsupported slug or imply it has Sportsbet prices.
  const specs=[
-  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],
-  ["harness","harness-racing","sportsbet"]
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"]
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
