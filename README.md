@@ -100,3 +100,8 @@ If no Australian cloud host is available, the proxy can run on an Australian Win
 The Windows adapter binds only to `127.0.0.1`; Funnel supplies HTTPS from outside. The shared bearer token protects the API routes. Keep the PC awake and online. If you stop the Node process, turn off Funnel with `tailscale funnel reset`. Funnel makes the endpoint publicly reachable, so keep the token secret and do not share its URL unnecessarily.
 
 Tailscale Funnel is a third-party service and requires a Tailscale login and enabling Funnel. It is not a Betfair restriction bypass: the adapter still makes normal Betfair API requests from your Australian connection, and Betfair may still deny access or require approved account/API credentials.
+
+
+## Betfair adapter credential setup
+
+See [`betfair-au-proxy/CONFIGURATION-TEMPLATE.md`](betfair-au-proxy/CONFIGURATION-TEMPLATE.md) for the exact three-value setup, where each value comes from, and how to test the protected adapter endpoints. The Windows launcher prompts for these values securely; do not put real secrets in source code or commit them to GitHub.
