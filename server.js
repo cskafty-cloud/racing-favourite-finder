@@ -1424,7 +1424,7 @@ async function getGlobalRaces() {
            nested.win,nested.fixed_win,nested.win_price,fixed.win,fixed.win_price,fixed.decimal,fixed.price].some(v=>v!=null);
         if(hasUnverifiedPrice&&!quoteIsBet365)unverifiedPriceRows++;
         const rawPrice=quoteIsSupportedBook?(priceRow?.price??priceRow?.odds??priceRow?.decimal??
-          bet365NestedValue??(explicitRunnerBook||explicitNestedBook?
+          bet365NestedValue??(quoteIsBet365||explicitRunnerBook||explicitNestedBook?
             (x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.win_price_decimal??x.fixed_odds_decimal??x.win??
              nested.win??nested.fixed_win??nested.win_price??fixed.win??fixed.win_price??fixed.decimal??fixed.price):null)):null;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
