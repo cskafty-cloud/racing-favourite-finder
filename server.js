@@ -191,6 +191,29 @@ async function demoRacingFeed() {
 }
 
 const publicDemoCache = new Map();
+let moviOddsAllSportsCache={at:0,items:[],error:null};
+let moviOddsAllSportsRefresh=null;
+async function loadMoviOddsAllSports(){
+ if(moviOddsAllSportsCache.at&&Date.now()-moviOddsAllSportsCache.at<45000)return moviOddsAllSportsCache.items;
+ if(!moviOddsAllSportsRefresh)moviOddsAllSportsRefresh=(async()=>{
+  const response=await fetch("https://moviodds.com/odds?sport=all",{headers:{Accept:"application/json","Accept-Encoding":"gzip"},signal:AbortSignal.timeout(25000)});
+  const body=await response.text();let payload;
+  try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds all-sports feed returned invalid JSON (HTTP "+response.status+").");}
+  if(!response.ok)throw new Error("MoviOdds all-sports feed HTTP "+response.status+": "+(payload.error||"request failed"));
+  const items=publicDemoItems(payload);
+  moviOddsAllSportsCache={at:Date.now(),items,error:null};
+  console.info("MOVIODDS_ALL_SPORTS",JSON.stringify({items:items.length,keys:Object.keys(payload||{}).slice(0,20)}));
+  return items;
+ })().catch(error=>{moviOddsAllSportsCache.error=error.message;throw error;}).finally(()=>{moviOddsAllSportsRefresh=null;});
+ return moviOddsAllSportsRefresh;
+}
+function moviSportMatches(item,sport){
+ const wanted=String(sport.id),key=String(sport.key||"").toLowerCase(),slug=String(MOVI_SPORT_SLUGS[key]||PUBLIC_DEMO_SPORTS[key]||"").toLowerCase();
+ const ids=[item.sport_id,item.sportId,item.sport?.id,item.sport?.sport_id,item.sport_key,item.sport].filter(x=>x!=null).map(x=>String(typeof x==="object"?(x.key||x.name||x.slug||x.id||""):x).toLowerCase());
+ const names=[item.sport_name,item.sportName,item.sport?.name,item.sport?.slug,item.sport_slug,item.sport_key].filter(Boolean).map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));
+ const wantedNames=[slug,sport.title,key].map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));
+ return ids.includes(wanted)||ids.includes(key)||ids.includes(slug)||names.some(n=>wantedNames.includes(n));
+}
 async function publicDemoRequest(pathname, params={}) {
   const url=new URL(BASE+pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
@@ -305,13 +328,9 @@ async function loadPublicDemoSport(sport) {
     bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"bet365",sport:bookSlug}):Promise.resolve(null),
     bestSlug?publicDemoRequest("/v1/demo/best-odds",{sport:bestSlug}):Promise.resolve(null),
     (async()=>{
-      const url=new URL("https://moviodds.com/odds");
-      url.searchParams.set("sport",MOVI_SPORT_SLUGS[sport.key]||PUBLIC_DEMO_SPORTS[sport.key]||sport.key);
-      const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
-      const body=await response.text();let payload;
-      try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds returned invalid JSON (HTTP "+response.status+").");}
-      if(!response.ok)throw new Error("MoviOdds "+response.status+": "+(payload.error||"unavailable"));
-      return payload;
+      const all=await loadMoviOddsAllSports();
+      const matches=all.filter(item=>moviSportMatches(item,sport));
+      return {matches,source:"MoviOdds /odds?sport=all",has_data:matches.length>0};
     })()
   ];
   const [sportsbetResult,bet365Result,bestOddsResult,moviResult]=await Promise.allSettled(jobs);
@@ -1299,7 +1318,7 @@ async function getGlobalRaces() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // Race.updated_at is only a card timestamp; never use it as the bookmaker price timestamp.
-        const updated=x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||null;
+        const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
