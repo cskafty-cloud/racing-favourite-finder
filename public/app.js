@@ -1682,5 +1682,5 @@ setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
 setInterval(syncHistory,15*60*1000);
 // Start background checks before the welcome screen is dismissed so its activity dots are real.
-if(document.readyState==="complete")window.startFullDashboardFeeds();
-else window.addEventListener("load",()=>window.startFullDashboardFeeds(),{once:true});
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>window.startFullDashboardFeeds(),{once:true});
+else window.startFullDashboardFeeds();
