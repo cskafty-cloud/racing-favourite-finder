@@ -896,7 +896,8 @@ function providerRetryDelay(error) {
     const now = new Date();
     const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);
     return Math.max(60 * 1000, nextReset - Date.now());
-  }\n  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
+  }
+  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
