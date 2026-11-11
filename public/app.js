@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtTime=value=>{const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}):"Time unavailable";};
 const fmtAge=value=>Number.isFinite(Number(value))?Math.max(0,Math.round(Number(value)))+"s old":"age unknown";
-let races=[],filter="all",sort="time",started=false,lastSportsAt=0;
+let races=[],filter="all",sort="time",started=false,lastSportsAt=0,betfairSportsEvents=[];
 const statusBadge=(status,label)=>status==="verified"?'<span class="price-status verified">VERIFIED</span>':'<span class="price-status unverified">'+esc(label||"UNVERIFIED")+'</span>';
 function addStyles(){
  if(document.getElementById("rf-extra-styles"))return;
@@ -121,7 +121,7 @@ function renderRaces(data){
   const b365Win=count("bet365","WIN","verified"),b365Place=count("bet365","PLACE","verified");
    const exchangeWin=count("betfair","WIN"),exchangePlace=count("betfair","PLACE");
    const betfairState=String(data.betfairStatus||"unknown");
-   const betfairLabel=betfairState==="configured"?"CONNECTED · DELAYED":betfairState==="configured-but-unavailable"?"CONFIGURED · UNAVAILABLE":"NOT CONFIGURED";
+   const betfairLabel=betfairState==="connected-delayed"?"CONNECTED · DELAYED":betfairState==="configured-no-quotes"?"CONFIGURED · NO QUOTES":betfairState==="configured-but-unavailable"?"CONFIGURED · UNAVAILABLE":betfairState==="credentials-missing"?"CREDENTIALS MISSING":"CHECKING";
   const warningText=errors.length?errors.slice(0,3).join(" · "):"No upstream provider warnings reported.";
   $("dashboardFeedStatuses").innerHTML=
    '<div class="feed-status-item"><span class="feed-dot connected"></span><span><b>DASHBOARD CONNECTION · CONNECTED</b><small>/api/races responded successfully · '+active.length+' race cards loaded</small></span></div>'+
@@ -137,8 +137,12 @@ function renderRaces(data){
 function renderBestTips(list){
  const verified=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&Number(x.fav.signalScore||0)>=40)
   .sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)).slice(0,10);
- if($("bestTipsList"))$("bestTipsList").innerHTML=verified.length?verified.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · score '+esc(x.fav.signalScore)+'</span></div>').join(""):'<div class="rf-empty">No verified top tips right now. Races remain listed above, including unpriced and unverified favourites, but they are not promoted as verified tips.</div>';
+ const sportMarketFavourites=betfairSportsEvents.filter(e=>e.favourite&&Number(e.favourite.price)>1).sort((a,b)=>Number(a.favourite.price)-Number(b.favourite.price)).slice(0,10);
+ const raceHtml=verified.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · score '+esc(x.fav.signalScore)+'</span></div>').join("");
+ const sportHtml=sportMarketFavourites.map(x=>'<div class="rf-sports-row"><b>'+esc(x.sport)+' · '+esc(x.event)+' · '+esc(x.favourite.name)+'</b><span>$'+Number(x.favourite.price).toFixed(2)+' · Betfair Exchange BACK · delayed market favourite, not a winner prediction</span></div>').join("");
+ if($("bestTipsList"))$("bestTipsList").innerHTML=(raceHtml+sportHtml)||'<div class="rf-empty">No verified race tips or Betfair sports market favourites right now. Unpriced markets are not estimated.</div>';
 }
+
 async function loadRaces(){
  try{
   const response=await fetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
@@ -162,6 +166,203 @@ async function loadLucasFox(){
  }catch(error){
   if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent="FEED UNAVAILABLE";
   if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML='<div class="rf-empty">'+esc(error.message)+' · LucasFox is sports-only.</div>';
+ }
+}
+async function loadBetfairSports(){
+ const state=$("betfairSportsNotice"),list=$("betfairSportsEvents");
+ try{
+  if(state)state.textContent="Refreshing authorised Betfair delayed Exchange markets…";
+  const response=await fetch("/api/betfair/sports",{cache:"no-store",signal:AbortSignal.timeout(45000)});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Betfair sports feed HTTP "+response.status);
+  betfairSportsEvents=Array.isArray(data.events)?data.events:[];
+  const events=betfairSportsEvents;
+  const live=events.filter(e=>e.inPlay),priced=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay));
+  if($("betfairSportsStats"))$("betfairSportsStats").innerHTML=[[events.length,"Exchange markets"],[new Set(events.map(e=>e.sport)).size,"Sports"],[live.length,"In-play"],[priced.length,"Priced markets"]].map(x=>'<div class="stat"><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></div>').join("");
+  const status=String(data.status||"unknown");
+  if(state)state.textContent=status==="connected-delayed"?"CONNECTED · DELAYED EXCHANGE":status==="configured-no-quotes"?"CONNECTED · NO CURRENT MARKETS":status.toUpperCase().replaceAll("-"," ")+" · "+(data.error||"");
+  if(list)list.innerHTML=events.length?events.slice(0,120).map(e=>{
+   const runners=(e.runners||[]).filter(r=>r.back||r.lay);
+   const favourite=e.favourite;
+   const runnerRows=runners.map(r=>'<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?' · MARKET FAVOURITE':'')+'</span><span>BACK '+(r.back?'
+ if(Date.now()-lastSportsAt<10*60*1000)return;lastSportsAt=Date.now();
+ try{
+  const res=await fetch("/api/sports",{cache:"no-store"});if(!res.ok)return;const data=await res.json();
+  const active=(data.sports||[]).filter(x=>x.active).slice(0,8);
+  const results=await Promise.all(active.map(async sport=>{
+   try{const r=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});return r.ok?{sport,data:await r.json()}:null;}catch{return null;}
+  }));
+  const events=results.filter(Boolean).flatMap(x=>(x.data.events||x.data.rows||[]).map(e=>({...e,_sportTitle:x.sport.title})));
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?events.length+" public sports fixtures returned · provider coverage varies.":"No upcoming fixtures returned by currently available free public sports sources.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=events.length?events.slice(0,80).map(e=>'<div class="rf-sports-row"><b>'+esc(e.home_team||e.home||"TBA")+' v '+esc(e.away_team||e.away||"TBA")+' · '+esc(e._sportTitle||e.sport_name||"Sport")+'</b><span>'+esc(fmtTime(e.commence_time||e.start_time))+' · '+esc(e.status||"Scheduled")+'</span></div>').join(""):'<div class="rf-empty">Fixture schedule unavailable from free sources at this check.</div>';
+ }catch(error){if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;}
+}
+function start(){
+ if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);loadBetfairSports();setInterval(loadBetfairSports,60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ const refreshBetfairSports=$("refreshBetfairSportsBtn");if(refreshBetfairSports)refreshBetfairSports.addEventListener("click",()=>loadBetfairSports());
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ if(document.body.classList.contains("site-entered"))start();
+});
+})();+Number(r.back.price).toFixed(2)+' · 
+ if(Date.now()-lastSportsAt<10*60*1000)return;lastSportsAt=Date.now();
+ try{
+  const res=await fetch("/api/sports",{cache:"no-store"});if(!res.ok)return;const data=await res.json();
+  const active=(data.sports||[]).filter(x=>x.active).slice(0,8);
+  const results=await Promise.all(active.map(async sport=>{
+   try{const r=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});return r.ok?{sport,data:await r.json()}:null;}catch{return null;}
+  }));
+  const events=results.filter(Boolean).flatMap(x=>(x.data.events||x.data.rows||[]).map(e=>({...e,_sportTitle:x.sport.title})));
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?events.length+" public sports fixtures returned · provider coverage varies.":"No upcoming fixtures returned by currently available free public sports sources.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=events.length?events.slice(0,80).map(e=>'<div class="rf-sports-row"><b>'+esc(e.home_team||e.home||"TBA")+' v '+esc(e.away_team||e.away||"TBA")+' · '+esc(e._sportTitle||e.sport_name||"Sport")+'</b><span>'+esc(fmtTime(e.commence_time||e.start_time))+' · '+esc(e.status||"Scheduled")+'</span></div>').join(""):'<div class="rf-empty">Fixture schedule unavailable from free sources at this check.</div>';
+ }catch(error){if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;}
+}
+function start(){
+ if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ if(document.body.classList.contains("site-entered"))start();
+});
+})();+(r.back.availableSize==null?'—':Number(r.back.availableSize).toFixed(2)):'—')+' &nbsp; LAY '+(r.lay?'
+ if(Date.now()-lastSportsAt<10*60*1000)return;lastSportsAt=Date.now();
+ try{
+  const res=await fetch("/api/sports",{cache:"no-store"});if(!res.ok)return;const data=await res.json();
+  const active=(data.sports||[]).filter(x=>x.active).slice(0,8);
+  const results=await Promise.all(active.map(async sport=>{
+   try{const r=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});return r.ok?{sport,data:await r.json()}:null;}catch{return null;}
+  }));
+  const events=results.filter(Boolean).flatMap(x=>(x.data.events||x.data.rows||[]).map(e=>({...e,_sportTitle:x.sport.title})));
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?events.length+" public sports fixtures returned · provider coverage varies.":"No upcoming fixtures returned by currently available free public sports sources.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=events.length?events.slice(0,80).map(e=>'<div class="rf-sports-row"><b>'+esc(e.home_team||e.home||"TBA")+' v '+esc(e.away_team||e.away||"TBA")+' · '+esc(e._sportTitle||e.sport_name||"Sport")+'</b><span>'+esc(fmtTime(e.commence_time||e.start_time))+' · '+esc(e.status||"Scheduled")+'</span></div>').join(""):'<div class="rf-empty">Fixture schedule unavailable from free sources at this check.</div>';
+ }catch(error){if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;}
+}
+function start(){
+ if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ if(document.body.classList.contains("site-entered"))start();
+});
+})();+Number(r.lay.price).toFixed(2)+' · 
+ if(Date.now()-lastSportsAt<10*60*1000)return;lastSportsAt=Date.now();
+ try{
+  const res=await fetch("/api/sports",{cache:"no-store"});if(!res.ok)return;const data=await res.json();
+  const active=(data.sports||[]).filter(x=>x.active).slice(0,8);
+  const results=await Promise.all(active.map(async sport=>{
+   try{const r=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});return r.ok?{sport,data:await r.json()}:null;}catch{return null;}
+  }));
+  const events=results.filter(Boolean).flatMap(x=>(x.data.events||x.data.rows||[]).map(e=>({...e,_sportTitle:x.sport.title})));
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?events.length+" public sports fixtures returned · provider coverage varies.":"No upcoming fixtures returned by currently available free public sports sources.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=events.length?events.slice(0,80).map(e=>'<div class="rf-sports-row"><b>'+esc(e.home_team||e.home||"TBA")+' v '+esc(e.away_team||e.away||"TBA")+' · '+esc(e._sportTitle||e.sport_name||"Sport")+'</b><span>'+esc(fmtTime(e.commence_time||e.start_time))+' · '+esc(e.status||"Scheduled")+'</span></div>').join(""):'<div class="rf-empty">Fixture schedule unavailable from free sources at this check.</div>';
+ }catch(error){if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;}
+}
+function start(){
+ if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ if(document.body.classList.contains("site-entered"))start();
+});
+})();+(r.lay.availableSize==null?'—':Number(r.lay.availableSize).toFixed(2)):'—')+'</span></div>').join("");
+   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(e.event||"Sports event")+' · '+esc(e.sport||"Sport")+'</div><div class="rf-muted">'+esc(e.competition||"")+' · '+esc(e.marketName||"Market")+' · '+esc(fmtTime(e.startTime))+' · '+(e.inPlay?"IN-PLAY":"UPCOMING")+'</div></div><span class="rf-muted">Betfair Exchange</span></div>'+
+    (favourite?'<div class="rf-fav"><strong>EXCHANGE MARKET FAVOURITE · BACK</strong>'+esc(favourite.name)+' · 
+ if(Date.now()-lastSportsAt<10*60*1000)return;lastSportsAt=Date.now();
+ try{
+  const res=await fetch("/api/sports",{cache:"no-store"});if(!res.ok)return;const data=await res.json();
+  const active=(data.sports||[]).filter(x=>x.active).slice(0,8);
+  const results=await Promise.all(active.map(async sport=>{
+   try{const r=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});return r.ok?{sport,data:await r.json()}:null;}catch{return null;}
+  }));
+  const events=results.filter(Boolean).flatMap(x=>(x.data.events||x.data.rows||[]).map(e=>({...e,_sportTitle:x.sport.title})));
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?events.length+" public sports fixtures returned · provider coverage varies.":"No upcoming fixtures returned by currently available free public sports sources.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=events.length?events.slice(0,80).map(e=>'<div class="rf-sports-row"><b>'+esc(e.home_team||e.home||"TBA")+' v '+esc(e.away_team||e.away||"TBA")+' · '+esc(e._sportTitle||e.sport_name||"Sport")+'</b><span>'+esc(fmtTime(e.commence_time||e.start_time))+' · '+esc(e.status||"Scheduled")+'</span></div>').join(""):'<div class="rf-empty">Fixture schedule unavailable from free sources at this check.</div>';
+ }catch(error){if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;}
+}
+function start(){
+ if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ if(document.body.classList.contains("site-entered"))start();
+});
+})();+Number(favourite.price).toFixed(2)+'<div class="rf-muted">Lowest available BACK price in this market; not a prediction or guaranteed winner.</div></div>':'<div class="rf-muted">No available BACK offer; no favourite calculated.</div>')+
+    (runnerRows?'<div class="rf-market-section">'+runnerRows+'</div>':'<div class="rf-empty">No available BACK/LAY offers returned for this market.</div>')+
+    '<div class="rf-muted">Betfair Exchange · delayed up to '+esc(data.delayMaximumSeconds||180)+'s · observed '+esc(fmtTime(e.capturedAt||data.fetchedAt))+' · source '+esc(e.source||data.provider||"Betfair Exchange")+'</div></article>';
+  }).join(""):'<div class="rf-empty">No upcoming or in-play sports markets returned by the authorised Betfair delayed feed. This is not replaced with invented odds.</div>';
+  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent=(data.note||"Delayed Betfair Exchange data.")+" Last API refresh: "+fmtTime(data.fetchedAt)+". "+(data.errors||[]).map(x=>x.sport+": "+x.message).join(" · ");
+  renderBestTips(races.filter(r=>!r.abandoned));
+ }catch(error){
+  betfairSportsEvents=[];
+  if(state)state.textContent="FEED UNAVAILABLE · "+error.message;
+  if(list)list.innerHTML='<div class="rf-empty">'+esc(error.message)+' · No Betfair sports prices are being estimated.</div>';
+  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent="Check that the Railway Betfair app key and session token are valid and that the delayed Exchange API is authorised.";
  }
 }
 async function loadSportsFixtures(){
