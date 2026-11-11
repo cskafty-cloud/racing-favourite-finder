@@ -1587,13 +1587,27 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const placePrice=bookKey==="sportsbet"?(sportsbetDemoPlacePrice(r)??(Number(r.place)>1?Number(r.place):null)):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
-  const winUpdated=r.win_last_update||r.win_updated_at||r.last_update||r.updated_at||r.timestamp||null;
-  const placeUpdated=r.place_last_update||r.place_updated_at||r.place_odds_updated_at||r.place_price_updated_at||null;
-  const winAge=r.win_age_seconds??r.age_seconds??r.quote_age_seconds??null;
-  const placeAge=r.place_age_seconds??r.place_quote_age_seconds??null;
+  // Preserve timestamps supplied with the actual Sportsbet quote. Do not
+  // substitute our fetch/observation time: that would make an untimestamped
+  // preview look like a verified bookmaker price.
+  const winMarketRows=[...(Array.isArray(r.markets)?r.markets:[]),...(Array.isArray(r.prices)?r.prices:[])]
+   .filter(m=>/win|winner|fixed_win/i.test(String(m.market||m.market_name||m.marketName||m.type||m.name||m.key||"")));
+  const placeMarketRows=[...(Array.isArray(r.markets)?r.markets:[]),...(Array.isArray(r.prices)?r.prices:[])]
+   .filter(m=>/place|each.?way/i.test(String(m.market||m.market_name||m.marketName||m.type||m.name||m.key||"")));
+  const winUpdated=r.win_last_update||r.win_updated_at||r.win_price_updated_at||r.win_quote_updated_at||
+   r.win_quote_timestamp||r.win_timestamp||r.last_update||r.last_updated||r.quote_updated_at||r.price_updated_at||r.updated_at||r.timestamp||
+   winMarketRows.map(m=>m.last_update||m.last_updated||m.quote_updated_at||m.price_updated_at||m.updated_at||m.timestamp).find(Boolean)||null;
+  const placeUpdated=r.place_last_update||r.place_updated_at||r.place_odds_updated_at||r.place_price_updated_at||
+   r.place_quote_updated_at||r.place_quote_timestamp||r.place_timestamp||
+   placeMarketRows.map(m=>m.last_update||m.last_updated||m.quote_updated_at||m.price_updated_at||m.updated_at||m.timestamp).find(Boolean)||null;
+  const winAge=r.win_age_seconds??r.win_quote_age_seconds??r.quote_age_seconds??r.age_seconds??
+   winMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
+  const placeAge=r.place_age_seconds??r.place_quote_age_seconds??
+   placeMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
   const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
    ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:r.place_stale===true||(placeAge!=null&&Number(placeAge)>=180)}:{}),
    last_update:winUpdated,age_seconds:winAge,feed_observed_at:new Date().toISOString(),
+   timestamp_status:winUpdated!=null?"source_quote_timestamp":winAge!=null?"source_quote_age":"missing_source_quote_timestamp",
    stale:r.stale===true||(winAge!=null&&Number(winAge)>=180),public_demo:true,
    source:bookName+" fixed-win/place public bookmaker preview",source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
