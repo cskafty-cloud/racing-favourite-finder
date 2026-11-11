@@ -1709,7 +1709,7 @@ async function getGlobalRaces() {
       // snapshot is genuinely fresh; otherwise continue to Krok/MoviOdds previews.
       if (primary.races?.length && (!quotaBlocked || oddsAge<=180000)) {
         const supplemental=await loadSupplementalAustralianRaces();
-        const combined=dedupeRaces([...(primary.races||[]),...supplemental.races]);
+        const combined=dedupeRaces([...(primary.races||[]),...supplemental.races,...betfairSupplementalRows]);
         const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,combined.filter(r=>categoryOf(r)===code).length]));
         console.info("AUSTRALIAN_RACE_COVERAGE_MERGE",JSON.stringify({primary:(primary.races||[]).length,supplemental:supplemental.races.length,total:combined.length,byCode,errors:supplemental.errors.length}));
         return {...primary,races:combined,feedErrors:[...(primary.feedErrors||[]),...supplemental.errors],
@@ -1733,7 +1733,7 @@ async function getGlobalRaces() {
       const alternate=await getKrokRaces();
       if (alternate.races?.length) {
         const supplemental=await loadSupplementalAustralianRaces();
-        return {...alternate,races:dedupeRaces([...(alternate.races||[]),...supplemental.races]),
+        return {...alternate,races:dedupeRaces([...(alternate.races||[]),...supplemental.races,...betfairSupplementalRows]),
           feedErrors:failures.concat(alternate.feedErrors||[],supplemental.errors),
           feedSource:"PuntersEdge public racing teaser + MoviOdds + Krok Odds",
           note:"Australian horse, greyhound and harness races are merged across configured feeds that respond. Coverage is broader but not guaranteed to include every national meeting; source-specific odds are never relabelled."};
@@ -1743,15 +1743,14 @@ async function getGlobalRaces() {
       failures.push({feed:"Krok Odds",message:error.message});
     }
   }
-  // Use the direct, read-only Betfair Exchange API integration before the
-  // optional external proxy URL. This path was implemented but previously
-  // never called by the production racing feed selector.
-  if (false && BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
+  // Add the user's authorised delayed Betfair Exchange markets as a separate
+  // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
+  let betfairSupplementalRows=[];
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
-      if (exchange.races?.length) return {...exchange,feedErrors:failures,
-        note:"Australian racing markets and delayed exchange prices from Betfair. Exchange prices are not fixed bookmaker odds. Display-only; no betting actions are enabled."};
-      failures.push({feed:"Betfair Exchange",message:"No Australian racing markets returned."});
+      betfairSupplementalRows=exchange.races||[];
+      if(!betfairSupplementalRows.length) failures.push({feed:"Betfair Exchange",message:"No Australian WIN/PLACE exchange markets returned."});
     } catch(error) {
       console.error("BETFAIR_DIRECT_API_FAILED",error.message);
       betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
@@ -1919,7 +1918,7 @@ async function getGlobalRaces() {
       categories:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length]))}));
     if(races.length||publicRaceRows.length) {
       const supplemental=await loadSupplementalAustralianRaces();
-      const combined=dedupeRaces([...publicRaceRows,...races,...supplemental.races]);
+      const combined=dedupeRaces([...publicRaceRows,...races,...supplemental.races,...betfairSupplementalRows]);
       console.info("AUSTRALIAN_PUBLIC_COVERAGE_MERGE",JSON.stringify({moviodds:races.length,puntersDemo:publicRaceRows.length,supplemental:supplemental.races.length,total:combined.length,
         byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,combined.filter(r=>categoryOf(r)===code).length])),supplementalErrors:supplemental.errors.length}));
       return {races:combined,
@@ -1934,10 +1933,18 @@ async function getGlobalRaces() {
   }
   if(publicRaceRows.length) {
     const supplemental=await loadSupplementalAustralianRaces();
-    const combined=dedupeRaces([...publicRaceRows,...supplemental.races]);
+    const combined=dedupeRaces([...publicRaceRows,...supplemental.races,...betfairSupplementalRows]);
     return {races:combined,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),
       horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"PuntersEdge public racing teaser + MoviOdds + Krok (where configured)",scope:"Australia",
       note:"Australian horse, greyhound and harness races are combined from available public and configured sources. Coverage varies by feed and is not guaranteed to include every national race; missing prices are not estimated."};
+  }
+  if(betfairSupplementalRows.length) {
+    const supplemental=await loadSupplementalAustralianRaces();
+    const combined=dedupeRaces([...betfairSupplementalRows,...supplemental.races]);
+    return {races:combined,scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),
+      horizonHours:24,feedErrors:failures.concat(supplemental.errors),
+      feedSource:"Betfair Exchange delayed WIN/PLACE + available public racing fixtures",scope:"Australia",
+      note:"Betfair back/lay exchange quotes are displayed separately from fixed bookmaker odds. The delayed application key may return data delayed by up to 180 seconds; quote capture time is shown, and no Sportsbet or Bet365 price is inferred from exchange data."};
   }
   if(failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
   throw new Error("No free public Australian racing snapshot is available at this refresh.");
