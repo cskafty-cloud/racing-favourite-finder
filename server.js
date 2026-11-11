@@ -1770,7 +1770,7 @@ async function getGlobalRaces() {
         const combined=dedupeRaces([...(primary.races||[]),...supplemental.races,...betfairSupplementalRows]);
         const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,combined.filter(r=>categoryOf(r)===code).length]));
         console.info("AUSTRALIAN_RACE_COVERAGE_MERGE",JSON.stringify({primary:(primary.races||[]).length,supplemental:supplemental.races.length,total:combined.length,byCode,errors:supplemental.errors.length}));
-        return {...primary,races:combined,feedErrors:[...(primary.feedErrors||[]),...supplemental.errors],
+        return {...primary,races:combined,feedErrors:[...failures,...(primary.feedErrors||[]),...supplemental.errors],
           feedSource:"PuntersEdge live racing + public racing teaser + MoviOdds + Krok Odds (where configured)",
           note:"Australian horse, greyhound and harness races are merged across every configured source that responds. The list is broader than any one provider; it is not a guarantee of every race in Australia. Prices are retained only with their original bookmaker/source labels; missing prices remain unavailable."};
       }
