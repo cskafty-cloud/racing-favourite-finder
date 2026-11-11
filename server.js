@@ -303,7 +303,7 @@ function normalizePublicBookSport(item, book, sport) {
   const prices=Array.isArray(item.prices)?item.prices:Array.isArray(item.odds)?item.odds:
     sourceMarkets.flatMap(m=>(m.outcomes||m.selections||[]).map(o=>({...o,_market:m})));
   const outcomes=prices.map(p=>{
-    const updatedAt=p.last_update||p.updated_at||p.captured_at||p.timestamp||p._market?.last_update||p._market?.updated_at||item.last_update||item.updated_at||item.captured_at||item.timestamp||null;
+    const updatedAt=p.last_update||p.updated_at||p.captured_at||p.timestamp||p._market?.last_update||p._market?.updated_at||null;
     const ageSeconds=p.age_seconds??p.quote_age_seconds??p.quality?.age_seconds??p._market?.age_seconds??p._market?.quality?.age_seconds??item.age_seconds??item.quote_age_seconds??item.quality?.age_seconds??null;
     return {name:p.name||p.selection||p.label||"",price:Number(p.price??p.odds??p.decimal??p.best_price),age_seconds:ageSeconds==null?null:Number(ageSeconds),last_update:updatedAt,source:p.source||p.source_name||item.source||"PuntersEdge public bookmaker-specific endpoint"};
   }).filter(p=>p.name&&Number.isFinite(p.price)&&p.price>1);
@@ -319,7 +319,7 @@ function normalizePublicBookSport(item, book, sport) {
     league:item.league||item.competition||item.tournament||"",sport_name:sport.title,commence_time:start,
     in_play:explicitLive,status:explicitLive?"LIVE":"UPCOMING",score:item.score||item.ss||null,
     bookmakers:cleanOutcomes.length?[{key:canonical,name:canonical==="sportsbet"?"Sportsbet":"Bet365",
-      age_seconds:knownAges.length===outcomes.length?Math.max(...knownAges):null,last_update:item.last_update||item.updated_at||null,observed_at:observedAt,
+      age_seconds:knownAges.length===outcomes.length?Math.max(...knownAges):null,last_update:null,observed_at:observedAt,
       source:"PuntersEdge public bookmaker-specific endpoint",stale:item.stale===true,
       markets:[{key:"h2h",name:"Head to head",outcomes:cleanOutcomes}]}]:[],_publicDemo:true};
 }
@@ -334,7 +334,7 @@ function normalizeBestOddsEvent(item,sport) {
     // A best-price reference without a named bookmaker is not an independent book.
     if(!sourceBook)continue;
     addPublicOutcome(event,sourceBook,selection.name||selection.selection,
-      selection.best_price??selection.price,selection.last_update||selection.updated_at||item.updated_at||item.last_update||null,
+      selection.best_price??selection.price,selection.last_update||selection.updated_at||null,
       selection.age_seconds??selection.quote_age_seconds??selection.quality?.age_seconds??item.age_seconds??item.quote_age_seconds??null);
   }
   return event;
