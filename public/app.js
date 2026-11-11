@@ -214,7 +214,7 @@ function renderSportsBookmaker(event,book) {
   const bookmaker=String(book.name||book.title||book.key||"Bookmaker");
   const markets=(book.markets||[]).filter(m=>(m.outcomes||[]).some(o=>Number(o.price)>1));
   if(!markets.length)return "";
-  const main=markets.find(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.name||"").toLowerCase().replace(/[\\s-]+/g,"_")))||markets[0];
+  const main=markets.find(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.name||"").toLowerCase().replace(/[\s-]+/g,"_")))||markets[0];
   const outcomes=(main.outcomes||[]).filter(o=>Number(o.price)>1&&!o.suspended&&!o.removed);
   const favourite=[...outcomes].sort((a,b)=>Number(a.price)-Number(b.price))[0]||null;
   const age=favourite?sportQuoteAge(favourite,book):null;
@@ -229,7 +229,7 @@ function renderSportsBookmaker(event,book) {
   }).join("");
   const source=String(book.source||book.provider||event._provider||"Source not supplied");
   const sourceUrl=String(book.source_url||book.url||"");
-  const link=/^https?:\\/\\//i.test(sourceUrl)?'<a class="rf-source-link" href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(new URL(sourceUrl).hostname.replace(/^www\\./,""))+' ↗</a>':"";
+  const link=/^https?:\/\//i.test(sourceUrl)?'<a class="rf-source-link" href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(new URL(sourceUrl).hostname.replace(/^www\./,""))+' ↗</a>':"";
   return '<div class="rf-price-box"><h4>'+esc(bookmaker)+' <span class="rf-book-label">BOOKMAKER QUOTE</span></h4>'+
     '<div class="rf-source-meta">DATA SOURCE · '+esc(source)+' '+link+'</div>'+
     (favourite?'<div class="rf-fav"><strong>'+esc(bookmaker)+' MARKET FAVOURITE</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">'+esc(freshness)+' · shortest price in '+esc(main.name||main.key||"market")+'</div></div>':'')+lines+'</div>';
