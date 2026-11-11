@@ -104,27 +104,63 @@ async function loadRaces() {
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
     note:"Exchange BACK/LAY prices only. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
+async function fetchSportCatalogue(type, from, to) {
+  const filter = {
+    eventTypeIds:[type.id],
+    marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"],
+    marketStartTime:{from:from.toISOString(),to:to.toISOString()}
+  };
+  try {
+    const markets = await rpc("listMarketCatalogue", {
+      filter,
+      marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
+      sort:"FIRST_TO_START",
+      maxResults:"1000"
+    });
+    return {markets:markets||[],errors:[]};
+  } catch (error) {
+    if (!/TOO_MUCH_DATA/i.test(error.message)) return {markets:[],errors:[error.message]};
+    const span = to.getTime() - from.getTime();
+    // Split oversized sport requests into smaller time windows. Stop at 30 minutes
+    // so one exceptionally busy window cannot create an unbounded retry loop.
+    if (span <= 30 * 60 * 1000) return {markets:[],errors:["Still too much data in a 30-minute window: "+error.message]};
+    const midpoint = new Date(from.getTime() + Math.floor(span / 2));
+    const left = await fetchSportCatalogue(type, from, midpoint);
+    const right = await fetchSportCatalogue(type, midpoint, to);
+    const unique = new Map();
+    for (const market of [...left.markets,...right.markets]) unique.set(String(market.marketId),market);
+    return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
+  }
+}
+async function fetchSportBooks(marketIds) {
+  try {
+    return {books:await rpc("listMarketBook",{marketIds,priceProjection:{priceData:["EX_BEST_OFFERS"],virtualise:true}})||[],errors:[]};
+  } catch (error) {
+    if (/TOO_MUCH_DATA/i.test(error.message) && marketIds.length > 1) {
+      const middle = Math.ceil(marketIds.length / 2);
+      const left = await fetchSportBooks(marketIds.slice(0,middle));
+      const right = await fetchSportBooks(marketIds.slice(middle));
+      return {books:[...left.books,...right.books],errors:[...left.errors,...right.errors]};
+    }
+    return {books:[],errors:[error.message]};
+  }
+}
 async function loadSports() {
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
   const eventTypes=await rpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
     .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
-    try{
-      const markets=await rpc("listMarketCatalogue",{filter:{eventTypeIds:[type.id],
-        marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"],
-        marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
-        marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-        sort:"FIRST_TO_START",maxResults:"1000"});
-      return {type,markets:markets||[]};
-    }catch(error){return {type,markets:[],error:error.message};}
+    const result=await fetchSportCatalogue(type,from,to);
+    return {type,markets:result.markets,error:result.errors.length?result.errors.join("; "):null};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_sport:g.type.name})));
-  const books=[];
+  const books=[],bookErrors=[];
   for(let i=0;i<all.length;i+=40){
-    const result=await rpc("listMarketBook",{marketIds:all.slice(i,i+40).map(m=>m.marketId),
-      priceProjection:{priceData:["EX_BEST_OFFERS"],virtualise:true}});
-    books.push(...(result||[]));
+    const batch=all.slice(i,i+40);
+    const result=await fetchSportBooks(batch.map(m=>m.marketId));
+    books.push(...result.books);
+    if(result.errors.length) bookErrors.push({sports:[...new Set(batch.map(m=>m._sport))],message:result.errors.join("; ")});
   }
   const byId=new Map(books.map(b=>[b.marketId,b])),capturedAt=new Date().toISOString();
   const events=all.map(m=>{
@@ -143,13 +179,17 @@ async function loadSports() {
       isMarketDataDelayed:!!book.isMarketDataDelayed,source:"Betfair Exchange Delayed API",
       sourceDelayMaxSeconds:180,runners,favourite:favourite?{name:favourite.name,price:favourite.back.price,side:"BACK"}:null};
   }).filter(Boolean).sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
+  const errors=[
+    ...groups.filter(g=>g.error).map(g=>({sport:g.type.name,message:g.error})),
+    ...bookErrors.map(e=>({sport:e.sports.join(", "),message:"Market-book batch: "+e.message}))
+  ];
+  const pricedMarkets=events.filter(e=>e.runners.some(r=>r.back||r.lay)).length;
   return {events,eventTypes:types,capturedAt,from:from.toISOString(),to:to.toISOString(),
-    status:events.some(e=>e.runners.some(r=>r.back||r.lay))?"connected-delayed":"configured-no-quotes",
-    pricedMarkets:events.filter(e=>e.runners.some(r=>r.back||r.lay)).length,
+    status:pricedMarkets?"connected-delayed":errors.length?"partial":"configured-no-quotes",
+    pricedMarkets,
     backOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.back).length,0),
     layOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.lay).length,0),
-    errors:groups.filter(g=>g.error).map(g=>({sport:g.type.name,message:g.error})),
-    provider:"Betfair Exchange Delayed API",delayMaximumSeconds:180,
+    errors,provider:"Betfair Exchange Delayed API",delayMaximumSeconds:180,
     note:"Exchange BACK/LAY prices, not bookmaker fixed odds. Delayed data may be up to 180 seconds old."};
 }
 const server=http.createServer(async(req,res)=>{
