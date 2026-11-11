@@ -134,20 +134,32 @@ function allBookFavouritePanel(f){
 }
 
 function marketFavourite(race) {
-  const median=values=>{const x=values.slice().sort((a,b)=>a-b);return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null;};
-  const runners=(race.runners||[]).map(r=>{
-    const quotes=freshestQuotesByBook(r),prices=quotes.map(x=>x.price),consensus=median(prices);
-    if(consensus==null)return null;
-    const spread=prices.length>1?(Math.max(...prices)-Math.min(...prices))/consensus:1;
-    return {...r,consensus,quoteCount:quotes.length,spreadPct:+(spread*100).toFixed(1),
-      priceSource:quotes.length>1?"fresh multi-bookmaker median":"single fresh bookmaker quote"};
-  }).filter(Boolean).sort((x,y)=>x.consensus-y.consensus);
-  const fav=runners[0];if(!fav)return null;
-  const second=runners[1],gap=second?Math.max(0,(1/fav.consensus-1/second.consensus)/(1/fav.consensus)):0;
-  fav.gapPct=+(gap*100).toFixed(1);
-  const rawScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
-  fav.signalScore=fav.spreadPct>25?Math.min(rawScore,20):fav.spreadPct>15?Math.min(rawScore,45):fav.quoteCount<2?Math.min(rawScore,25):rawScore;
-  fav.signalLabel=fav.quoteCount>=3&&fav.spreadPct<=10&&fav.signalScore>=65?"STRONG MARKET AGREEMENT":fav.quoteCount>=2&&fav.spreadPct<=25?"CAUTION · CHECK PRICE":"LOW DATA CONFIDENCE";
+  const rows=(race.runners||[]).filter(r=>r.scratched!==true).map(r=>({...r,_quotes:freshestQuotesByBook(r)}));
+  const books=[...new Set(rows.flatMap(r=>r._quotes.map(q=>q.key)))];
+  if(!books.length)return null;
+  const stats=new Map(rows.map(r=>[r,{prob:[],votes:0,quotes:[]} ]));
+  for(const book of books){
+    const field=rows.map(r=>({runner:r,quote:r._quotes.find(q=>q.key===book)})).filter(x=>x.quote);
+    const total=field.reduce((sum,x)=>sum+1/x.quote.price,0); if(!total)continue;
+    const leader=field.slice().sort((a,b)=>(1/b.quote.price)-(1/a.quote.price))[0]?.runner;
+    for(const x of field){const s=stats.get(x.runner);s.prob.push((1/x.quote.price)/total);s.quotes.push(x.quote);if(x.runner===leader)s.votes++;}
+  }
+  const candidates=rows.map(r=>{
+    const s=stats.get(r),p=s.prob;if(!p.length)return null;
+    const avg=p.reduce((a,b)=>a+b,0)/p.length,sorted=p.slice().sort((a,b)=>a-b),mid=sorted[Math.floor((sorted.length-1)/2)];
+    const spread=p.length>1?Math.max(...p)-Math.min(...p):1,support=s.votes/books.length;
+    const coverage=Math.min(1,s.quotes.length/Math.min(5,Math.max(2,books.length)));
+    const age=s.quotes.reduce((n,q)=>n+(q.age??180),0)/s.quotes.length,freshness=Math.max(0,1-age/180);
+    const consistency=Math.max(0,1-spread/Math.max(mid,.01));
+    const rank=rows.filter(x=>{const v=stats.get(x).prob;return v.length&&v.reduce((a,b)=>a+b,0)/v.length<avg;}).length;
+    const strength=rows.length>1?rank/(rows.length-1):1;
+    const score=Math.round(35*support+25*strength+15*coverage+15*freshness+10*consistency);
+    const prices=s.quotes.map(q=>q.price).sort((a,b)=>a-b),consensus=prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2;
+    return {...r,consensus,quoteCount:s.quotes.length,agreementPct:Math.round(support*100),impliedProbability:+(avg*100).toFixed(1),meanQuoteAge:Math.round(age),
+      spreadPct:+((prices.length>1?(prices[prices.length-1]-prices[0])/consensus:1)*100).toFixed(1),priceSource:prices.length>1?'fresh multi-bookmaker median':'single fresh bookmaker quote',signalScore:score};
+  }).filter(Boolean).sort((a,b)=>b.signalScore-a.signalScore||b.agreementPct-a.agreementPct||b.impliedProbability-a.impliedProbability||b.quoteCount-a.quoteCount);
+  const fav=candidates[0];if(!fav)return null;fav.gapPct=candidates[1]?+(fav.impliedProbability-candidates[1].impliedProbability).toFixed(1):0;
+  fav.signalLabel=fav.quoteCount>=3&&fav.agreementPct>=60&&fav.spreadPct<=15&&fav.signalScore>=65?'STRONG MARKET AGREEMENT':fav.quoteCount>=2&&fav.signalScore>=45?'MODERATE · VERIFY PRICE':'LOW DATA CONFIDENCE';
   return fav;
 }
 // Best available display fallback for the Sportsbet panel:
@@ -175,7 +187,7 @@ function filteredRaces() {
   const q = state.search.toLowerCase();
   if (q) rows = rows.filter(r => `${r.venue||r.track_name||""} ${(r.runners||[]).map(x=>x.name).join(" ")}`.toLowerCase().includes(q));
   rows.sort((a,b) => state.sort === "odds"
-    ? (marketFavourite(a)?.consensus ?? 999) - (marketFavourite(b)?.consensus ?? 999)
+    ? (marketFavourite(b)?.signalScore ?? -1) - (marketFavourite(a)?.signalScore ?? -1)
     : new Date(a.start_time||0)-new Date(b.start_time||0));
   return rows;
 }
@@ -217,7 +229,7 @@ function raceCard(r, live=false) {
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ MARKET FAVOURITE · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${esc(fav.priceSource)} · ${fav.signalScore}/100 signal · ${fav.spreadPct}% price spread · ${fav.gapPct}% gap to next runner</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
+    <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
     <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${!bet365Fav?raceBookmakerPanel("Bet365",null,fav):""}${!sportsbetFav?raceBookmakerPanel("Sportsbet",null,fav):""}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
@@ -582,7 +594,7 @@ function render() {
     const publicDetails=[r.race_name||r.name,r.distance?(r.distance+"m"):null,r.grade||r.class||null,r.track_condition||r.trackCondition?("Track "+(r.track_condition||r.trackCondition)):null,r.weather?("Weather "+r.weather):null,r.prize_money?("Prize "+r.prize_money):null].filter(Boolean).map(esc).join(" · ");
     const fav=marketFavourite(r), favName=fav?(fav.name||fav.runner_name||fav.horse_name||fav.greyhound_name||"Runner"):"";
     const bookFavourites=allBookmakerFavourites(r);
-    const favPanel=fav?'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE · SHORTEST FIXED ODDS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>':'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
+    const favPanel=fav?'<div class="race-list-favourite"><div class="favourite-label">★ TOP MARKET CONSENSUS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>':'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
     const runners=(r.runners||[]).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999));
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
@@ -595,7 +607,7 @@ function render() {
     const bet365RaceFav=bookmakerFavourite(r,"bet365"), sportsbetRaceFav=sportsbetDisplayFavourite(r);
     const bookFavHtml='<div class="race-bookmaker-favourites"><b>Bookmaker favourites · prices and estimates clearly source-labelled</b>'+bookFavourites.map(allBookFavouritePanel).join("")+(!bet365RaceFav?raceBookmakerPanel("Bet365",null,fav):"")+raceBookmakerPanel("Sportsbet",sportsbetRaceFav,fav)+'</div>';
     const typeLabel=type==="horse"?"🐎 HORSE RACING":type==="greyhound"?"🐕 GREYHOUND RACING":"🏇 HARNESS RACING";
-    return '<article class="race-list-card '+(isLive?"is-live":"")+'"><div class="race-list-card-head"><div><div class="race-type">'+typeLabel+'</div><h3>'+esc(venue)+' · R'+esc(number)+'</h3><div class="race-meta">'+esc(date)+' · '+esc(time)+'</div>'+(publicDetails?'<div class="race-meta race-public-details">'+publicDetails+'</div>':"")+'</div><span class="race-status">'+(isLive?"LIVE NOW":"UPCOMING")+'</span></div>'+favPanel+bookFavHtml+'<div class="race-runners-ranked"><div class="race-runners-heading">ALL RUNNERS · RANKED LOWEST FIXED ODDS FIRST</div>'+(runnerRows||'<div class="empty compact-empty">No runners supplied by the feed yet.</div>')+'</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are separate from bookmaker fixed odds and are not used to rank this list.</span></div></article>';
+    return '<article class="race-list-card '+(isLive?"is-live":"")+'"><div class="race-list-card-head"><div><div class="race-type">'+typeLabel+'</div><h3>'+esc(venue)+' · R'+esc(number)+'</h3><div class="race-meta">'+esc(date)+' · '+esc(time)+'</div>'+(publicDetails?'<div class="race-meta race-public-details">'+publicDetails+'</div>':"")+'</div><span class="race-status">'+(isLive?"LIVE NOW":"UPCOMING")+'</span></div>'+favPanel+bookFavHtml+'<div class="race-runners-ranked"><div class="race-runners-heading">ALL RUNNERS · PRICE COMPARISON (CONSENSUS PICK ABOVE)</div>'+(runnerRows||'<div class="empty compact-empty">No runners supplied by the feed yet.</div>')+'</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are separate from bookmaker fixed odds and are not used to rank this list.</span></div></article>';
   };
   $("raceList").innerHTML=rows.length?'<section class="race-list-group"><h3>LIVE NOW <span>'+live.length+'</span></h3>'+(live.length?live.map(r=>rowHtml(r,true)).join(""):'<div class="empty compact-empty">The feed has not marked any race as live at this refresh.</div>')+'</section><section class="race-list-group"><h3>UPCOMING · SOONEST FIRST <span>'+upcoming.length+'</span></h3>'+(upcoming.length?upcoming.map(r=>rowHtml(r,false)).join(""):'<div class="empty compact-empty">No upcoming races returned right now.</div>')+'</section>':(state.feedMode==="public-widgets"?'<div class="empty">No imported race cards are available from the connected feeds at this refresh. Check the free live racing board above. <a href="#racingWidgets">Open live racing board ↗</a></div>':(state.feedMode==="demo"?'<div class="empty">No races in the free public preview at this moment.</div>':'<div class="empty">No Australian races returned by the connected feed at this refresh.</div>'));
   renderTopTips();
