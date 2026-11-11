@@ -1113,10 +1113,10 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
- const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"]];
+ const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"],["harness","harness-racing"]];
  const results=await Promise.allSettled(specs.map(([category,sport])=>
   publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport}).then(payload=>({category,sport,payload}))));
- const races=[],errors=["harness-racing: no harness-racing category is exposed by the current no-key Sportsbet snapshot endpoint; official Sportsbet harness schedule remains linked"];
+ const races=[],errors=[];
  for(let i=0;i<results.length;i++){
   const result=results[i],category=specs[i][0],sport=specs[i][1];
   if(result.status!=="fulfilled"){errors.push(sport+": "+result.reason.message);continue;}
