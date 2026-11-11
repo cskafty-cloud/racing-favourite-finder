@@ -1333,6 +1333,21 @@ async function getGlobalRaces() {
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
       });
+      // Collapse repeated selection rows so each runner appears once in rankings and cards.
+      const runnerMap=new Map();
+      for(const runner of runners){
+        const runnerKey=String(runner.number??"").trim()+"|"+String(runner.name||"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const previous=runnerMap.get(runnerKey);
+        if(!previous){runnerMap.set(runnerKey,runner);continue;}
+        if(runner.scratched)previous.scratched=true;
+        if(!previous.bookmakers.length&&runner.bookmakers.length)previous.bookmakers=runner.bookmakers;
+        else if(previous.bookmakers.length&&runner.bookmakers.length){
+          const old=previous.bookmakers[0],next=runner.bookmakers[0];
+          const oldAge=quoteAgeSecondsServer(old),nextAge=quoteAgeSecondsServer(next);
+          if(nextAge!=null&&(oldAge==null||nextAge<oldAge))previous.bookmakers=[next];
+        }
+      }
+      const uniqueRunners=[...runnerMap.values()];
       const rawStart=r.jump_utc||r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const start=typeof rawStart==="number"?(rawStart>1000000000000?new Date(rawStart).toISOString():new Date(rawStart*1000).toISOString()):rawStart;
       const venue=r.course||r.venue||r.track||r.meeting||r.name||"Track TBA";
@@ -1343,7 +1358,7 @@ async function getGlobalRaces() {
         race_number:r.race_number??r.number??null,distance_m:Number(String(r.distance||"").match(/[0-9]+/)?.[0])||null,
         each_way:r.each_way||null,updated_at:r.updated_at||null,
         start_time:start,country:r.country||"Australia",status,in_play:live,
-        closed:/abandon|result|closed/.test(status),runners};
+        closed:/abandon|result|closed/.test(status),runners:uniqueRunners};
     }).filter(r=>r.start_time&&!r.closed);
     if(races.length||publicRaceRows.length) {
       const supplemental=await loadSupplementalAustralianRaces();
