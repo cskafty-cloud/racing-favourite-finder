@@ -214,6 +214,15 @@ function moviSportMatches(item,sport){
  const wantedNames=[slug,sport.title,key].map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));
  return ids.includes(wanted)||ids.includes(key)||ids.includes(slug)||names.some(n=>wantedNames.includes(n));
 }
+function moviQuoteBookmakerKey(quote){
+ // MoviOdds aggregates multiple books. Never infer the bookmaker from the
+ // endpoint or event: every accepted price must identify its own bookmaker.
+ const raw=quote?.bookmaker_key??quote?.bookmakerKey??quote?.bookmaker??
+  quote?.bookmaker_name??quote?.bookmakerName??quote?.site??quote?.book??
+  quote?.sportsbook??quote?.operator??quote?.provider_name??null;
+ const value=raw&&typeof raw==="object"?(raw.key||raw.name||raw.slug||raw.title||raw.code||""):raw;
+ return canonicalBookmakerKey(value);
+}
 async function publicDemoRequest(pathname, params={}) {
   const url=new URL(BASE+pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
@@ -366,20 +375,45 @@ async function loadPublicDemoSport(sport) {
       const quotes=Array.isArray(match.quotes)?match.quotes:[];
       const groupIds=MOVI_WINNER_GROUPS[sport.key]||[];
       const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|3.?way result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
-      const outcomes=main.map(q=>({name:q.label||q.name||"Selection",price:Number(q.odds_dec??q.price)}))
-        .filter(q=>Number.isFinite(q.price)&&q.price>1);
-      if(!outcomes.length)continue;
+      const byBook=new Map();
+      for(const q of main){
+        const bookKey=moviQuoteBookmakerKey(q);
+        if(bookKey!=="bet365"&&bookKey!=="sportsbet")continue;
+        const name=q.label||q.name||q.selection||"Selection";
+        const price=Number(q.odds_dec??q.price??q.decimal_odds);
+        if(!Number.isFinite(price)||price<=1)continue;
+        if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:bookKey==="bet365"?"Bet365":"Sportsbet",
+          last_update:q.last_update||q.updated_at||match.updated_at||null,
+          age_seconds:q.age_seconds??q.quote_age_seconds??null,
+          markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds per-quote bookmaker identity"});
+        const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
+        const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
+        const outcome={name:String(name),price,last_update:q.last_update||q.updated_at||match.updated_at||null,
+          age_seconds:q.age_seconds??q.quote_age_seconds??null};
+        if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
+      }
+      if(!byBook.size)continue;
       const event={id:String(match.id||[match.home,match.away,match.kickoff_utc].join("|")),
         home_team:match.home||"Event",away_team:match.away||"",league:match.league||"",
         sport_name:sport.title,commence_time:match.kickoff_utc||null,in_play:!!match.in_play,
         status:match.in_play?"LIVE":"UPCOMING",score:match.score||null,
-        bookmakers:[{key:"bet365",name:"Bet365",last_update:match.updated_at||null,
-          markets:[{key:"h2h",name:"Head to head",outcomes}],public_demo:true}],_publicDemo:true};
-      const key=[event.home_team,event.away_team].join("|").toLowerCase();
+        bookmakers:[...byBook.values()],_publicDemo:true};
+      const key=[event.home_team,event.away_team,event.commence_time||"",event.league].join("|").toLowerCase();
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
       else{
         const target=rowsByKey.get(key);
-        for(const book of event.bookmakers)if(!target.bookmakers.some(x=>x.key===book.key))target.bookmakers.push(book);
+        for(const book of event.bookmakers){
+          const existing=target.bookmakers.find(x=>canonicalBookmakerKey(x.key||x.name)===book.key);
+          if(!existing)target.bookmakers.push(book);
+          else for(const market of book.markets||[]){
+            const existingMarket=(existing.markets||[]).find(x=>String(x.key)===String(market.key));
+            if(!existingMarket){existing.markets.push(market);continue;}
+            for(const outcome of market.outcomes||[]){
+              const old=existingMarket.outcomes.find(x=>String(x.name).toLowerCase()===String(outcome.name).toLowerCase());
+              if(old)Object.assign(old,outcome);else existingMarket.outcomes.push(outcome);
+            }
+          }
+        }
         if(event.in_play){target.in_play=true;target.status="LIVE";}
         if(!target.commence_time)target.commence_time=event.commence_time;
       }
