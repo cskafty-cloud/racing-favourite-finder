@@ -3,6 +3,7 @@ const http = require("node:http");
 const PORT = Number(process.env.PORT || 8080);
 const APP_KEY = process.env.BETFAIR_APP_KEY || "";
 const SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
+const PROXY_ACCESS_TOKEN = process.env.BETFAIR_FEED_TOKEN || "";
 const RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1";
 const CACHE_MS = 30000;
 let cache = new Map();
@@ -144,6 +145,8 @@ const server=http.createServer(async(req,res)=>{
   const path=req.url.split("?")[0];
   if(path==="/health")return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
     credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),routes:["/api/races","/api/sports"]}));
+  if(!PROXY_ACCESS_TOKEN){res.writeHead(503);return res.end(JSON.stringify({error:"BETFAIR_FEED_TOKEN is not configured."}));}
+  if(req.headers.authorization!=="Bearer "+PROXY_ACCESS_TOKEN){res.writeHead(401);return res.end(JSON.stringify({error:"Unauthorized"}));}
   try{
     if(path==="/api/races")return res.end(JSON.stringify(await cached("races",loadRaces)));
     if(path==="/api/sports")return res.end(JSON.stringify(await cached("sports",loadSports)));
