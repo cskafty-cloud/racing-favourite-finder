@@ -956,7 +956,21 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
             source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
           const prior=existing.bookmakers.findIndex(q=>bookmakerKey(q)===bookmakerId);
           if(prior<0) existing.bookmakers.push(quote);
-          else if(Date.parse(quote.last_update||"")>Date.parse(existing.bookmakers[prior].last_update||"")) existing.bookmakers[prior]=quote;
+          else {
+            // One bookmaker can return separate fixed and tote rows. Merge the
+            // distinct market fields instead of letting the last row erase the first.
+            const previous=existing.bookmakers[prior];
+            const oldStamp=Date.parse(previous.last_update||"")||0;
+            const newStamp=Date.parse(quote.last_update||"")||0;
+            const newer=newStamp>=oldStamp;
+            const merged={...(newer?previous:quote),...(newer?quote:previous)};
+            for(const field of ["win_price","fixed_win_price","place_price","fixed_place_price","tote_win_price","tote_place_price","each_way_terms"]) {
+              if(quote[field]==null&&previous[field]!=null)merged[field]=previous[field];
+              if(previous[field]==null&&quote[field]!=null)merged[field]=quote[field];
+            }
+            merged.market_types=[...new Set([...(previous.market_types||[previous.bookmaker_type||"fixed"]),...(quote.market_types||[quote.bookmaker_type||"fixed"])])];
+            existing.bookmakers[prior]=merged;
+          }
         }
       }
     }
