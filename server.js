@@ -1331,7 +1331,8 @@ let racingFeedHealth = {ok:false,status:"checking",fetchedAt:null,feedSource:nul
 const sportsFeedHealth = {};
 let liveSportsFeedHealth = {ok:false,status:"checking",fetchedAt:null,eventCount:0,errors:[]};
 function feedHealthStatus(at, errors=[]) {
-  const age=at?Math.max(0,(Date.now()-Date.parse(at))/1000):Infinity;
+  if(!at)return "checking";
+  const age=Math.max(0,(Date.now()-Date.parse(at))/1000);
   if(age<=180 && !errors.length)return "active";
   if(age<=600)return "partial";
   return "offline";
