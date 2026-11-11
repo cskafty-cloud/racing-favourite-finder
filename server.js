@@ -30,10 +30,10 @@ async function ensureBetfairSession(){
  if(betfairSessionKeepAliveInFlight)return betfairSessionKeepAliveInFlight;
  betfairSessionKeepAliveInFlight=(async()=>{
   try{
-   const response=await fetch("https://identitysso.betfair.com/api/keepAlive",{
+   const response=await fetch("https://identitysso.betfair.com.au/api/keepAlive",{
     method:"POST",
     headers:{"X-Application":BETFAIR_APP_KEY,"X-Authentication":BETFAIR_SESSION_TOKEN,
-     "Accept":"application/json","Content-Type":"application/json"},
+     "Accept":"application/json","Content-Type":"application/json","Accept-Encoding":"gzip, deflate"},
     signal:AbortSignal.timeout(15000)
    });
    const body=await response.text();let payload=null;
@@ -66,7 +66,9 @@ async function betfairRpc(method, params) {
       "Content-Type":"application/json",
       "X-Application":BETFAIR_APP_KEY,
       "X-Authentication":BETFAIR_SESSION_TOKEN,
-      "Accept":"application/json"
+      "Accept":"application/json",
+      "Accept-Encoding":"gzip, deflate",
+      "Connection":"keep-alive"
     },
     body:JSON.stringify([{jsonrpc:"2.0",method:"SportsAPING/v1.0/"+method,params,id:1}]),
     signal:AbortSignal.timeout(20000)
