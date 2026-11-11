@@ -605,6 +605,7 @@ async function loadAllSports(){
    renderSports();renderTopTips();
   }
   state.selectedSport=null;state.allSportsLoaded=true;
+  await loadFeedStatus();
   $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" live/upcoming fixtures across "+loaded+" of "+state.sports.length+" sports. "+(failed?failed+" feeds were incomplete or unavailable.":"All queried feeds responded.")+" Public feeds only return events and prices actually published; missing prices are not guessed.";
  }catch(e){$("sportsNotice").textContent="Some public sports feeds are temporarily unavailable. "+e.message;}
  finally{btn.disabled=false;}
@@ -621,19 +622,18 @@ function raceActivityScore(r) {
 }
 function renderFeedStatusRows(health){
  const rows=[["horse","🐎 HORSE RACING"],["greyhound","🐕 GREYHOUND RACING"],["harness","🏇 HARNESS RACING"]].map(([key,label])=>{
-  const item=health?.racing?.byCode?.[key],status=health?.racing?.status||"checking";
+  const item=health?.racing?.byCode?.[key],status=item?.status||health?.racing?.status||"checking";
   const dot=status==="active"?"active":status==="partial"?"partial":status==="offline"?"offline":"checking";
-  const count=item?.races??0,live=item?.live??0;
-  const message=status==="offline"?"FEED OFFLINE":status==="checking"?"CHECKING FEED":live+" LIVE · "+count+" RACES RETURNED";
+  const count=item?.races??0,live=item?.live??0,age=item?.ageSeconds;
+  const message=status==="offline"?"FEED OFFLINE":status==="checking"?"CHECKING FEED":(age!=null?"CONNECTED · "+age+"s ago · ":"CONNECTED · ")+live+" LIVE · "+count+" RACES"+(health?.racing?.qualityStatus==="partial"?" · LIMITED SOURCE COVERAGE":"");
   return '<div class="feed-status-item"><span class="feed-dot '+dot+'"></span><span><b>'+label+'</b><small>'+message+'</small></span></div>';
  }).join("");
- const liveStatus=health?.liveSports?.status||"checking";
  const sports=Object.values(health?.sports||{});
  const connectedSports=sports.filter(x=>x.status==="active"||x.status==="partial").length;
- const fullyActiveSports=sports.filter(x=>x.status==="active").length;
  const sportCount=health?.liveSports?.eventCount??0;
- const sportStatus=sports.length?(fullyActiveSports===sports.length?"active":connectedSports?"partial":"offline"):liveStatus;
- const sportsRow='<div class="feed-status-item"><span class="feed-dot '+sportStatus+'"></span><span><b>🏆 ALL SPORTS</b><small>'+(sportStatus==="offline"?"FEEDS OFFLINE":sportStatus==="checking"?"CHECKING SPORTS FEEDS":connectedSports+"/"+sports.length+" SPORTS FEEDS RESPONDING · "+sportCount+" LIVE EVENTS")+'</small></span></div>';
+ const sportStatus=sports.length?(connectedSports===sports.length?"active":connectedSports?"partial":"offline"):(health?.liveSports?.status||"checking");
+ const sportAge=health?.liveSports?.ageSeconds;
+ const sportsRow='<div class="feed-status-item"><span class="feed-dot '+sportStatus+'"></span><span><b>🏆 ALL SPORTS</b><small>'+(sportStatus==="offline"?"SPORTS FEEDS OFFLINE":sportStatus==="checking"?"CHECKING SPORTS FEEDS":connectedSports+"/"+sports.length+" SPORT FEEDS CONNECTED · "+sportCount+" LIVE EVENTS"+(sportAge!=null?" · CHECKED "+sportAge+"s AGO":""))+'</small></span></div>';
  for(const id of ["entryFeedStatuses","dashboardFeedStatuses"]){const el=$(id);if(el)el.innerHTML=rows+sportsRow;}
  const headerDot=document.querySelector(".top-right .live-dot");
  if(headerDot){headerDot.className="live-dot "+(health?.racing?.status==="active"?"active":health?.racing?.status==="partial"?"partial":health?.racing?.status==="offline"?"offline":"checking");}
@@ -645,7 +645,7 @@ async function loadFeedStatus(){
 }
 function updateEntryHorseStatus() {
  const el=$("entryHorseStatus");if(!el)return;
- const status=state.feedHealth?.racing?.status||"checking";
+ const status=state.feedHealth?.racing?.byCode?.horse?.status||state.feedHealth?.racing?.status||"checking";
  el.classList.remove("checking","active","upcoming","partial","offline");
  el.classList.add(status==="active"?"active":status==="partial"?"partial":status==="offline"?"offline":"checking");
  const horse=state.feedHealth?.racing?.byCode?.horse||{races:0,live:0};
