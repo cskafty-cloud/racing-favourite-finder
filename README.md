@@ -54,3 +54,28 @@ Railway supports Node services and server-side environment variables. This app i
 - Best available BACK and LAY prices are preserved as separate exchange quotes, with available size and feed observation time. The delayed feed may be up to 180 seconds behind.
 - Exchange quotes are labelled **Betfair Exchange**, not Sportsbet, Bet365 or TAB. They are excluded from bookmaker fixed-odds favourite selection, bookmaker quote counts and fixed-odds comparisons.
 - If the two Betfair credentials are not configured, the dashboard reports that status instead of pretending the feed is connected. Do not add credentials unless the account owner supplies them.
+
+
+## Australian Betfair Exchange adapter (read-only)
+
+The `betfair-au-proxy` service now exposes:
+- `GET /health` — reports region and whether credentials are configured (never returns secrets).
+- `GET /api/races` — Australian horse, greyhound and harness WIN and PLACE markets, preserving Exchange BACK and LAY offers separately.
+- `GET /api/sports` — upcoming/in-play sports Exchange markets, with separate BACK and LAY offers, market timestamps and delayed-data metadata.
+
+This adapter must run on a host whose outbound IP is in a Betfair-permitted Australian location. It cannot run on Railway's currently available regions to solve the documented Cloudflare geo block. Do not deploy it to another restricted region, use a VPN/proxy to evade restrictions, or assume a successful build means the feed is connected.
+
+### Connect adapter to the main Railway app
+
+After deploying the adapter on a permitted Australian host:
+1. Set `BETFAIR_APP_KEY` and `BETFAIR_SESSION_TOKEN` as private environment variables on the adapter service only.
+2. Set `BETFAIR_FEED_URL` on the main Railway service to the adapter's full `/api/races` URL.
+3. Set `BETFAIR_SPORTS_FEED_URL` on the main Railway service to the adapter's full `/api/sports` URL.
+4. Confirm `/health` reports Australia and credentials configured; then check both adapter endpoints return actual market prices and timestamps.
+5. Confirm the main app reports priced BACK/LAY offers. A successful health check or event catalogue alone is not proof of a working odds feed.
+
+The main app keeps Exchange prices separate from fixed Sportsbet/Bet365 bookmaker prices. Never count Exchange offers as fixed-odds bookmaker quotes or bookmaker favourites.
+
+### No-card/local-host option
+
+If no Australian cloud host is available, the proxy can run on an Australian Windows PC with Node.js 22 or newer. The PC must remain powered on and connected. A local `localhost` URL is not reachable from Railway; a secure, authenticated inbound connection and stable public endpoint would still be needed. Do not expose the proxy publicly without authentication. This option has not been deployed or connected automatically.
