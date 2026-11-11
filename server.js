@@ -1113,7 +1113,7 @@ function sportsbetDemoPrice(runner){
  }
  return null;
 }
-function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
+function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker="sportsbet"){
  const venueRaw=item.venue||item.track_name||item.track||item.meeting_name||item.meeting||item.event_name||item.event||item.name||"Sportsbet meeting";
  const venue=typeof venueRaw==="object"?(venueRaw.name||venueRaw.venue||"Sportsbet meeting"):String(venueRaw);
  const title=String(item.race_name||item.name||item.event_name||"");
@@ -1129,40 +1129,44 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt){
   if(!name)return null;
   const price=sportsbetDemoPrice(r);
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
-  const bookmakers=price? [{key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
+  const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
+  const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,
    last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
    age_seconds:r.age_seconds??r.quote_age_seconds??null,stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
    source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
- const id=String(item.id||item.race_id||item.event_id||["sportsbet",category,venue,raceNumber,start].join("-"));
+ const id=String(item.id||item.race_id||item.event_id||[bookmaker,category,venue,raceNumber,start].join("-"));
  return {id,race_id:id,category,code:category,venue,track:venue,race_number:Number.isFinite(raceNumber)&&raceNumber>0?raceNumber:null,
   start_time:start,country:"Australia",status:item.status||"scheduled",in_play:item.in_play===true||item.inPlay===true,
-  runners,sportsbet_url:sourceUrl,sportsbet_public:true,updated_at:item.updated_at||updatedAt||null};
+  runners,bookmaker_source_url:sourceUrl,sportsbet_url:bookKey==="sportsbet"?sourceUrl:null,bet365_url:bookKey==="bet365"?sourceUrl:null,public_bookmaker:bookKey,updated_at:item.updated_at||updatedAt||null};
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
- const specs=[["horse","horse-racing"],["greyhound","greyhound-racing"],["harness","harness-racing"]];
- const results=await Promise.allSettled(specs.map(([category,sport])=>
-  publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport}).then(payload=>({category,sport,payload}))));
+ const specs=[
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],["harness","harness-racing","sportsbet"],
+  ["horse","horse-racing","bet365"],["greyhound","greyhound-racing","bet365"],["harness","harness-racing","bet365"]
+ ];
+ const results=await Promise.allSettled(specs.map(([category,sport,book])=>
+  publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
  const races=[],errors=[];
  for(let i=0;i<results.length;i++){
-  const result=results[i],category=specs[i][0],sport=specs[i][1];
-  if(result.status!=="fulfilled"){errors.push(sport+": "+result.reason.message);continue;}
+  const result=results[i],category=specs[i][0],sport=specs[i][1],book=specs[i][2];
+  if(result.status!=="fulfilled"){errors.push(book+" "+sport+": "+result.reason.message);continue;}
   const payload=result.value.payload,items=publicDemoItems(payload);
-  if(payload.has_data===false)errors.push(sport+": no public Sportsbet snapshot returned");
-  const sourceUrl=category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":
-   category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":
-   "https://www.sportsbet.com.au/racing-schedule/harness/today";
+  if(payload.has_data===false)errors.push(book+" "+sport+": no public bookmaker snapshot returned");
+  const sourceUrl=book==="sportsbet"
+   ?(category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":"https://www.sportsbet.com.au/racing-schedule/harness/today")
+   :(category==="horse"?"https://www.bet365.com.au/#/HO/":category==="greyhound"?"https://www.bet365.com.au/#/HO/": "https://www.bet365.com.au/#/HO/");
   for(const item of items){
-   const race=normalizeSportsbetDemoRace(item,category,sourceUrl,payload.updated_at||payload.fetched_at||null);
+   const race=normalizeSportsbetDemoRace(item,category,sourceUrl,payload.updated_at||payload.fetched_at||null,book);
    if(race.race_number||race.runners.length)races.push(race);
   }
  }
  sportsbetRacingDemoCache={at:Date.now(),races,errors};
- console.info("SPORTSBET_PUBLIC_RACING_DEMO",JSON.stringify({raceItems:races.length,
-  pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.some(q=>q.key==="sportsbet"))).length,
-  runnerQuotes:races.reduce((n,r)=>n+r.runners.filter(x=>x.bookmakers.some(q=>q.key==="sportsbet")).length,0),errors}));
+ console.info("PUBLIC_BOOKMAKER_RACING_DEMO",JSON.stringify({raceItems:races.length,
+  sportsbet:races.filter(r=>(r.runners||[]).some(x=>x.bookmakers.some(q=>q.key==="sportsbet"))).length,
+  bet365:races.filter(r=>(r.runners||[]).some(x=>x.bookmakers.some(q=>q.key==="bet365"))).length,errors}));
  return races;
 }
 
