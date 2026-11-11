@@ -577,7 +577,11 @@ async function loadSportResults(sportId){
 function isSportEventLive(e){const s=String(e.status||e.state||e.event_status||"").toLowerCase();return e.in_play===true||e.live===true||["live","in_play","in-play","started","in progress"].includes(s);}
 function renderSports(){
  const catalogue=$("sportsCatalogue"),list=$("sportsEvents");if(!catalogue||!list)return;
- catalogue.innerHTML=(state.sports||[]).map(s=>'<button class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+'</button>').join("");
+ catalogue.innerHTML=(state.sports||[]).map(s=>{
+  const status=s.feed_status||"catalogue-only",count=Number(s.event_count||0);
+  const detail=count?count+" fixtures":status==="no-upcoming-fixtures"?"no upcoming fixtures":status==="feed-unavailable"?"feed unavailable":status==="fixtures-only"?"fixtures · no verified prices":"checking fixtures";
+  return '<button title="'+esc(status)+'" class="sport-chip '+(state.selectedSport===s.key?"selected":"")+'" data-sport="'+esc(s.key)+'">'+esc(s.title||s.key)+' <small>'+esc(detail)+'</small></button>';
+ }).join("");
  const events=(state.sportEvents||[]).slice().filter(e=>isSportEventLive(e)||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now()).sort((a,b)=>{
   const al=isSportEventLive(a),bl=isSportEventLive(b);if(al!==bl)return al?-1:1;
   const ta=Date.parse(a.commence_time||""),tb=Date.parse(b.commence_time||"");
@@ -636,8 +640,10 @@ async function loadSports(){
 async function loadSportOdds(key){
  state.selectedSport=key;$("sportsNotice").textContent="Loading "+key+" fixtures…";
  try{const r=await fetch("/api/public-sports/"+encodeURIComponent(key)),d=await r.json();if(!r.ok)throw Error(d.error||"Odds unavailable");if(state.selectedSport!==key)return;
- state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;recordSportTrends(key,state.sportEvents);
- $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Bookmaker odds snapshot: "+new Date(d.fetchedAt||Date.now()).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane"})+(d.rapidSport?" · RapidOdds "+d.rapidSport+": "+d.rapidGames+" fixtures":"")+(d.rapidError?" · RapidOdds issue: "+d.rapidError:"")+(d.providerErrors&&d.providerErrors.length?" · "+d.providerErrors.join(" · "):"");
+ state.sportEvents=d.events||[];state.sportsByKey[key]=state.sportEvents;
+ const selected=(state.sports||[]).find(x=>x.key===key);if(selected)Object.assign(selected,{event_count:d.eventCount??state.sportEvents.length,live_count:d.liveCount??state.sportEvents.filter(isSportEventLive).length,priced_count:d.pricedCount??0,verified_quote_count:d.verifiedQuoteCount??0,feed_status:d.feedStatus||"fixtures-only"});
+ recordSportTrends(key,state.sportEvents);
+ $("sportsNotice").textContent=(d.note||"Pre-match markets only.")+" Status: "+(d.feedStatus||"fixtures-only")+" · "+(d.eventCount??state.sportEvents.length)+" fixtures · "+(d.pricedCount??0)+" with prices · "+(d.verifiedQuoteCount??0)+" verified fresh quotes."+(d.providerErrors&&d.providerErrors.length?" · "+d.providerErrors.join(" · "):"");
  renderSports();
  }catch(e){$("sportsNotice").textContent="Live fixtures are temporarily unavailable from the connected feed. The public sports widgets and bookmaker market links remain on this page. "+e.message;}
 }
@@ -652,19 +658,23 @@ async function loadAllSports(){
    const results=await Promise.allSettled(batch.map(async s=>{
     const response=await fetch("/api/public-sports/"+encodeURIComponent(s.key)+"?mode=all");
     const data=await response.json();if(!response.ok)throw Error(data.error||"Feed unavailable");
-    const events=(data.events||[]).filter(e=>isSportEventLive(e)||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
-    return {sport:s,events,errors:data.providerErrors||[]};
+    const events=(data.events||[]).filter(e=>isSportEventLive(e)||(e.commence_time&&Number.isFinite(Date.parse(e.commence_time))&&Date.parse(e.commence_time)>=Date.now()));
+    return {sport:s,events,errors:data.providerErrors||[],feedStatus:data.feedStatus||"no-upcoming-fixtures",eventCount:data.eventCount??events.length,liveCount:data.liveCount??events.filter(isSportEventLive).length,pricedCount:data.pricedCount??0,verifiedQuoteCount:data.verifiedQuoteCount??0};
    }));
    for(let i=0;i<results.length;i++){
-    const result=results[i];if(result.status!=="fulfilled"){failed++;continue;}
-    const {sport,events,errors}=result.value;state.sportsByKey[sport.key]=events;recordSportTrends(sport.key,events);loaded++;if(errors.length)failed++;
+    const result=results[i];if(result.status!=="fulfilled"){failed++;const unavailable=batch[i];if(unavailable)Object.assign(unavailable,{feed_status:"feed-unavailable",event_count:0,live_count:0,priced_count:0,verified_quote_count:0});continue;}
+    const {sport,events,errors,feedStatus,eventCount,liveCount,pricedCount,verifiedQuoteCount}=result.value;
+    state.sportsByKey[sport.key]=events;Object.assign(sport,{feed_status:feedStatus,event_count:eventCount,live_count:liveCount,priced_count:pricedCount,verified_quote_count:verifiedQuoteCount});
+    recordSportTrends(sport.key,events);loaded++;if(errors.length)failed++;
    }
    state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>{const al=isSportEventLive(a),bl=isSportEventLive(b);if(al!==bl)return al?-1:1;const ta=Date.parse(a.commence_time||""),tb=Date.parse(b.commence_time||"");if(!Number.isFinite(ta)&&!Number.isFinite(tb))return 0;if(!Number.isFinite(ta))return 1;if(!Number.isFinite(tb))return -1;return ta-tb;});
    renderSports();renderTopTips();
   }
   state.selectedSport=null;state.allSportsLoaded=true;
   await loadFeedStatus();
-  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" live/upcoming fixtures across "+loaded+" of "+state.sports.length+" sports. "+(failed?failed+" feeds were incomplete or unavailable.":"All queried feeds responded.")+" Public feeds only return events and prices actually published; missing prices are not guessed.";
+  const withFixtures=state.sports.filter(s=>Number(s.event_count||0)>0).length;
+  const withVerified=state.sports.filter(s=>Number(s.verified_quote_count||0)>0).length;
+  $("sportsNotice").textContent="Loaded "+state.sportEvents.length+" actual live/upcoming fixtures across "+withFixtures+" sports. "+withVerified+" sports returned timestamp-verified bookmaker prices; "+(state.sports.length-withFixtures)+" catalogue entries had no upcoming fixtures. "+(failed?failed+" feeds were incomplete or unavailable.":"All queried feeds responded.")+" Missing prices are never estimated.";
  }catch(e){$("sportsNotice").textContent="Some public sports feeds are temporarily unavailable. "+e.message;}
  finally{btn.disabled=false;}
 }
@@ -687,7 +697,7 @@ function renderFeedStatusRows(health){
   return '<div class="feed-status-item"><span class="feed-dot '+dot+'"></span><span><b>'+label+'</b><small>'+message+'</small></span></div>';
  }).join("");
  const sports=Object.values(health?.sports||{});
- const connectedSports=sports.filter(x=>x.status==="active"||x.status==="partial").length;
+ const connectedSports=sports.filter(x=>["active","partial","fixtures-only","fixtures-and-verified-prices","no-upcoming-fixtures"].includes(x.status)).length;
  const sportCount=health?.liveSports?.eventCount??0;
  const sportStatus=sports.length?(connectedSports===sports.length?"active":connectedSports?"partial":"offline"):(health?.liveSports?.status||"checking");
  const sportAge=health?.liveSports?.ageSeconds;
