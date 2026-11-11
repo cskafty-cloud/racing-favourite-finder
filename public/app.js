@@ -302,13 +302,50 @@ function sportsbetMarketFavourite(race,field) {
  }
  return rows.sort((a,b)=>a.price-b.price)[0]||null;
 }
+function indicativeMarketFavourite(race,field) {
+ const getter=field==="fixed_win"?racingWinPrice:field==="fixed_place"?racingPlacePrice:field==="tote_win"?racingToteWinPrice:racingTotePlacePrice;
+ const grouped=new Map();
+ for(const runner of race.runners||[]) {
+  if(runner.scratched===true||runner.suspended===true)continue;
+  for(const q of runnerPrices(runner)) {
+   const key=bookmakerKeyForLink(q);
+   if(bookmakerMatches(key,"sportsbet")||isBetfairQuote(q)||q.suspended||q.stale||!quoteIsCurrent(q))continue;
+   const price=getter(q);
+   if(!Number.isFinite(price)||price<=1)continue;
+   const id=String(runner.number??runner.runner_number??runner.box??normaliseRunnerName(runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner"));
+   if(!grouped.has(id))grouped.set(id,{runner,prices:[]});
+   grouped.get(id).prices.push(price);
+  }
+ }
+ const candidates=[...grouped.values()].map(({runner,prices})=>{
+  prices.sort((a,b)=>a-b);
+  const mid=prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2;
+  return {name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??runner.box??null,price:mid,quoteCount:prices.length,indicative:true};
+ });
+ return candidates.sort((a,b)=>a.price-b.price)[0]||null;
+}
 function sportsbetMarketPanels(race) {
  const markets=[
   ["FIXED WIN","fixed_win"],["FIXED PLACE","fixed_place"],["TOTE WIN","tote_win"],["TOTE PLACE","tote_place"]
  ];
  const panels=markets.map(([label,key])=>{
-  const f=sportsbetMarketFavourite(race,key);
-  const detail=f?'<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>
+  const exact=sportsbetMarketFavourite(race,key);
+  const estimate=exact?null:indicativeMarketFavourite(race,key);
+  const f=exact||estimate;
+  const detail=exact
+   ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>Sportsbet verified · '+(f.age==null?'age unknown':Math.round(f.age)+'s')+' · '+esc(label)+'</small>'
+   : estimate
+    ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>INDICATIVE '+esc(label)+' · cross-bookmaker median · NOT a Sportsbet quote · '+f.quoteCount+' quote(s)</small>'
+    : '<span class="book-fav-missing">No Sportsbet quote or current cross-bookmaker '+label.toLowerCase()+' estimate available.</span>';
+  return '<div class="book-fav"><div class="book-fav-label">SPORTSBET '+label+' FAVOURITE</div>'+detail+'</div>';
+ }).join("");
+ const fixedWin=sportsbetMarketFavourite(race,"fixed_win")||indicativeMarketFavourite(race,"fixed_win");
+ const place=sportsbetMarketFavourite(race,"fixed_place")||indicativeMarketFavourite(race,"fixed_place");
+ const eachWay=fixedWin
+  ? '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY · INDICATIVE ONLY</div><b>'+esc((fixedWin.number!=null?fixedWin.number+'. ':'')+fixedWin.name)+'</b><small>WIN '+(fixedWin.price?'$'+fixedWin.price.toFixed(2):'unavailable')+' · PLACE '+(place&&place.price?'$'+place.price.toFixed(2):'unavailable')+' · These are cross-bookmaker estimates, not Sportsbet each-way terms or prices.</small></div>'
+  : '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY</div><span class="book-fav-missing">No current fixed WIN estimate available.</span></div>';
+ return panels+eachWay;
+}
 function sportsbetPlacePanel(favourite) {
  const details=favourite
   ? '<div class="book-fav-runner">'+esc((favourite.number!=null?favourite.number+'. ':'')+favourite.name)+'</div><div class="book-fav-price">
