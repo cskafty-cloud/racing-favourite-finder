@@ -241,7 +241,7 @@ function addPublicOutcome(event, bookKey, name, price, updatedAt=null, ageSecond
   if(!book){book={key,name:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":String(bookKey||"Unknown"),last_update:updatedAt,age_seconds:ageSeconds,source:"PuntersEdge public best-market endpoint",markets:[]};event.bookmakers.push(book);}
   let market=book.markets.find(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
   if(!market){market={key:"h2h",name:"Head to head",outcomes:[]};book.markets.push(market);}
-  const candidate={name:String(name),price:Number(price),age_seconds:ageSeconds,last_update:updatedAt,source:"PuntersEdge public best-market endpoint"};
+  const candidate={name:String(name),price:Number(price),age_seconds:ageSeconds,last_update:updatedAt,observed_at:new Date().toISOString(),source:"PuntersEdge public best-market endpoint"};
   const existing=market.outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
   const oldAge=existing?quoteAgeSecondsServer(existing):null,newAge=quoteAgeSecondsServer(candidate);
   if(!existing||newAge!=null&&(oldAge==null||newAge<oldAge)) {
@@ -265,12 +265,13 @@ function normalizePublicBookSport(item, book, sport) {
   const explicitLive=item.in_play===true||item.inplay===true||/^(live|in.?play|running)$/i.test(String(item.status||""));
   const canonical=canonicalBookmakerKey(book);
   const knownAges=outcomes.map(o=>quoteAgeSecondsServer(o)).filter(x=>x!=null);
-  const cleanOutcomes=outcomes.map(({name,price,age_seconds,last_update,source})=>({name,price,age_seconds,last_update,source}));
+  const observedAt=new Date().toISOString();
+  const cleanOutcomes=outcomes.map(({name,price,age_seconds,last_update,source})=>({name,price,age_seconds,last_update,observed_at:observedAt,source}));
   return {id:String(item.id||item.event_id||[home,away,start].join("|")),home_team:home||"Event",away_team:away,
     league:item.league||item.competition||item.tournament||"",sport_name:sport.title,commence_time:start,
     in_play:explicitLive,status:explicitLive?"LIVE":"UPCOMING",score:item.score||item.ss||null,
     bookmakers:cleanOutcomes.length?[{key:canonical,name:canonical==="sportsbet"?"Sportsbet":"Bet365",
-      age_seconds:knownAges.length?Math.max(...knownAges):null,last_update:item.last_update||item.updated_at||null,
+      age_seconds:knownAges.length===outcomes.length?Math.max(...knownAges):null,last_update:item.last_update||item.updated_at||null,observed_at:observedAt,
       source:"PuntersEdge public bookmaker-specific endpoint",stale:item.stale===true,
       markets:[{key:"h2h",name:"Head to head",outcomes:cleanOutcomes}]}]:[],_publicDemo:true};
 }
@@ -496,11 +497,16 @@ function bookmakerKey(q) {
   return canonicalBookmakerKey([q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).join(" "));
 }
 function quoteAgeSecondsServer(q) {
-  if(q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds)))return Math.max(0,Number(q.age_seconds));
+  const direct=q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds))?Math.max(0,Number(q.age_seconds)):null;
   const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
-  if(stamp==null)return null;
-  const numeric=Number(stamp),ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
-  return Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+  const numeric=Number(stamp),ms=stamp==null?NaN:(Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp));
+  const stamped=Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+  const observed=q?.observed_at?Date.parse(q.observed_at):NaN;
+  const elapsed=Number.isFinite(observed)?Math.max(0,(Date.now()-observed)/1000):0;
+  const agedDirect=direct==null?null:direct+elapsed;
+  if(agedDirect!=null&&stamped!=null)return Math.max(agedDirect,stamped);
+  if(agedDirect!=null)return agedDirect;
+  return stamped;
 }
 function runnerQuotes(runner) {
   // Unknown-age and older-than-three-minute prices are not current quotes.
