@@ -1987,7 +1987,10 @@ function dedupeRaces(input) {
         // Preserve one row per bookmaker AND source class. A timestamped
         // licensed Sportsbet quote and an untimestamped public Sportsbet preview
         // can coexist; the preview must not overwrite the verified quote (or vice versa).
-        const ix=existing.bookmakers.findIndex(x=>bookmakerKey(x)===qkey&&Boolean(x.public_demo)===Boolean(q.public_demo));
+        const quoteClass=x=>x.exchange===true
+          ?String(x.market_type||x.place_market_type||"exchange")+"|"+String(x.price_side||"")
+          :String(x.source||x.provider||"");
+        const ix=existing.bookmakers.findIndex(x=>bookmakerKey(x)===qkey&&Boolean(x.public_demo)===Boolean(q.public_demo)&&quoteClass(x)===quoteClass(q));
         if(ix<0)existing.bookmakers.push(q);
         else {
           const old=existing.bookmakers[ix], fresh=Date.parse(q.last_update||q.updated_at||""), prior=Date.parse(old.last_update||old.updated_at||"");
@@ -2088,7 +2091,7 @@ app.get("/api/races", async (_req, res) => {
     if(/Krok Odds|429|monthly api limit/i.test(raw)) safeWarnings.push({feed:"Krok Odds",message:"Monthly API quota reached; waiting for provider reset."});
     if(/Betfair|403|fetch failed/i.test(raw)) safeWarnings.push({feed:"Betfair",message:"The current hosting route cannot access the Betfair feed."});
     res.set("Cache-Control","no-store");
-    res.json({races:[],providerBookmakers:[],mode:"public-widgets",feedSource:"Free public racing widgets",
+    res.json({races:[],providerBookmakers:[],betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":"configured-but-unavailable",exchangeWinQuotes:0,exchangePlaceQuotes:0,mode:"public-widgets",feedSource:"Free public racing widgets",
       fetchedAt:new Date().toISOString(),scheduleFetchedAt:null,oddsFetchedAt:null,scope:"Australia",
       feedErrors:safeWarnings,note:"The authenticated race-card feeds are temporarily unavailable. Free public racing widgets and official Australian racing links remain below. No sample races or estimated prices are shown."});
   }
