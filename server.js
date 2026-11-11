@@ -617,6 +617,7 @@ async function recordMarketSnapshots(races, capturedAt) {
 function canonicalBookmakerKey(value) {
   const key=String(value||"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]/g,"");
   if(/sportsbet|sportsbetcomau|sbcomau/.test(key))return "sportsbet";
+  if(/pointsbet|pointsbetcomau/.test(key))return "pointsbet";
   if(/bet365|betthree65/.test(key))return "bet365";
   if(/betfair|exchange/.test(key))return "betfair";
   if(key.includes("tabtouch"))return "tabtouch";
