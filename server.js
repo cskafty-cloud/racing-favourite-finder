@@ -755,12 +755,13 @@ const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
 const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
 let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null,errors:[]};
 let krokRetryAt = 0;
-async function fetchKrokRacing(date, raceType) {
+async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
   url.searchParams.set("date",date);
-  // Free tier allows 10 racing rows per request; split by code.
+  // Filter to Sportsbet before the free-tier 10-row cap is applied.
   url.searchParams.set("race_type",raceType);
+  url.searchParams.set("bookmaker",bookmaker);
   url.searchParams.set("limit","10");
   const response = await fetch(url,{headers:{"X-API-Key":KROKODDS_API_KEY},signal:AbortSignal.timeout(20000)});
   const body = await response.text();
@@ -779,7 +780,7 @@ async function fetchKrokRacing(date, raceType) {
     runnerSample:sourceRows[0]?.races?.[0]?.runners?.[0]||null
   }));
   for (const bookRow of sourceRows) {
-    const book = bookRow.bookmaker_key || bookRow.bookmaker || "Unknown bookmaker";
+    const book = bookRow.bookmaker_key || bookRow.bookmaker || bookmaker || "Unknown bookmaker";
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
     const rawType = valueOf(bookRow, ["race_type","raceType","race_code","code","category","sport","type"]);
       const code = String(rawType || "").trim().toUpperCase();
@@ -807,14 +808,15 @@ async function fetchKrokRacing(date, raceType) {
         const number=runner.number??runner.runner_number??null;
         let existing=target.runners.find(x=>number!=null?String(x.number)===String(number):normalizeName(x.name)===normalizeName(name));
         if(!existing){existing={number,name,bookmakers:[]};target.runners.push(existing);}
-        const winRaw=runner.fixed_win??runner.win??runner.win_price??runner.odds;
-        const placeRaw=runner.fixed_place??runner.place??runner.place_price;
+        const winRaw=runner.fixed_win??runner.fixed_win_price??runner.win??runner.win_price??runner.win_odds??runner.odds;
+        const placeRaw=runner.fixed_place??runner.fixed_place_price??runner.place??runner.place_price;
         const win=Number(winRaw), place=Number(placeRaw);
         if(!runner.scratched && Number.isFinite(win)&&win>1) {
-          const bookmakerId=String(book).toLowerCase().replace(/[^a-z0-9]/g,"");
+          const bookmakerId=canonicalBookmakerKey(book);
           const quote={bookmaker:book,name:book,key:bookmakerId,win_price:win,
-            place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:null,
-            last_update:runner.captured_at||runner.updated_at||bookRow.captured_at||null,url:runner.bet_link||null};
+            place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:runner.age_seconds??bookRow.age_seconds??null,
+            last_update:runner.captured_at||runner.updated_at||runner.last_update||bookRow.captured_at||bookRow.updated_at||null,
+            observed_at:new Date().toISOString(),source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
           const prior=existing.bookmakers.findIndex(q=>bookmakerKey(q)===bookmakerId);
           if(prior<0) existing.bookmakers.push(quote);
           else if(Date.parse(quote.last_update||"")>Date.parse(existing.bookmakers[prior].last_update||"")) existing.bookmakers[prior]=quote;
@@ -837,7 +839,7 @@ async function getKrokRaces() {
   if(!krokRacingCache.at || now-krokRacingCache.at>=60000) {
     const codes=["T","G","H"];
     const results=await Promise.all(codes.map(async code=>{
-      try { return await fetchKrokRacing(today,code); }
+      try { return await fetchKrokRacing(today,code,"sportsbet"); }
       catch(error) { return {races:[],meta:null,creditsRemaining:null,error:code+": "+error.message}; }
     }));
     const races=results.flatMap(x=>x.races||[]);
@@ -848,7 +850,8 @@ async function getKrokRaces() {
       creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
     console.info("KROK_RACING_FEED",JSON.stringify({at:new Date(krokRacingCache.at).toISOString(),
       raceCount:races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,races.filter(r=>r.category===k).length])),
-      pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length,
+      pricedRaces:races.filter(r=>r.runners.some(x=>x.bookmakers.some(q=>bookmakerKey(q)==="sportsbet"))).length,
+      sportsbetQuotes:races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.filter(q=>bookmakerKey(q)==="sportsbet").length,0),0),
       runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,
       retryAt:krokRetryAt?new Date(krokRetryAt).toISOString():null,errors}));
   }
@@ -925,12 +928,12 @@ async function loadSupplementalAustralianRaces() {
   // RapidOddsAPI racing is not included in the currently configured plan. Do not
   // spend calls on endpoints that return 403; only opt in after the plan includes racing.
   // Sportsbet's public web page currently returns 403, so do not scrape/retry it.
-  // Use the provider's supported no-key racing teaser instead; it returns genuine
-  // bookmaker-labelled sample prices and their source links where available.
+  // Use the public preview as a schedule/coverage fallback. Sportsbet prices
+  // come from the authenticated, licensed Krok Odds direct bookmaker feed below.
   const jobs=[
     ["PuntersEdge public racing demo",()=>demoRacingFeed()],
     ["RapidOddsAPI",()=>RAPID_ODDS_KEY&&process.env.RAPIDODDS_RACING_ENABLED==="true"?loadRapidRacing():Promise.resolve({races:[],errors:[]})],
-    ["Krok Odds",()=>KROKODDS_API_KEY&&process.env.PUBLIC_ONLY_FEEDS!=="true"?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
+    ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
   const races=[],errors=[];
