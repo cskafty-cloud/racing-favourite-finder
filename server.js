@@ -1324,7 +1324,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
   if(!name)return null;
   const price=sportsbetDemoPrice(r);
-  const placePrice=bookKey==="sportsbet"?sportsbetDemoPlacePrice(r):null;
+  const placePrice=canonicalBookmakerKey(bookmaker)==="sportsbet"?sportsbetDemoPlacePrice(r):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
   const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
