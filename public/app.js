@@ -58,8 +58,19 @@ function renderRace(r){
   (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
   '</article>';
 }
+function setHeaderConnection(state){
+ const label=$("feedStatus"),dot=document.querySelector(".top-right .live-dot");
+ if(label)label.textContent=state;
+ if(dot)dot.className="live-dot "+(state==="CONNECTED"?"connected":state==="PARTIAL"?"checking":"offline");
+}
+function updateBrisbaneClock(){
+ const clock=$("clock");
+ if(clock)clock.textContent=new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false});
+}
 function renderRaces(data){
  races=data.races||[];
+ const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[])];
+ setHeaderConnection(errors.length?"PARTIAL":races.length?"CONNECTED":"CONNECTED · NO RACES");
  const active=races.filter(r=>!r.abandoned&&!/abandon|cancel/i.test(String(r.status||"")));
  let shown=active.filter(r=>filter==="all"||String(r.category||r.code||"").toLowerCase().includes(filter));
  shown.sort((a,b)=>{
@@ -86,7 +97,10 @@ async function loadRaces(){
   const response=await fetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
   if(!response.ok)throw new Error("Race feed HTTP "+response.status);
   const data=await response.json();renderRaces(data);
- }catch(error){if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">Race feed temporarily unavailable: '+esc(error.message)+'</div>';}
+ }catch(error){
+  setHeaderConnection("OFFLINE");
+  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">Race feed temporarily unavailable: '+esc(error.message)+'</div>';
+ }
 }
 async function loadLucasFox(){
  try{
@@ -123,8 +137,10 @@ function start(){
 window.startFullDashboardFeeds=start;
 document.addEventListener("DOMContentLoaded",()=>{
  addStyles();
+ updateBrisbaneClock();setInterval(updateBrisbaneClock,1000);
  const enter=$("enterWebsiteBtn");
  if(enter){enter.addEventListener("click",()=>start(),{once:true});}
+ const refresh=$("refreshBtn");if(refresh)refresh.addEventListener("click",()=>loadRaces());
  document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
   filter=button.dataset.filter;document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));renderRaces({races,fetchedAt:new Date().toISOString()});
  }));
