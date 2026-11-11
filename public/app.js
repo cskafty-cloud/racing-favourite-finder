@@ -83,8 +83,10 @@ function renderRunnerMarkets(r){
   }).join("");
  }
 function renderRace(r){
- const fav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
+ const originalFav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
  const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
+ const estimatedFav=runners.map(runner=>({runner,q:exchangeEstimate(auditRows(runner),"WIN")})).filter(x=>x.q).sort((a,b)=>a.q.price-b.q.price)[0]||null;
+ const fav=originalFav.status==="unpriced"&&estimatedFav?{status:"unverified",label:"ESTIMATED EXCHANGE FAVOURITE",name:estimatedFav.runner.name||"Runner",number:estimatedFav.runner.number??null,price:estimatedFav.q.price,priceSource:"Betfair Exchange-derived estimate",estimateRange:[estimatedFav.q.low,estimatedFav.q.high],estimateCapturedAt:estimatedFav.q.stamp}:originalFav;
  const marketHtml=runners.map(x=>renderRunnerMarkets(x)).filter(Boolean).join("");
  const favPrice=fav.price!=null?" · $"+Number(fav.price).toFixed(2):"";
  const favSource=fav.priceSource?" · "+esc(fav.priceSource):"";
@@ -92,7 +94,7 @@ function renderRace(r){
  const favClass=fav.status==="verified"?"verified":fav.status==="unverified"?"unverified":"";
  return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(r.venue||r.track||"Race meeting")+' · R'+esc(r.race_number??"?")+'</div><div class="rf-muted">'+esc(String(r.category||r.code||"Racing").toUpperCase())+' · '+esc(fmtTime(r.start_time||r.commence_time))+' · '+esc(r.status||"Scheduled")+'</div></div><span class="rf-muted">'+runners.length+' active runners</span></div>'+
   '<div class="rf-fav"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
-  (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified tips and rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
+  (fav.status==="unverified"?(fav.estimateRange?'<div class="rf-muted">Estimated from Betfair Exchange · range $'+fav.estimateRange[0].toFixed(2)+'–$'+fav.estimateRange[1].toFixed(2)+' · '+esc(fmtTime(fav.estimateCapturedAt))+' · NOT Sportsbet/Bet365 odds.</div>':'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>'):fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
   (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
   '<div class="rf-b337-crosscheck"><b>B337 · FREE PUBLIC REFERENCE</b><div class="rf-muted">Use B337 as a separate reference for publicly accessible racing information. Compare Sportsbet and TAB prices manually where B337 displays them. B337 prices are imported only if an authorised machine-readable public source becomes available. No login bypass or protected-data scraping is used.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
   '</article>';
