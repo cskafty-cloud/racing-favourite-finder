@@ -602,9 +602,11 @@ function renderFeedStatusRows(health){
   return '<div class="feed-status-item"><span class="feed-dot '+dot+'"></span><span><b>'+label+'</b><small>'+message+'</small></span></div>';
  }).join("");
  const liveStatus=health?.liveSports?.status||"checking";
- const sportDot=liveStatus==="active"?"active":liveStatus==="partial"?"partial":liveStatus==="offline"?"offline":"checking";
+ const sports=Object.values(health?.sports||{});
+ const connectedSports=sports.filter(x=>x.status==="active"||x.status==="partial").length;
  const sportCount=health?.liveSports?.eventCount??0;
- const sportsRow='<div class="feed-status-item"><span class="feed-dot '+sportDot+'"></span><span><b>🏆 ALL SPORTS</b><small>'+(liveStatus==="offline"?"FEED OFFLINE":liveStatus==="checking"?"CHECKING LIVE SPORTS":sportCount+" LIVE EVENTS CHECKED")+'</small></span></div>';
+ const sportStatus=liveStatus==="active"?"active":liveStatus==="partial"?"partial":liveStatus==="offline"?"offline":connectedSports?"active":"checking";
+ const sportsRow='<div class="feed-status-item"><span class="feed-dot '+sportStatus+'"></span><span><b>🏆 ALL SPORTS</b><small>'+(sportStatus==="offline"?"FEED OFFLINE":sportStatus==="checking"?"CHECKING SPORTS FEEDS":connectedSports+"/"+sports.length+" SPORTS FEEDS CHECKED · "+sportCount+" LIVE EVENTS")+'</small></span></div>';
  for(const id of ["entryFeedStatuses","dashboardFeedStatuses"]){const el=$(id);if(el)el.innerHTML=rows+sportsRow;}
  const headerDot=document.querySelector(".top-right .live-dot");
  if(headerDot){headerDot.className="live-dot "+(health?.racing?.status==="active"?"active":health?.racing?.status==="partial"?"partial":health?.racing?.status==="offline"?"offline":"checking");}
