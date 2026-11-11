@@ -781,6 +781,8 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
   }));
   for (const bookRow of sourceRows) {
     const book = bookRow.bookmaker_key || bookRow.bookmaker || bookmaker || "Unknown bookmaker";
+    // Enforce the requested bookmaker even if an upstream response ignores its filter.
+    if (canonicalBookmakerKey(book) !== canonicalBookmakerKey(bookmaker)) continue;
     const venue = bookRow.venue || bookRow.venue_slug || "Unknown track";
     const rawType = valueOf(bookRow, ["race_type","raceType","race_code","code","category","sport","type"]);
       const code = String(rawType || "").trim().toUpperCase();
