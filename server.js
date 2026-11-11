@@ -1248,8 +1248,7 @@ function parseSportsbetRacePage(html,url){
    const rm=h.match(/^([0-9]+)[.][ ]+(.+)[ ]+[(]([0-9]+)[)]$/);if(!rm)continue;
    const runnerBlock=lines.slice(st+1,en);
    if(runnerBlock.some(x=>x.toLowerCase().startsWith("scratched")))continue;
-   // Current Sportsbet race cards show fluctuation prices, then Win Fixed,
-   // then Place Fixed. Extract Win Fixed only; page retrieval time is not quote time.
+   // Extract WIN Fixed and PLACE Fixed independently from labelled rows.
    const trainer=runnerBlock.findIndex(x=>x.toUpperCase().startsWith("T:"));
    const speed=runnerBlock.findIndex(x=>x.toLowerCase().includes("early speed:"));
    const oddsStart=trainer>=0?trainer+1:(speed>=0?speed+1:0),oddsValues=[];
@@ -1258,11 +1257,26 @@ function parseSportsbetRacePage(html,url){
     if(!tokens.length||!tokens.every(x=>/^[0-9]+[.][0-9]{1,2}$/.test(x)))continue;
     for(const token of tokens){const n=Number(token);if(n>1&&n<1000)oddsValues.push(n);}
    }
-   const price=oddsValues.length>=2?oddsValues[oddsValues.length-2]:(oddsValues[0]||null);
-   if(!Number.isFinite(price)||price<=1)continue;
+   const labelledPrice=(label)=>{
+    for(let i=0;i<runnerBlock.length;i++){
+     const at=runnerBlock[i].toLowerCase().indexOf(label.toLowerCase());if(at<0)continue;
+     const candidates=[runnerBlock[i].slice(at+label.length),...runnerBlock.slice(i+1,i+4)];
+     for(const candidate of candidates){
+      const found=(candidate.replace(/[$,]/g,"").match(/[0-9]+[.][0-9]{1,2}/g)||[]).map(Number).find(n=>n>1&&n<1000);
+      if(found)return found;
+     }
+    }
+    return null;
+   };
+   const price=labelledPrice("Win Fixed")||(oddsValues.length>=2?oddsValues[oddsValues.length-2]:(oddsValues[0]||null));
+   const placePrice=labelledPrice("Place Fixed");
+   if((!Number.isFinite(price)||price<=1)&&(!Number.isFinite(placePrice)||placePrice<=1))continue;
    runners.push({number:Number(rm[1]),name:rm[2].trim(),scratched:false,bookmakers:[{
-    key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,
-    last_update:null,age_seconds:null,stale:true,timestamp_status:"unknown",observed_at:new Date().toISOString(),public_demo:true,
+    key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",
+    ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
+    ...(Number.isFinite(placePrice)&&placePrice>1?{place_price:placePrice,place_market_type:"fixed_place",place_stale:true}:{}),
+    last_update:null,age_seconds:null,place_last_update:null,place_age_seconds:null,
+    stale:true,place_stale:true,timestamp_status:"unknown",observed_at:new Date().toISOString(),feed_observed_at:new Date().toISOString(),public_demo:true,
     source:"Sportsbet public race-page snapshot (quote timestamp unavailable)",source_url:url,event_url:url
    }]});
   }
@@ -1376,10 +1390,14 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const placePrice=canonicalBookmakerKey(bookmaker)==="sportsbet"?sportsbetDemoPlacePrice(r):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
+  const winUpdated=r.win_last_update||r.win_updated_at||r.last_update||r.updated_at||r.timestamp||null;
+  const placeUpdated=r.place_last_update||r.place_updated_at||r.place_odds_updated_at||r.place_price_updated_at||null;
+  const winAge=r.win_age_seconds??r.age_seconds??r.quote_age_seconds??null;
+  const placeAge=r.place_age_seconds??r.place_quote_age_seconds??null;
   const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
-   ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place"}:{}),
-   last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
-   age_seconds:r.age_seconds??r.quote_age_seconds??null,feed_observed_at:new Date().toISOString(),stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
+   ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:r.place_stale===true||(placeAge!=null&&Number(placeAge)>=180)}:{}),
+   last_update:winUpdated,age_seconds:winAge,feed_observed_at:new Date().toISOString(),
+   stale:r.stale===true||(winAge!=null&&Number(winAge)>=180),public_demo:true,
    source:bookName+" fixed-win/place public bookmaker preview",source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
