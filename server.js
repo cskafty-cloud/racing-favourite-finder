@@ -1298,10 +1298,10 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const price=sportsbetDemoPrice(r);
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
-  const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,
+  const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,market_type:"fixed_win",
    last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
    age_seconds:r.age_seconds??r.quote_age_seconds??null,feed_observed_at:new Date().toISOString(),stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
-   source:"Sportsbet public bookmaker preview (source timestamp unavailable)",source_url:sourceUrl,event_url:sourceUrl}]:[];
+   source:bookName+" fixed-win public bookmaker preview",source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
  const id=String(item.id||item.race_id||item.event_id||[bookmaker,category,venue,raceNumber,start].join("-"));
@@ -1502,9 +1502,9 @@ async function getGlobalRaces() {
           name:x.name||x.runner_name||x.selection_name||x.horse_name||x.dog_name||"Runner",
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
-          bookmakers:Number.isFinite(price)&&price>1&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:quoteBook==="bet365"?"Bet365":"Sportsbet",name:quoteBook==="bet365"?"Bet365":"Sportsbet",win_price:price,
+          bookmakers:Number.isFinite(price)&&price>1&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:quoteBook==="bet365"?"Bet365":"Sportsbet",name:quoteBook==="bet365"?"Bet365":"Sportsbet",win_price:price,market_type:"fixed_win",
             last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
-            suspended:x.suspended===true,source:"Bet365 fixed-win · MoviOdds documented Bet365-only /racing endpoint",
+            suspended:x.suspended===true,source:"Bet365 fixed-win public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
       });
