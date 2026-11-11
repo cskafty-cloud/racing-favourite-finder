@@ -1097,24 +1097,30 @@ async function loadSportsbetPublicRaces(){
 
 let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
- const fixed=runner.fixed_odds||runner.fixedOdds||runner.fixed||runner.fixed_win_odds||runner.fixedWinOdds||{};
- const odds=runner.odds&&typeof runner.odds==="object"?runner.odds:{};
- const direct=runner.win_price??runner.fixed_win_price??runner.fixed_win??runner.win_odds??
-  runner.win_fixed_odds??runner.fixed_win_odds??runner.fixedWinOdds??runner.fixedWinPrice??
-  runner.decimal_odds??runner.odds_decimal??runner.winPrice??
-  odds.win??odds.fixed_win??odds.win_price??
-  fixed.win??fixed.win_price??fixed.winPrice??fixed.winOdds??fixed.fixedWin??fixed.returnWin??null;
- if(direct!=null&&Number.isFinite(Number(direct))&&Number(direct)>1)return Number(direct);
- const markets=Array.isArray(runner.markets)?runner.markets:[];
- for(const market of markets){
-  if(!/win|winner/i.test(String(market.name||market.key||market.market_name||"")))continue;
-  const outcomes=market.outcomes||market.selections||[];
-  for(const outcome of outcomes){const price=Number(outcome.price??outcome.odds??outcome.decimal??outcome.fixed_win_price);if(price>1)return price;}
+ const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice"];
+ const readPrice=value=>{const n=Number(value);return Number.isFinite(n)&&n>1?n:null;};
+ for(const key of directKeys){const n=readPrice(runner?.[key]);if(n)return n;}
+ for(const group of [runner?.fixed_odds,runner?.fixedOdds,runner?.fixed,runner?.fixed_win_odds,runner?.fixedWinOdds,runner?.odds]){
+  if(group&&typeof group==="object"&&!Array.isArray(group)){
+   for(const key of directKeys.concat(["win","price","decimal","odds","returnWin"])){const n=readPrice(group[key]);if(n)return n;}
+  }
  }
- const prices=Array.isArray(runner.prices)?runner.prices:[];
- for(const price of prices){
-  if(!/win|winner|fixed_win/i.test(String(price.market||price.market_name||price.type||"")))continue;
-  const n=Number(price.price??price.odds??price.decimal??price.fixed_win_price);if(n>1)return n;
+ // Public bookmaker snapshots vary: some put win prices under market outcomes,
+ // some under a per-runner bookmaker/prices array. Only explicitly named WIN rows qualify.
+ const rows=[...(Array.isArray(runner?.markets)?runner.markets:[]),...(Array.isArray(runner?.prices)?runner.prices:[])];
+ for(const row of rows){
+  const market=String(row.market||row.market_name||row.marketName||row.type||row.name||row.key||"");
+  if(!/win|winner|fixed_win/i.test(market))continue;
+  const outcomes=row.outcomes||row.selections||row.runners||[row];
+  for(const outcome of outcomes){for(const key of ["win_price","fixed_win_price","fixed_win","win_odds","price","odds","decimal","fixedOdds"]){const n=readPrice(outcome?.[key]);if(n)return n;}}
+ }
+ // A runner can carry a bookmaker-keyed odds object. Accept only the requested
+ // Sportsbet entry and only its explicit win field.
+ const keyed=runner?.bookmakers||runner?.bookmaker_odds;
+ const entries=Array.isArray(keyed)?keyed:Object.values(keyed||{});
+ for(const entry of entries){if(canonicalBookmakerKey(entry?.key||entry?.bookmaker||entry?.name)!=="sportsbet")continue;
+  for(const key of directKeys){const n=readPrice(entry?.[key]);if(n)return n;}
+  const n=readPrice(entry?.win);if(n)return n;
  }
  return null;
 }
@@ -1149,9 +1155,11 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
 }
 async function loadSportsbetPublicRaceDemos(){
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<90000)return sportsbetRacingDemoCache.races;
+ // This public preview endpoint supports Sportsbet horse and greyhound only.
+ // Bet365 is sourced separately from the MoviOdds Australian racing board; the
+ // preview API does not list Bet365 or harness racing as supported combinations.
  const specs=[
-  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"],["harness","harness-racing","sportsbet"],
-  ["horse","horse-racing","bet365"],["greyhound","greyhound-racing","bet365"],["harness","harness-racing","bet365"]
+  ["horse","horse-racing","sportsbet"],["greyhound","greyhound-racing","sportsbet"]
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
@@ -1404,10 +1412,9 @@ app.get("/api/feed-status",(_req,res)=>{
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
-    // Sportsbet's own HTML blocks Railway (HTTP 403). Use the provider's public,
-    // no-key Sportsbet bookmaker snapshots for horse, greyhound and harness racing.
-    // They are deliberately merged with the broad public race board; only exact
-    // Sportsbet-labelled runner quotes are shown as Sportsbet prices.
+    // Sportsbet's own HTML blocks Railway (HTTP 403). Request only supported
+    // public Sportsbet horse/greyhound snapshots; Bet365 is parsed independently
+    // from the MoviOdds board above. No unsupported bookmaker alias is fabricated.
     let sportsbetDemoRaces=[];try{sportsbetDemoRaces=await loadSportsbetPublicRaceDemos();}catch(e){console.warn("SPORTSBET_PUBLIC_RACING_DEMO_FAILED",e.message);}
     const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]);    const fetchedAt=new Date().toISOString();
     const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{races:races.filter(r=>categoryOf(r)===code).length,live:races.filter(r=>categoryOf(r)===code&&isRaceLive(r)).length}]));
