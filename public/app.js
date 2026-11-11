@@ -164,7 +164,7 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/horse/today" target="_blank" rel="noopener noreferrer">Sportsbet horse races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/greyhound/today" target="_blank" rel="noopener noreferrer">Sportsbet greyhound races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer">Sportsbet harness races ↗</a>';
   const runner=favourite?(favourite.number!=null?favourite.number+". ":"")+favourite.name:"";
   const freshness=favourite
-    ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · BOOKMAKER AGE UNKNOWN · "+(favourite.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(favourite.feedSeenAge)+"s ago")+" · not live-confirmed":" · "+Math.round(Number(favourite.age))+"s old · verified fresh")
+    ? (favourite.isFallback?" · indicative cross-bookmaker consensus, not a Sportsbet quote":favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · BOOKMAKER AGE UNKNOWN · "+(favourite.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(favourite.feedSeenAge)+"s ago")+" · not live-confirmed":" · "+Math.round(Number(favourite.age))+"s old · verified fresh")
     : "";
   const details=favourite
     ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.unverified?'<div class="book-fav-missing unverified-warning">BOOKMAKER TIMESTAMP NOT PROVIDED · feed receipt age is shown separately. This price is not confirmed live.</div>':favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price.</div>':"")
@@ -268,9 +268,12 @@ function marketFavourite(race) {
 // 1) exact Sportsbet quote (fresh, then stale); 2) fresh overall market median;
 // 3) stale overall market median. The source is always labelled honestly.
 function sportsbetDisplayFavourite(race) {
- // Sportsbet lists use exact Sportsbet-labelled quotes only; never substitute market estimates.
+ // Prefer an exact current Sportsbet quote. If unavailable, show the market leader
+ // as an indicative proxy, explicitly not as a Sportsbet price.
  const exact=bookmakerFavourite(race,"sportsbet");
- return exact?{...exact,displaySource:"Sportsbet fixed WIN quote",isFallback:false}:null;
+ if(exact)return {...exact,displaySource:"Sportsbet fixed WIN quote",isFallback:false};
+ const proxy=marketFavourite(race);
+ return proxy?{...proxy,price:proxy.consensus,displaySource:"Cross-bookmaker market consensus · indicative only",isFallback:true}:null;
 }
 function sportsbetPlaceFavourite(race) {
  const candidates=[];
