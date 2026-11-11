@@ -1277,21 +1277,24 @@ async function getGlobalRaces() {
         const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
         const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
         const priceRows=Array.isArray(x.prices)?x.prices:[];
-        const priceRow=priceRows.find(p=>/win|fixed/i.test(String(p.market||p.market_name||p.type||"win")))||priceRows[0]||{};
-        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.decimal_odds??
-          x.win_price_decimal??x.fixed_odds_decimal??x.odds_dec??(typeof x.odds==="object"?null:x.odds)??x.price??x.fixedOdds??x.win??
-          nested.win??nested.fixed_win??nested.win_price??nested.decimal??nested.price??
-          fixed.win??fixed.win_price??fixed.decimal??fixed.price??priceRow.price??priceRow.odds??priceRow.decimal??null;
+        // Never borrow the first price row: it may be fixed-place, tote or another market.
+        const priceRow=priceRows.find(p=>/^(fixed[_ -]?)?win$|winner|win[_ -]fixed/i.test(String(p.market||p.market_name||p.type||p.key||"")));
+        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??
+          x.win_price_decimal??x.fixed_odds_decimal??x.win??
+          nested.win??nested.fixed_win??nested.win_price??
+          fixed.win??fixed.win_price??fixed.decimal??fixed.price??
+          priceRow?.price??priceRow?.odds??priceRow?.decimal??null;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
         const winFraction=x.win_frac??x.fixed_win_frac??x.odds_fractional??null;
         const fractionText=typeof winFraction==="string"&&winFraction.includes("/")?winFraction.split("/").map(Number):null;
         const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
-        const updated=x.price_updated_at||x.odds_updated_at||x.updated_at||x.last_update||r.odds_updated_at||r.updated_at||null;
+        // Race.updated_at is only a card timestamp; never use it as the bookmaker price timestamp.
+        const updated=x.price_updated_at||x.odds_updated_at||x.updated_at||x.last_update||r.odds_updated_at||null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
-          (updated&&Number.isFinite(Date.parse(updated))?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null);
+          (updated?quoteAgeSecondsServer({last_update:updated}):null);
         const raceId=r.id||r.race_id||"";
         return {number:x.number??x.runner_number??x.runner_no??x.box??x.saddlecloth??null,
           name:x.name||x.runner_name||x.selection_name||x.horse_name||x.dog_name||"Runner",
