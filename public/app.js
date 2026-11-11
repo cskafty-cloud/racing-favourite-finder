@@ -913,6 +913,7 @@ async function loadRaces() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
+    window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
     if(data.feedHealth){state.feedHealth={...(state.feedHealth||{}),racing:data.feedHealth};renderFeedStatusRows(state.feedHealth);}
     state.feedMode = data.mode || "live";
     updateEntryHorseStatus();
@@ -1587,6 +1588,7 @@ async function loadRaces() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
+    window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
     if(data.feedHealth){state.feedHealth={...(state.feedHealth||{}),racing:data.feedHealth};renderFeedStatusRows(state.feedHealth);}
     state.feedMode = data.mode || "live";
     updateEntryHorseStatus();
