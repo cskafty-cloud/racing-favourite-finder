@@ -17,7 +17,7 @@ if ([int]$nodeVersion -lt 22) { throw "Node.js 22 or newer is required. Detected
 Write-Host "Betfair Australian read-only adapter. Secrets are entered locally and are not written to this script."
 $env:BETFAIR_APP_KEY = Read-SecretText "Betfair delayed app key"
 $env:BETFAIR_SESSION_TOKEN = Read-SecretText "Betfair session token"
-$env:BETFAIR_FEED_TOKEN = Read-SecretText "Shared adapter token (must exactly match Railway BETFAIR_FEED_TOKEN)"
+$env:BETFAIR_FEED_TOKEN = (Read-SecretText "Shared adapter token (paste the same value configured in Railway BETFAIR_FEED_TOKEN)").Trim()
 $env:PORT = "8080"
 
 if ([string]::IsNullOrWhiteSpace($env:BETFAIR_APP_KEY) -or
