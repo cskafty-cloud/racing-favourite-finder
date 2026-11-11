@@ -75,7 +75,7 @@ async function betfairRpc(method, params) {
   });
   const body = await response.text();
   let payload;
-  try { payload=JSON.parse(body); } catch { const contentType=response.headers.get("content-type")||"unknown content type"; const excerpt=String(body||"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/\s+/g," ").trim().slice(0,240); throw new Error("Betfair returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:".")); }
+  try { payload=JSON.parse(body); } catch { const contentType=response.headers.get("content-type")||"unknown content type"; const cloudflareBlock=response.status===403&&/cloudflare|attention required|unable to access api\\.betfair\\.com/i.test(body); if(cloudflareBlock) throw new Error("Betfair Cloudflare egress/IP-location block (HTTP 403). The request was denied before a JSON API response; this is not proof of an invalid app key or session token. Railway currently runs this service in US East (iad), and Betfair lists the United States as a restricted API location. Railway currently offers US East, US West, Amsterdam and Singapore regions; Betfair lists these jurisdictions among restricted API locations. A permitted Australian-hosted feed adapter or a correction to an incorrectly geolocated IP is required. No Exchange prices were returned."); const excerpt=String(body||"").replace(/<script[\\s\\S]*?<\\/script>/gi," ").replace(/<style[\\s\\S]*?<\\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/\\s+/g," ").trim().slice(0,240); throw new Error("Betfair returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:".")); }
   const item=Array.isArray(payload)?payload[0]:payload;
   if (!response.ok || item?.error || item?.result == null) {
     const detail=item?.error?.data?.APINGException?.errorCode || item?.error?.data?.errorCode ||
@@ -245,7 +245,10 @@ async function getBetfairSports(){
   return {events:betfairSportsCache.events,eventTypes:betfairSportsCache.eventTypes,
     fetchedAt:new Date(betfairSportsCache.at).toISOString(),refreshSeconds:30,
     provider:"Betfair Exchange Delayed API",delayMaximumSeconds:180,
-    status:betfairSportsCache.error?"configured-but-unavailable":betfairSportsCache.events.length?"connected-delayed":"configured-no-quotes",
+    status:betfairSportsCache.error?"configured-but-unavailable":betfairSportsCache.events.some(e=>(e.runners||[]).some(r=>r.back||r.lay))?"connected-delayed":"configured-no-quotes",
+    pricedMarkets:betfairSportsCache.events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length,
+    backOffers:betfairSportsCache.events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.back).length,0),
+    layOffers:betfairSportsCache.events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.lay).length,0),
     errors:betfairSportsCache.errors||[],error:betfairSportsCache.error||null,
     note:"Upcoming and in-play sports markets from Betfair Exchange. Prices are delayed Exchange BACK/LAY offers, not bookmaker fixed odds. Coverage depends on markets available to this Betfair account and app key. Display-only; no bets are placed."};
 }
