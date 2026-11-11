@@ -1339,9 +1339,11 @@ function feedHealthStatus(at, errors=[], ok=false) {
   return "offline";
 }
 app.get("/api/feed-status",(_req,res)=>{
-  const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),ageSeconds:racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null};
-  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
-  const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[],liveSportsFeedHealth.ok),ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
+  const racingAge=racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null;
+  const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),qualityStatus:(racingFeedHealth.errors||[]).length?"partial":"good",ageSeconds:racingAge,
+    byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{...(racingFeedHealth.byCode?.[code]||{races:0,live:0}),status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),ageSeconds:racingAge}]))};
+  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),qualityStatus:(value.errors||[]).length?"partial":"good",ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
+  const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[],liveSportsFeedHealth.ok),qualityStatus:(liveSportsFeedHealth.errors||[]).length?"partial":"good",ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
   res.set("Cache-Control","no-store").json({racing,sports,liveSports,checkedAt:new Date().toISOString()});
 });
 app.get("/api/races", async (_req, res) => {
