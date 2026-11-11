@@ -1522,7 +1522,7 @@ async function getGlobalRaces() {
       runnerKeys:Object.keys(sampleRunner||{}),priceKeys:Object.keys(samplePrice||{}),
       oddsKeys:Object.keys(sampleRunner.odds||{}),identityFields:["bookmaker","bookmaker_key","bookmaker_name","bookmaker_code","site","book","bookie","sportsbook","operator","price_source","price_ts","win_odds","source","source_name","provider_name"]
         .reduce((out,key)=>{if(sampleRunner[key]!=null)out.runner[key]=sampleRunner[key];if(samplePrice[key]!=null)out.price[key]=samplePrice[key];if(sampleRunner.odds?.[key]!=null)out.odds[key]=sampleRunner.odds[key];return out;},{runner:{},price:{},odds:{}})}));
-    let verifiedBet365Quotes=0,verifiedSportsbetQuotes=0,unverifiedPriceRows=0;
+    let verifiedBet365Quotes=0,verifiedBet365PlaceQuotes=0,verifiedSportsbetQuotes=0,unverifiedPriceRows=0;
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
@@ -1541,19 +1541,22 @@ async function getGlobalRaces() {
         const explicitRunnerBook=runnerBook==="bet365";
         const explicitNestedBook=nestedBook==="bet365";
         const hasRunnerWinPrice=x.win_odds!=null||x.fixed_win_odds!=null||x.fixed_win!=null||x.win_price!=null||x.win_frac!=null||x.fixed_win_frac!=null;
-        // /racing is documented as a Bet365-only endpoint. The runner-level
-        // price_source value "pm" is a feed code, not a bookmaker identity.
+        const hasRunnerPlacePrice=x.place_odds!=null||x.fixed_place_odds!=null||x.place_price!=null||x.place_frac!=null;
+        // The documented /racing endpoint is Bet365-only and serves fixed WIN/PLACE.
+        // pm/ws are MoviOdds feed channels, not bookmaker names.
         const quoteBook=priceRow?"bet365":nestedBet365!=null?"bet365":
-          explicitRunnerBook||explicitNestedBook?"bet365":hasRunnerWinPrice&&!runnerBook?"bet365":
-          hasRunnerWinPrice&&runnerBook==="pm"?"bet365":null;
+          explicitRunnerBook||explicitNestedBook?"bet365":
+          (hasRunnerWinPrice||hasRunnerPlacePrice)&&!runnerBook?"bet365":
+          (hasRunnerWinPrice||hasRunnerPlacePrice)&&["pm","ws"].includes(runnerBook)?"bet365":null;
         const quoteIsBet365=quoteBook==="bet365";
         const quoteIsSportsbet=false;
         const quoteIsSupportedBook=quoteIsBet365;
         const bet365NestedValue=nestedBet365&&typeof nestedBet365==="object"
           ?(nestedBet365.win??nestedBet365.fixed_win??nestedBet365.win_price??nestedBet365.price??nestedBet365.odds)
           :nestedBet365;
-        const hasUnverifiedPrice=priceRows.some(p=>/^(fixed[_ -]?)?win$|winner|win[_ -]fixed/i.test(String(p.market||p.market_name||p.type||p.key||""))&&moviQuoteBookmakerKey(p)!=="bet365")||
+        const hasUnverifiedPrice=priceRows.some(p=>/^(fixed[_ -]?)?win$|winner|win[_ -]fixed|place/i.test(String(p.market||p.market_name||p.type||p.key||""))&&moviQuoteBookmakerKey(p)!=="bet365")||
           [x.win_odds,x.fixed_win_odds,x.fixed_win,x.win_price,x.win_price_decimal,x.fixed_odds_decimal,x.win,
+           x.place_odds,x.fixed_place_odds,x.place_price,x.place_frac,
            nested.win,nested.fixed_win,nested.win_price,fixed.win,fixed.win_price,fixed.decimal,fixed.price].some(v=>v!=null);
         if(hasUnverifiedPrice&&!quoteIsBet365)unverifiedPriceRows++;
         const rawPrice=quoteIsSupportedBook?(priceRow?.price??priceRow?.odds??priceRow?.decimal??
@@ -1579,16 +1582,18 @@ async function getGlobalRaces() {
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
         const placeAge=placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):age;
         if(quoteIsBet365&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedBet365Quotes++;
+        if(quoteIsBet365&&validPlacePrice!=null&&placeAge!=null&&placeAge<180)verifiedBet365PlaceQuotes++;
         if(quoteIsSportsbet&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedSportsbetQuotes++;
         const raceId=r.id||r.race_id||"";
         return {number:x.number??x.runner_number??x.runner_no??x.box??x.saddlecloth??null,
           name:x.name||x.runner_name||x.selection_name||x.horse_name||x.dog_name||"Runner",
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
-          bookmakers:Number.isFinite(price)&&price>1&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:quoteBook==="bet365"?"Bet365":"Sportsbet",name:quoteBook==="bet365"?"Bet365":"Sportsbet",win_price:price,market_type:"fixed_win",
-            ...(validPlacePrice?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge}:{}),
+          bookmakers:((Number.isFinite(price)&&price>1)||validPlacePrice!=null)&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:"Bet365",name:"Bet365",
+            ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
+            ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:x.place_stale===true||(placeAge!=null&&placeAge>=180)}:{}),
             last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
-            suspended:x.suspended===true,source:"Bet365 fixed-win public quote · MoviOdds documented Bet365-only /racing endpoint",
+            suspended:x.suspended===true,source:"Bet365 fixed WIN/PLACE public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
       });
@@ -1619,7 +1624,7 @@ async function getGlobalRaces() {
         start_time:start,country:r.country||"Australia",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners:uniqueRunners};
     }).filter(r=>r.start_time&&!r.closed);
-    console.info("MOVIODDS_RACING_BOOKMAKER_VALIDATION",JSON.stringify({races:races.length,verifiedBet365Quotes,verifiedSportsbetQuotes,unverifiedPriceRows,
+    console.info("MOVIODDS_RACING_BOOKMAKER_VALIDATION",JSON.stringify({races:races.length,verifiedBet365Quotes,verifiedBet365PlaceQuotes,verifiedSportsbetQuotes,unverifiedPriceRows,
       categories:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length]))}));
     if(races.length||publicRaceRows.length) {
       const supplemental=await loadSupplementalAustralianRaces();
