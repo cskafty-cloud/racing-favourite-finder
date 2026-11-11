@@ -889,12 +889,15 @@ function selectFavourite(race) {
   // Quote agreement is a hard quality gate: broad disagreement must never be called strong.
   const rawScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
   const previewOnly=best.quotes.length>0&&best.quotes.every(q=>q.public_demo===true);
+  const sourceKeys=[...new Set(best.quotes.map(q=>bookmakerKey(q)).filter(Boolean))];
+  const sourceNames=[...new Set(best.quotes.map(q=>q.bookmaker||q.name||q.key).filter(Boolean))];
+  const sourceLabel=sourceNames.join(" + ")||sourceKeys.join(" + ")||"Unknown bookmaker";
   const signalScore=previewOnly?Math.min(20,rawScore):(spreadPct>25?Math.min(rawScore,25):spreadPct>15?Math.min(rawScore,55):rawScore);
-  const signalLabel=previewOnly?"PREVIEW ONLY · UNVERIFIED":best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
+  const signalLabel=previewOnly?"PUBLIC PREVIEW · LOW CONFIDENCE":best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
     :best.quotes.length>=2&&spreadPct<=25&&signalScore>=40?"CAUTION":"NO BET · WEAK SIGNAL";
   const r=best.runner;
   return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
-    price:best.fair,priceSource:previewOnly?"Sportsbet public preview snapshot":"multi-bookmaker fixed-win median",quoteCount:best.quotes.length,
+    price:best.fair,priceSource:sourceLabel+" fixed WIN quote"+(best.quotes.length>1?"s":""),quoteCount:best.quotes.length,bookmakerKeys:sourceKeys,
     spreadPct:+spreadPct.toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,signalLabel,previewOnly};
 }
 function winnerFromResult(r) {
@@ -1594,16 +1597,23 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
    .filter(m=>/win|winner|fixed_win/i.test(String(m.market||m.market_name||m.marketName||m.type||m.name||m.key||"")));
   const placeMarketRows=[...(Array.isArray(r.markets)?r.markets:[]),...(Array.isArray(r.prices)?r.prices:[])]
    .filter(m=>/place|each.?way/i.test(String(m.market||m.market_name||m.marketName||m.type||m.name||m.key||"")));
+  const nestedStamp=(group,keys)=>group&&typeof group==="object"&&!Array.isArray(group)
+   ?keys.map(k=>group[k]).find(v=>v!=null&&v!=="")||null:null;
+  const winGroups=[r.win,r.fixed_win,r.fixedWin,r.win_odds,r.fixed_odds,r.odds].filter(x=>x&&typeof x==="object");
+  const placeGroups=[r.place,r.fixed_place,r.fixedPlace,r.place_odds,r.fixed_place_odds].filter(x=>x&&typeof x==="object");
+  const stampKeys=["last_update","last_updated","updated_at","updatedAt","captured_at","capturedAt","timestamp","quote_timestamp","quoteTimestamp","price_updated_at","updated"];
   const winUpdated=r.win_last_update||r.win_updated_at||r.win_price_updated_at||r.win_quote_updated_at||
    r.win_quote_timestamp||r.win_timestamp||r.last_update||r.last_updated||r.quote_updated_at||r.price_updated_at||r.updated_at||r.timestamp||
+   winGroups.map(g=>nestedStamp(g,stampKeys)).find(Boolean)||
    winMarketRows.map(m=>m.last_update||m.last_updated||m.quote_updated_at||m.price_updated_at||m.updated_at||m.timestamp).find(Boolean)||null;
   const placeUpdated=r.place_last_update||r.place_updated_at||r.place_odds_updated_at||r.place_price_updated_at||
    r.place_quote_updated_at||r.place_quote_timestamp||r.place_timestamp||
+   placeGroups.map(g=>nestedStamp(g,stampKeys)).find(Boolean)||
    placeMarketRows.map(m=>m.last_update||m.last_updated||m.quote_updated_at||m.price_updated_at||m.updated_at||m.timestamp).find(Boolean)||null;
   const winAge=r.win_age_seconds??r.win_quote_age_seconds??r.quote_age_seconds??r.age_seconds??
-   winMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
+   winGroups.map(g=>g.age_seconds??g.quote_age_seconds).find(v=>v!=null)??winMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
   const placeAge=r.place_age_seconds??r.place_quote_age_seconds??
-   placeMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
+   placeGroups.map(g=>g.age_seconds??g.quote_age_seconds).find(v=>v!=null)??placeMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
   const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
    ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:r.place_stale===true||(placeAge!=null&&Number(placeAge)>=180)}:{}),
    last_update:winUpdated,age_seconds:winAge,feed_observed_at:new Date().toISOString(),
@@ -1920,9 +1930,15 @@ function dedupeRaces(input) {
     for (const runner of race.runners||[]) {
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const n=runner.number??runner.runner_number;
-      let existing=(target.runners||[]).find(x=>n!=null&&(x.number??x.runner_number)!=null
-        ? String(x.number??x.runner_number)===String(n)
-        : normalizeName(x.name||x.runner_name)===normalizeName(name));
+      const normalizedRunnerName=normalizeName(name);
+      // Match the same named runner across feeds first. Runner numbers/boxes can
+      // differ between providers, so never attach a bookmaker quote to a different
+      // dog/horse merely because its cloth or box number happens to match.
+      let existing=(target.runners||[]).find(x=>{
+        const existingName=normalizeName(x.name||x.runner_name||x.horse_name||x.greyhound_name);
+        if(normalizedRunnerName&&existingName)return normalizedRunnerName===existingName;
+        return n!=null&&(x.number??x.runner_number)!=null&&String(x.number??x.runner_number)===String(n);
+      });
       if(!existing){existing={...runner,name,bookmakers:[]};target.runners.push(existing);}
       for(const q of runner.bookmakers||runner.odds||[]){
         const qkey=bookmakerKey(q); if(!qkey)continue;
