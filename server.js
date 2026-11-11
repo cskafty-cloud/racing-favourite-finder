@@ -2303,16 +2303,32 @@ const sportsOddsCache = new Map();
 
 app.get("/api/betfair/sports",async(_req,res)=>{
   try{
+    const sportsFeedUrl=process.env.BETFAIR_SPORTS_FEED_URL||"";
+    if(sportsFeedUrl){
+      const response=await fetch(sportsFeedUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+      const body=await response.text();let data;
+      try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair sports adapter returned invalid JSON (HTTP "+response.status+").");}
+      if(!response.ok)throw new Error(data.error||"Australian Betfair sports adapter HTTP "+response.status);
+      const events=Array.isArray(data.events)?data.events:[];
+      const backOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.back).length,0);
+      const layOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.lay).length,0);
+      const pricedMarkets=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
+      const status=pricedMarkets>0?"connected-delayed":"configured-no-quotes";
+      res.set("Cache-Control","no-store");
+      return res.json({...data,status,pricedMarkets,backOffers,layOffers,
+        provider:"Betfair Exchange Delayed API · Australian adapter",
+        note:"Australian adapter Exchange BACK/LAY offers only. These are not Sportsbet or Bet365 fixed odds."});
+    }
     if(!BETFAIR_APP_KEY||!BETFAIR_SESSION_TOKEN)return res.status(503).json({
       status:"credentials-missing",provider:"Betfair Exchange Delayed API",
-      error:"BETFAIR_APP_KEY and BETFAIR_SESSION_TOKEN must be configured in Railway."});
+      error:"Configure the Australian adapter URL or Betfair credentials."});
     const data=await getBetfairSports();
     res.set("Cache-Control","no-store");
     return res.json(data);
   }catch(error){
     console.error("BETFAIR_SPORTS_API_FAILED",error.message);
     return res.status(503).json({status:"configured-but-unavailable",provider:"Betfair Exchange Delayed API",error:error.message,
-      note:"No Betfair sports prices are shown unless the authorised delayed API returns them."});
+      note:"No Betfair sports prices are shown unless the authorised Australian adapter returns actual BACK/LAY offers."});
   }
 });
 app.get("/api/sports", async (_req,res) => {
