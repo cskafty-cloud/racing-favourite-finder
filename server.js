@@ -585,11 +585,8 @@ async function loadPublicDemoSport(sport) {
     })(),
     (async()=>{
       const ids=RAPID_SPORT_IDS[sport.key]||[];
-      if(!RAPID_ODDS_KEY||!ids.length)return [];
-      return Promise.all(ids.map(async id=>{
-        const result=await rapidOdds("/sports/"+id+"/markets",{market_type:"head_to_head",bookmaker:"Sportsbet"});
-        return {sportId:id,data:result.data};
-      }));
+      // RapidOddsAPI removed: no external requests are made here.
+      return [];
     })()
   ];
   const [sportsbetResult,bet365Result,bestOddsResult,moviResult,rapidResult]=await Promise.allSettled(jobs);
@@ -1453,7 +1450,6 @@ async function loadSupplementalAustralianRaces() {
     // Use the no-key public bookmaker preview only. Sportsbet's HTML pages
     // return HTTP 403 from Railway; do not repeatedly request blocked pages.
     ["Sportsbet public bookmaker preview",()=>loadSportsbetPublicRaceDemos()],
-    ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.reject(new Error("RAPIDODDSAPI_API_KEY is not configured in Railway."))],
     ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
@@ -2266,7 +2262,8 @@ async function krokRequest(pathname, params={}) {
   return {payload, creditsRemaining:response.headers.get("X-Credits-Remaining")};
 }
 
-const RAPID_ODDS_KEY = process.env.RAPIDODDSAPI_API_KEY || "";
+// RapidOddsAPI has been removed from this application; no requests or key are used.
+const RAPID_ODDS_KEY = "";
 const RAPID_ODDS_BASE = "https://api.rapidoddsapi.com";
 const RAPID_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","PickleBet","Dabble","Amused","Betmakers","GenWeb","AllBets","PuntersTech","BetCloud"];
 const RAPID_LIVE_SPORTS = ["AFL","NRL","NBA","NFL","MLB","WNBA"];
