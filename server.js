@@ -175,7 +175,7 @@ async function demoRacingFeed() {
         const key=canonicalBookmakerKey(rawBook);
         const price=Number(q.win_price??q.fixed_win_price??q.fixed_win??q.win_odds??q.odds_decimal??q.odds??q.price??q.win);
         const age=q.age_seconds??q.quote_age_seconds??null;
-        const updated=q.last_update||q.updated_at||q.captured_at||q.timestamp||r.updated_at||null;
+        const updated=q.last_update||q.updated_at||q.captured_at||q.timestamp||null;
         return {...q,key,bookmaker:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":q.bookmaker||q.name||rawBook,
           win_price:price,age_seconds:age==null?null:Number(age),last_update:updated,
           stale:q.stale===true||(age!=null&&Number(age)>=180),public_demo:true};
@@ -1095,10 +1095,9 @@ function sportsbetDemoPrice(runner){
  const odds=runner.odds&&typeof runner.odds==="object"?runner.odds:{};
  const direct=runner.win_price??runner.fixed_win_price??runner.fixed_win??runner.win_odds??
   runner.win_fixed_odds??runner.fixed_win_odds??runner.fixedWinOdds??runner.fixedWinPrice??
-  runner.decimal_odds??runner.odds_decimal??runner.winPrice??runner.price??
-  (typeof runner.odds==="number"?runner.odds:null)??runner.decimal??
-  odds.win??odds.fixed_win??odds.win_price??odds.decimal??
-  fixed.win??fixed.win_price??fixed.winPrice??fixed.winOdds??fixed.fixedWin??fixed.returnWin??fixed.decimal??null;
+  runner.decimal_odds??runner.odds_decimal??runner.winPrice??
+  odds.win??odds.fixed_win??odds.win_price??
+  fixed.win??fixed.win_price??fixed.winPrice??fixed.winOdds??fixed.fixedWin??fixed.returnWin??null;
  if(direct!=null&&Number.isFinite(Number(direct))&&Number(direct)>1)return Number(direct);
  const markets=Array.isArray(runner.markets)?runner.markets:[];
  for(const market of markets){
@@ -1108,7 +1107,7 @@ function sportsbetDemoPrice(runner){
  }
  const prices=Array.isArray(runner.prices)?runner.prices:[];
  for(const price of prices){
-  if(!/win|fixed/i.test(String(price.market||price.market_name||price.type||"win")))continue;
+  if(!/win|winner|fixed_win/i.test(String(price.market||price.market_name||price.type||"")))continue;
   const n=Number(price.price??price.odds??price.decimal??price.fixed_win_price);if(n>1)return n;
  }
  return null;
@@ -1159,7 +1158,7 @@ async function loadSportsbetPublicRaceDemos(){
    ?(category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":"https://www.sportsbet.com.au/racing-schedule/harness/today")
    :(category==="horse"?"https://www.bet365.com.au/#/HO/":category==="greyhound"?"https://www.bet365.com.au/#/HO/": "https://www.bet365.com.au/#/HO/");
   for(const item of items){
-   const race=normalizeSportsbetDemoRace(item,category,sourceUrl,payload.updated_at||payload.fetched_at||null,book);
+   const race=normalizeSportsbetDemoRace(item,category,sourceUrl,null,book);
    if(race.race_number||race.runners.length)races.push(race);
   }
  }
