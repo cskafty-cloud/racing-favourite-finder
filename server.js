@@ -1299,7 +1299,7 @@ async function getGlobalRaces() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // Race.updated_at is only a card timestamp; never use it as the bookmaker price timestamp.
-        const updated=x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||r.odds_updated_at||r.updated_at||payload.server_time||null;
+        const updated=x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
@@ -1322,7 +1322,7 @@ async function getGlobalRaces() {
       return {race_id:String(r.id||r.race_id||[venue,r.race_number??r.number,start].join("-")),id:String(r.id||r.race_id||[venue,r.race_number??r.number,start].join("-")),
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_name:r.full_name||r.name||null,
         race_number:r.race_number??r.number??null,distance_m:Number(String(r.distance||"").match(/[0-9]+/)?.[0])||null,
-        each_way:r.each_way||null,updated_at:r.updated_at||payload.server_time||null,
+        each_way:r.each_way||null,updated_at:r.updated_at||null,
         start_time:start,country:r.country||"Australia",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners};
     }).filter(r=>r.start_time&&!r.closed);
@@ -1333,7 +1333,7 @@ async function getGlobalRaces() {
         byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,combined.filter(r=>categoryOf(r)===code).length])),supplementalErrors:supplemental.errors.length}));
       return {races:combined,
         scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
-        oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
+        oddsFetchedAt:new Date().toISOString(),
         horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Bet365 fixed-win MoviOdds racing board + public multi-bookmaker previews",scope:"Australia",
         note:"Australian horse, greyhound and harness cards are merged across available public and configured feeds. Public bookmaker prices keep their original source labels. Coverage depends on each provider's returned meetings and is not a guarantee of every national race; missing prices are not estimated."};
     }
