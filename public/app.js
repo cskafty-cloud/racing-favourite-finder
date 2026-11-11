@@ -818,12 +818,6 @@ setInterval(syncHistory,15*60*1000);
 // Start background checks before the welcome screen is dismissed so its activity dots are real.
 if(document.readyState==="complete")window.startFullDashboardFeeds();
 else window.addEventListener("load",()=>window.startFullDashboardFeeds(),{once:true});
-+Number(sb.price).toFixed(2)+' · '+sb.ageSeconds+'s verified':"no verified price")+'</b></span><span>Bet365: <b>'+(b365?esc(b365.name)+' 
-  return '<article class="sport-event"><div class="sport-event-heading"><b>'+esc(e.away_team||"Team TBA")+' @ '+esc(e.home_team||"Team TBA")+'</b><span class="sport-upcoming-label">'+(isSportEventLive(e)?"LIVE · IN PLAY":"UPCOMING")+'</span></div><div class="sport-league">'+esc(e.sport_name||e._sport||"SPORT")+(e.league?" · "+esc(e.league):"")+'</div><div class="sport-start-info">'+esc(start)+'</div>'+bookmakerFavourites+outcomes+'<details><summary>All returned bookmaker markets</summary><div class="live-bookmakers">'+(bookText||"No bookmaker market prices returned for this fixture.")+'</div></details><div class="sportsbook-links"><a href="https://www.bet365.com.au/" target="_blank" rel="noopener noreferrer">Open Bet365 markets ↗</a><a href="https://www.sportsbet.com.au/" target="_blank" rel="noopener noreferrer">Open Sportsbet markets ↗</a></div></article>';
- };
- list.innerHTML=events.length?'<section class="race-list-group"><h3>LIVE NOW <span>'+liveEvents.length+'</span></h3>'+(liveEvents.length?liveEvents.map(renderCard).join(""):'<div class="empty compact-empty">No fixtures are currently marked live by the sports feed.</div>')+'</section><section class="race-list-group"><h3>UPCOMING <span>'+upcomingEvents.length+'</span></h3>'+(upcomingEvents.length?upcomingEvents.map(renderCard).join(""):'<div class="empty compact-empty">No upcoming fixtures returned at this refresh.</div>')+'</section>':'<div class="empty">No live or upcoming fixtures were returned by the connected public sports feeds at this refresh. Sportsbet prices remain unavailable unless the public source labels a quote Sportsbet.</div>';
- renderSportTrends();renderTopTips();
-}
 function liveScoreText(side){
  if(!side)return "—";
  const parts=Object.entries(side).filter(([k,v])=>k!=="team"&&v!=null).map(([k,v])=>k==="points"?"PTS "+v:k.charAt(0).toUpperCase()+k.slice(1)+" "+v);
