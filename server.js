@@ -2351,13 +2351,18 @@ async function loadLucasFoxSportsFeed(){
   if(data.tier!=="free"||data.market_scope!=="main")throw new Error("LucasFox response did not confirm the free main-market tier; data not used.");
   const groups=new Map(),marketCounts={h2h:0,spreads:0,totals:0};
   for(const q of Array.isArray(data.quotes)?data.quotes:[]){
-   if(String(q.bookmaker_key||"").toLowerCase()!=="sportsbet"||!["h2h","spreads","totals"].includes(String(q.market_key||"").toLowerCase()))continue;
+   const marketKey=String(q.market_key||"").toLowerCase();
+   const region=String(q.bookmaker_region||q.book?.region||"").toLowerCase();
+   if(String(q.bookmaker_key||"").toLowerCase()!=="sportsbet"||region!=="au"||!["h2h","spreads","totals"].includes(marketKey))continue;
    const event=q.event||{},eventId=String(q.event_id||event.event_id||"");
-   if(!eventId||!q.selection)continue;
+   if(!eventId||!q.selection||!event.home_team||!event.away_team)continue;
+   if(!validLucasSelection(marketKey,q.selection,{home_team:event.home_team,away_team:event.away_team}))continue;
    const start=event.commence_time||null,stamp=q.captured_at||null,parsed=stamp?Date.parse(stamp):NaN;
-   if(!Number.isFinite(parsed)||parsed>Date.now()+60000)continue;
+   if(!start||!Number.isFinite(Date.parse(start))||!Number.isFinite(parsed)||parsed>Date.now()+60000)continue;
    const age=Math.max(Number(q.freshness_seconds)||0,(Date.now()-parsed)/1000);
+   if(!Number.isFinite(age)||age<0||age>15*60)continue;
    const status=String(event.status||"").toLowerCase();
+   if(/cancel|abandon|closed|finished|settled/i.test(status))continue;
    const startMs=Date.parse(start||"");
    if(Number.isFinite(startMs)&&startMs<Date.now()&&!/live|in.?play|running/.test(status))continue;
    let row=groups.get(eventId);
