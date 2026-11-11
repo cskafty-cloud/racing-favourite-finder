@@ -249,6 +249,10 @@ function moviQuoteBookmakerKey(quote){
 }
 let puntersPublicDemoRetryAt=0;
 let puntersPublicDemoLastError="";
+function nextMonthlyQuotaCheck(now=Date.now()){
+ const d=new Date(now);
+ return Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1,0,5,0);
+}
 async function publicDemoRequest(pathname, params={}) {
   if(Date.now()<puntersPublicDemoRetryAt)throw new Error("PuntersEdge public preview paused until "+new Date(puntersPublicDemoRetryAt).toISOString()+": "+puntersPublicDemoLastError);
   const url=new URL(BASE+pathname);
@@ -259,7 +263,7 @@ async function publicDemoRequest(pathname, params={}) {
   if(!response.ok) {
     const message="HTTP "+response.status+": "+(data.detail||data.error||body.slice(0,180));
     if(response.status===402||/monthly.*(limit|quota)|credit.*(limit|exhaust)/i.test(message)){
-      puntersPublicDemoRetryAt=Date.now()+6*60*60*1000;puntersPublicDemoLastError=message;
+      puntersPublicDemoRetryAt=nextMonthlyQuotaCheck();puntersPublicDemoLastError=message;
     }else if(response.status===429||/rate.?limit/i.test(message)){
       puntersPublicDemoRetryAt=Date.now()+60*60*1000;puntersPublicDemoLastError=message;
     }
@@ -785,8 +789,16 @@ function strictMarketQuoteAge(q,stampFields,ageField){
   return direct==null?stamped:Math.max(stamped,direct);
 }
 function racingMarketAge(q,market){
-  if(market==="place")return strictMarketQuoteAge(q,["place_last_update","place_updated_at","place_captured_at"],"place_age_seconds");
-  return strictMarketQuoteAge(q,["last_update","updated_at","captured_at","timestamp"],"age_seconds");
+  const fields=market==="place"?["place_last_update","place_updated_at","place_captured_at"]:["last_update","updated_at","captured_at","timestamp"];
+  const ageField=market==="place"?"place_age_seconds":"age_seconds";
+  const stamp=fields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
+  if(stamp==null)return null;
+  const numeric=Number(stamp);
+  const ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
+  if(!Number.isFinite(ms))return null;
+  const stamped=Math.max(0,(Date.now()-ms)/1000);
+  const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
+  return direct==null?stamped:Math.max(stamped,direct);
 }
 function runnerMarketQuotes(runner,market="win"){
   const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
@@ -803,6 +815,48 @@ function runnerMarketQuotes(runner,market="win"){
 }
 function runnerQuotes(runner){return runnerMarketQuotes(runner,"win");}
 function runnerPlaceQuotes(runner){return runnerMarketQuotes(runner,"place");}
+function runnerQuoteAudit(runner){
+ const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
+ if(!normalizeName(runnerName)||runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
+ const rows=[];
+ for(const q of (runner.bookmakers||runner.odds||[])){
+  const book=bookmakerKey(q),label=q.bookmaker||q.bookmaker_name||q.name||q.key||"Unknown bookmaker";
+  if(!book)continue;
+  const suppliedRunner=q.runner_name||q.selection_name||q.outcome_name||"";
+  if(suppliedRunner&&normalizeName(suppliedRunner)!==normalizeName(runnerName))continue;
+  for(const market of ["win","place"]){
+   const price=market==="win"?racingWinPrice(q):racingPlacePrice(q);
+   if(price==null)continue;
+   const age=racingMarketAge(q,market);
+   const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
+   const reasons=[];
+   if(q.stale===true||(market==="place"&&q.place_stale===true))reasons.push("provider marked stale");
+   if(q.suspended===true||q.scratched===true)reasons.push("suspended or scratched");
+   if(/tote|totalisator|pari.?mutuel/.test(marketType))reasons.push("tote market, not fixed odds");
+   if(market==="place"&&!q.place_market_type&&!q.fixed_place_price&&!q.place_price&&!q.fixed_place&&!q.place_odds)reasons.push("fixed PLACE market not identified");
+   if(market==="win"&&!q.market_type&&!q.fixed_win_price&&!q.fixed_win&&!q.win_odds)reasons.push("fixed WIN market not identified");
+   if(age==null)reasons.push("missing market-specific capture timestamp");
+   else if(age>=racingQuoteMaxAge())reasons.push("stale: "+Math.round(age)+" seconds old");
+   if(age!=null&&age<0)reasons.push("invalid timestamp");
+   rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
+    status:reasons.length?"unverified":"verified",age_seconds:age,
+    captured_at:market==="place"?(q.place_last_update||q.place_updated_at||q.place_captured_at||null):(q.last_update||q.updated_at||q.captured_at||q.timestamp||null),
+    reasons,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
+  }
+ }
+ return rows;
+}
+function raceFavouriteDisplay(race){
+ const verified=selectFavourite(race);
+ if(verified)return {...verified,status:"verified",label:"VERIFIED MARKET FAVOURITE"};
+ const flagged=(race.runners||[]).find(r=>r.is_favourite===true||r.isFavorite===true||r.favourite===true||r.favorite===true||r.market_favourite===true||
+   Number(r.market_rank??r.odds_rank??r.rank)===1);
+ if(flagged)return {name:flagged.name||flagged.runner_name||flagged.horse_name||flagged.greyhound_name||"Favourite",
+   number:flagged.number??flagged.runner_number??null,status:"unpriced",label:"PROVIDER-IDENTIFIED FAVOURITE · UNPRICED",
+   price:null,priceSource:null,quoteCount:0};
+ return {name:null,number:null,status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED",
+   price:null,priceSource:null,quoteCount:0};
+}
 function selectFavourite(race) {
   const median = values => { const x=values.slice().sort((a,b)=>a-b); return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null; };
   const entries=(race.runners||[]).map(r=>{
@@ -1140,7 +1194,7 @@ async function getKrokRaces() {
     const races=dedupeRaces(results.flatMap(x=>x.races||[]));
     const errors=results.filter(x=>x.error).map(x=>x.error);
     const quotaBlocked=errors.some(message=>/429|monthly api limit|credit limit|402|quota/i.test(message));
-    krokRetryAt=quotaBlocked?now+24*60*60*1000:0;
+    krokRetryAt=quotaBlocked?nextMonthlyQuotaCheck(now):0;
     krokRacingCache={at:now,races,meta:results.map(x=>x.meta).filter(Boolean),
       creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
     const quoteCount=book=>races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.filter(q=>bookmakerKey(q)===book).length,0),0);
@@ -1884,7 +1938,13 @@ app.get("/api/races", async (_req, res) => {
     // public Sportsbet horse/greyhound snapshots; Bet365 is parsed independently
     // from the MoviOdds board above. No unsupported bookmaker alias is fabricated.
     let sportsbetDemoRaces=[];try{sportsbetDemoRaces=await loadSportsbetPublicRaceDemos();}catch(e){console.warn("SPORTSBET_PUBLIC_RACING_DEMO_FAILED",e.message);}
-    const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]);    const fetchedAt=new Date().toISOString();
+    const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]).map(race=>{
+      const runners=(race.runners||[]).map(r=>({...r,bookmakerPriceAudit:runnerQuoteAudit(r)}));
+      const enriched={...race,runners};
+      return {...enriched,favourite:raceFavouriteDisplay(enriched),
+        verifiedBookmakerPrices:runners.flatMap(r=>r.bookmakerPriceAudit.filter(q=>q.status==="verified")),
+        unverifiedBookmakerPrices:runners.flatMap(r=>r.bookmakerPriceAudit.filter(q=>q.status==="unverified"))};
+    });    const fetchedAt=new Date().toISOString();
     const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{races:races.filter(r=>categoryOf(r)===code).length,live:races.filter(r=>categoryOf(r)===code&&isRaceLive(r)).length}]));
     const feedErrors=(feed.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x)));
     racingFeedHealth={ok:true,status:feedErrors.length?"partial":"active",fetchedAt,feedSource:feed.feedSource||"Public racing feeds",totalRaces:races.length,byCode,errors:feedErrors,scheduleFetchedAt:feed.scheduleFetchedAt||null,oddsFetchedAt:feed.oddsFetchedAt||null};
@@ -1919,6 +1979,9 @@ app.get("/api/races", async (_req, res) => {
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
+      verifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.verifiedBookmakerPrices||[]).length,0),
+      unverifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.unverifiedBookmakerPrices||[]).length,0),
+      quotaRecheckAt:new Date(Math.min(...[puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).concat([Infinity]))).toISOString().replace("Infinity",""),
       note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Verified Sportsbet fixed WIN quotes: "+sportsbetQuotes+"; verified fixed PLACE quotes: "+sportsbetPlaceQuotes+". Each market requires explicit Sportsbet identity, a valid runner/price match, its own quote timestamp or age, and freshness under 180 seconds. Scratched, suspended, stale, unknown-age, tote and non-Sportsbet prices are excluded. LucasFox is sports-only and is never used for racing."});
   } catch (err) {
     const raw=String(err.message||"");
