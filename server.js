@@ -396,12 +396,12 @@ async function loadPublicDemoSport(sport) {
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
         if(!Number.isFinite(price)||price<=1)continue;
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:bookKey==="bet365"?"Bet365":"Sportsbet",
-          last_update:q.last_update||q.updated_at||null,
+          last_update:q.last_update||q.updated_at||q.price_ts||q.price_timestamp||null,
           age_seconds:q.age_seconds??q.quote_age_seconds??null,
           markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds per-quote bookmaker identity"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-        const outcome={name:String(name),price,last_update:q.last_update||q.updated_at||null,
+        const outcome={name:String(name),price,last_update:q.last_update||q.updated_at||q.price_ts||q.price_timestamp||null,
           age_seconds:q.age_seconds??q.quote_age_seconds??null};
         if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
       }
