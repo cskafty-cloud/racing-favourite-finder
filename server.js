@@ -634,7 +634,14 @@ function quoteAgeSecondsServer(q) {
   const agedDirect=direct==null?null:direct+elapsed;
   if(agedDirect!=null&&stamped!=null)return Math.max(agedDirect,stamped);
   if(agedDirect!=null)return agedDirect;
-  return stamped;
+  if(stamped!=null)return stamped;
+  // Public preview receipt time is a freshness window for the snapshot only,
+  // not proof of when Sportsbet last changed the underlying price.
+  if(q?.public_demo===true&&q?.feed_observed_at){
+    const received=Date.parse(q.feed_observed_at);
+    if(Number.isFinite(received))return Math.max(0,(Date.now()-received)/1000);
+  }
+  return null;
 }
 function racingWinPrice(q) {
   // Never fall back to generic price/odds: those may be place, tote or another market.
@@ -676,13 +683,14 @@ function selectFavourite(race) {
   const spreadPct=best.spread*100;
   // Quote agreement is a hard quality gate: broad disagreement must never be called strong.
   const rawScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
-  const signalScore=spreadPct>25?Math.min(rawScore,25):spreadPct>15?Math.min(rawScore,55):rawScore;
-  const signalLabel=best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
+  const previewOnly=best.quotes.length>0&&best.quotes.every(q=>q.public_demo===true);
+  const signalScore=previewOnly?Math.min(20,rawScore):(spreadPct>25?Math.min(rawScore,25):spreadPct>15?Math.min(rawScore,55):rawScore);
+  const signalLabel=previewOnly?"PREVIEW ONLY · UNVERIFIED":best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
     :best.quotes.length>=2&&spreadPct<=25&&signalScore>=40?"CAUTION":"NO BET · WEAK SIGNAL";
   const r=best.runner;
   return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
-    price:best.fair,priceSource:"multi-bookmaker fixed-win median",quoteCount:best.quotes.length,
-    spreadPct:+spreadPct.toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,signalLabel};
+    price:best.fair,priceSource:previewOnly?"Sportsbet public preview snapshot":"multi-bookmaker fixed-win median",quoteCount:best.quotes.length,
+    spreadPct:+spreadPct.toFixed(1),gapPct:+(gap*100).toFixed(1),signalScore,signalLabel,previewOnly};
 }
 function winnerFromResult(r) {
   const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
