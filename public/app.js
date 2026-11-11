@@ -387,7 +387,7 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = runnerPrices(runner).filter(q=>!isBetfairQuote(q)).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:racingWinPrice(q), placePrice:racingPlacePrice(q), toteWin:racingToteWinPrice(q), totePlace:racingTotePlacePrice(q), eachWayTerms:racingEachWayTerms(q,r), age:quoteAgeSeconds(q), placeAge:q.place_age_seconds??quoteAgeSeconds(q), feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), placeStale:q.place_stale===true||(q.place_age_seconds!=null&&Number(q.place_age_seconds)>=180), publicDemo:q.public_demo===true, raw:q,
+      price:racingWinPrice(q), placePrice:racingPlacePrice(q), toteWin:racingToteWinPrice(q), totePlace:racingTotePlacePrice(q), eachWayTerms:racingEachWayTerms(q,r), age:quoteAgeSeconds(q), placeAge:q.place_age_seconds??null, feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), placeStale:q.place_stale===true||(q.place_age_seconds!=null&&Number(q.place_age_seconds)>=180), publicDemo:q.public_demo===true, raw:q,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>(Number.isFinite(q.price)&&q.price>1)||(Number.isFinite(q.placePrice)&&q.placePrice>1))
       .sort((a,b)=>a.name.localeCompare(b.name)||(a.price??999)-(b.price??999));
