@@ -1226,22 +1226,34 @@ async function getGlobalRaces() {
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
-      const runners=(r.runners||[]).map(x=>{
-        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.odds??x.price??x.fixedOdds??x.win;
+      const rawRunners=Array.isArray(r.runners)?r.runners:(Array.isArray(r.selections)?r.selections:[]);
+      const runners=rawRunners.map(x=>{
+        const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
+        const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
+        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.odds_decimal??x.decimal_odds??
+          x.win_price_decimal??x.fixed_odds_decimal??x.odds_dec??x.odds??x.price??x.fixedOdds??x.win??
+          nested.win??nested.fixed_win??nested.win_price??nested.decimal??nested.price??
+          fixed.win??fixed.win_price??fixed.decimal??fixed.price??null;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
         const winFraction=x.win_frac??x.fixed_win_frac??x.odds_fractional??null;
         const fractionText=typeof winFraction==="string"&&winFraction.includes("/")?winFraction.split("/").map(Number):null;
         const fractionPrice=fractional&&fractional.length===2&&fractional[1]>0?fractional[0]/fractional[1]+1:
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
-        const price=Number(fractionPrice??rawPrice),updated=x.updated_at||r.updated_at||payload.server_time||null;
-        const age=updated&&Number.isFinite(Date.parse(updated))?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null;
+        const price=Number(fractionPrice??rawPrice);
+        const updated=x.price_updated_at||x.odds_updated_at||x.updated_at||x.last_update||r.odds_updated_at||r.updated_at||null;
+        const explicitAge=x.age_seconds??x.quote_age_seconds??null;
+        const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
+          (updated&&Number.isFinite(Date.parse(updated))?Math.max(0,Math.floor((Date.now()-Date.parse(updated))/1000)):null);
         const raceId=r.id||r.race_id||"";
-        return {number:x.number??x.runner_number??x.box??null,name:x.name||x.runner_name||x.selection_name||"Runner",
+        return {number:x.number??x.runner_number??x.runner_no??x.box??x.saddlecloth??null,
+          name:x.name||x.runner_name||x.selection_name||x.horse_name||x.dog_name||"Runner",
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
-          scratched:x.scratched===true,suspended:x.suspended===true,
+          scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365",name:"Bet365",win_price:price,
-            last_update:updated,updated_at:updated,age_seconds:age,stale:age!=null&&age>=180,suspended:x.suspended===true,
-            source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),public_demo:true}]:[]};
+            last_update:updated,updated_at:updated,age_seconds:age,stale:x.stale===true||(age!=null&&age>=180),
+            suspended:x.suspended===true,source:"MoviOdds Bet365 public racing board",
+            source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
+            public_demo:true}]:[]};
       });
       const rawStart=r.jump_utc||r.start_time||r.start_at||r.jump_time||r.commence_time||r.time||null;
       const start=typeof rawStart==="number"?(rawStart>1000000000000?new Date(rawStart).toISOString():new Date(rawStart*1000).toISOString()):rawStart;
