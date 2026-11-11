@@ -64,7 +64,8 @@ function setHeaderConnection(state){
  const label=$("feedStatus"),dot=document.querySelector(".top-right .live-dot");
  if(label)label.textContent=state;
  const connected=String(state).startsWith("CONNECTED");
- if(dot)dot.className="live-dot "+(connected?"connected":state==="PARTIAL"||state==="CHECKING"?"checking":"offline");
+ const limited=/LIMITED|PARTIAL|CHECKING/i.test(String(state));
+ if(dot)dot.className="live-dot "+(connected?(limited?"checking":"connected"):state==="CHECKING"?"checking":"offline");
 }
 function updateBrisbaneClock(){
  const clock=$("clock");
@@ -73,9 +74,10 @@ function updateBrisbaneClock(){
 function renderRaces(data){
  races=data.races||[];
  const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[])].map(x=>typeof x==="string"?x:x?.message||JSON.stringify(x));
- // A successful /api/races response means the dashboard connection is healthy.
- // Provider quota/403 warnings describe source coverage, not a broken app connection.
- setHeaderConnection(races.length?"CONNECTED":"CONNECTED · NO RACES");
+ // Keep website/API connectivity separate from provider coverage. The dashboard
+ // may be online while some upstream feeds are unavailable or quota-limited.
+ const limited=errors.length>0||data.coverageState==="limited";
+ setHeaderConnection(races.length?(limited?"CONNECTED · LIMITED FEEDS":"CONNECTED"):"CONNECTED · NO RACES");
  const active=races.filter(r=>!r.abandoned&&!/abandon|cancel/i.test(String(r.status||"")));
  let shown=active.filter(r=>filter==="all"||String(r.category||r.code||"").toLowerCase().includes(filter));
  shown.sort((a,b)=>{
@@ -87,7 +89,7 @@ function renderRaces(data){
  if($("raceCount"))$("raceCount").textContent=String(active.length);
  count("horseCount");count("dogCount");count("harnessCount");
  if($("updatedAt"))$("updatedAt").textContent=fmtTime(data.fetchedAt);
- if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits."+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
+ if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits."+(limited?" Some upstream sources are unavailable or quota-limited; connected fallback feeds continue to supply the cards shown.":"")+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
  if($("dashboardFeedStatuses")){
   const audits=active.flatMap(r=>(r.runners||[]).flatMap(x=>x.bookmakerPriceAudit||[]));
   const count=(book,market,status)=>audits.filter(q=>q.bookmaker_key===book&&q.market===market&&(!status||q.status===status)).length;
@@ -97,8 +99,8 @@ function renderRaces(data){
   const warningText=errors.length?errors.slice(0,3).join(" · "):"No upstream provider warnings reported.";
   $("dashboardFeedStatuses").innerHTML=
    '<div class="feed-status-item"><span class="feed-dot connected"></span><span><b>DASHBOARD CONNECTION · CONNECTED</b><small>/api/races responded successfully · '+active.length+' race cards loaded</small></span></div>'+
-   '<div class="feed-status-item"><span class="feed-dot '+(errors.length?"checking":"connected")+'"></span><span><b>UPSTREAM FEED COVERAGE · '+(errors.length?"LIMITED":"HEALTHY")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+(errors.length?esc(warningText):"No reported feed errors")+'</small></span></div>'+
-   '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · unverified preview WIN '+sbPreviewWin+' · preview PLACE '+sbPreviewPlace+'</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(errors.length?"checking":"connected")+'"></span><span><b>UPSTREAM FEED COVERAGE · '+(errors.length?"LIMITED · FALLBACK FEEDS ACTIVE":"HEALTHY")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+(errors.length?esc(warningText):"No reported feed errors")+'</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · public preview WIN '+sbPreviewWin+' (unverified) · public preview PLACE '+sbPreviewPlace+' (unverified). Preview prices are reference-only, not verified current Sportsbet odds.</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot '+(b365Win||b365Place?"connected":"checking")+'"></span><span><b>BET365 FIXED WIN / PLACE</b><small>Verified WIN '+b365Win+' · verified PLACE '+b365Place+'</small></span></div>';
  }
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
