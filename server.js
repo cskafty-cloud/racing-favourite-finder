@@ -1163,7 +1163,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
   const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,
    last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
-   age_seconds:r.age_seconds??r.quote_age_seconds??null,stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
+   age_seconds:r.age_seconds??r.quote_age_seconds??null,feed_observed_at:new Date().toISOString(),stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
    source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
@@ -1335,7 +1335,7 @@ async function getGlobalRaces() {
           jockey:x.jockey||x.driver||null,barrier:x.barrier??x.draw??x.box??null,
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365",name:"Bet365",win_price:price,
-            last_update:updated,updated_at:updated,age_seconds:age,stale:x.stale===true||(age!=null&&age>=180),
+            last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed-win · MoviOdds public racing board",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
