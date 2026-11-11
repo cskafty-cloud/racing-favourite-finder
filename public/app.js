@@ -25,6 +25,10 @@ function quoteAgeSeconds(q) {
  if(agedDirect!=null)return agedDirect;
  return stamped;
 }
+function quoteFeedSeenAgeSeconds(q) {
+ const stamp=q?.feed_observed_at, ms=stamp?Date.parse(stamp):NaN;
+ return Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+}
 function isBetfairQuote(q) { return /betfair|exchange/i.test(String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"")); }
 function fixedRunnerPrices(runner) { return runnerPrices(runner).filter(q=>!isBetfairQuote(q)); }
 function runnerFixedOdds(runner) {
@@ -114,7 +118,7 @@ function bookmakerUnverifiedFavourite(race,wantedKey) {
     const age=quoteAgeSeconds(q),price=racingWinPrice(q);
     if(!bookmakerMatches(bookmakerKeyForLink(q),wantedKey)||age!=null||q.stale===true||q.suspended||runner.scratched===true||!Number.isFinite(price)||price<=1)continue;
     candidates.push({name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
-      number:runner.number??runner.runner_number??runner.box??null,price,age:null,verified:false,unverified:true,
+      number:runner.number??runner.runner_number??runner.box??null,price,age:null,feedSeenAge:quoteFeedSeenAgeSeconds(q),verified:false,unverified:true,
       source:q.source||q.source_name||q.feed_source||(wantedKey==="bet365"?"Bet365-labelled public snapshot":"Sportsbet-labelled public snapshot"),
       url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS[wantedKey]});
   }
@@ -128,10 +132,10 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     : '<a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/horse/today" target="_blank" rel="noopener noreferrer">Sportsbet horse races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/greyhound/today" target="_blank" rel="noopener noreferrer">Sportsbet greyhound races ↗</a><a class="bookmaker-market-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer">Sportsbet harness races ↗</a>';
   const runner=favourite?(favourite.number!=null?favourite.number+". ":"")+favourite.name:"";
   const freshness=favourite
-    ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · UNVERIFIED · timestamp missing · not live-confirmed":" · "+Math.round(Number(favourite.age))+"s old · verified fresh")
+    ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · BOOKMAKER AGE UNKNOWN · "+(favourite.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(favourite.feedSeenAge)+"s ago")+" · not live-confirmed":" · "+Math.round(Number(favourite.age))+"s old · verified fresh")
     : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.unverified?'<div class="book-fav-missing unverified-warning">UNVERIFIED PRICE · source timestamp missing. It is not a confirmed live price.</div>':favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price.</div>':"")
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.unverified?'<div class="book-fav-missing unverified-warning">BOOKMAKER TIMESTAMP NOT PROVIDED · feed receipt age is shown separately. This price is not confirmed live.</div>':favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price.</div>':"")
     : '<div class="book-fav-missing">'+(key==="bet365"?"Bet365":"Sportsbet")+' fixed-win price unavailable from the connected public feed. No other bookmaker odds are substituted.</div>';
   const heading=favourite&&favourite.unverified?esc(bookmaker)+" favourite · UNVERIFIED":favourite&&favourite.isFallback?"Sportsbet favourite · estimated market proxy":esc(bookmaker)+" fixed-win favourite";
   return '<div class="book-fav"><div class="book-fav-label">'+heading+'</div>'+details+'<a class="bookmaker-market-link" href="'+esc(url||BOOKMAKER_URLS[key])+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
@@ -268,7 +272,7 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = fixedRunnerPrices(runner).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:racingWinPrice(q), age:quoteAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), publicDemo:q.public_demo===true,
+      price:racingWinPrice(q), age:quoteAgeSeconds(q), feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), publicDemo:q.public_demo===true,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
@@ -281,7 +285,7 @@ function raceCard(r, live=false) {
     const estimate=mid==null
       ? '<span class="market-estimate unavailable">Estimate unavailable · no verified fresh quotes (unverified prices excluded)</span>'
       : '<span class="market-estimate">Market estimate $'+mid.toFixed(2)+' · median of '+fresh.length+' fresh quote'+(fresh.length===1?'':'s')+'</span>';
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
+    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"BOOKMAKER AGE UNKNOWN · "+(q.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(q.feedSeenAge)+"s ago")+" · not live-confirmed":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
     return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
   }).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
@@ -355,7 +359,7 @@ function rawRunnerQuotes(runner) {
     const age=quoteAgeSeconds(q);
     return {name:q.bookmaker || q.name || q.key || "Bookmaker",
       key:q.key || q.bookmaker || q.name || "Bookmaker",
-      price:Number(q.win_price ?? q.win ?? q.price),age,
+      price:Number(q.win_price ?? q.win ?? q.price),age,feedSeenAge:quoteFeedSeenAgeSeconds(q),
       stale:!!q.stale || (age!=null&&age>=racingQuoteMaxAge(q)),
       unverified:age==null&&!q.stale,
       url:q.source_link || q.source_url || null};
@@ -400,7 +404,7 @@ function renderFullCoverage(rows) {
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
       const qs=rawRunnerQuotes(runner).sort((a,b)=>a.name.localeCompare(b.name));
       const quoteHtml=qs.map(q=>{
-        const age=q.age==null?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";
+        const age=q.age==null?"BOOKMAKER AGE UNKNOWN · "+(q.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(q.feedSeenAge)+"s ago"):Math.round(Number(q.age))+"s old · verified fresh";
         const stale=q.stale || (q.age!=null && Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;
         const link=q.url && /^https?:\/\//i.test(q.url) ? ' · <a class="bet-link" href="'+esc(q.url)+'" target="_blank" rel="noopener noreferrer">Open site</a>' : "";
         return '<span class="bookmaker-quote '+(stale?"stale-quote":unverified?"unverified-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":unverified?" · NOT LIVE-CONFIRMED":" · verified fresh")+'</small>'+link+'</span>';
