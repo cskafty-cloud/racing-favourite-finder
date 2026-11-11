@@ -359,7 +359,7 @@ function rawRunnerQuotes(runner) {
     const age=quoteAgeSeconds(q);
     return {name:q.bookmaker || q.name || q.key || "Bookmaker",
       key:q.key || q.bookmaker || q.name || "Bookmaker",
-      price:Number(q.win_price ?? q.win ?? q.price),age,feedSeenAge:quoteFeedSeenAgeSeconds(q),
+      price:Number(q.win_price ?? q.fixed_win_price ?? q.fixed_win ?? q.win_odds ?? q.win ?? q.price),age,feedSeenAge:quoteFeedSeenAgeSeconds(q),
       stale:!!q.stale || (age!=null&&age>=racingQuoteMaxAge(q)),
       unverified:age==null&&!q.stale,
       url:q.source_link || q.source_url || null};
