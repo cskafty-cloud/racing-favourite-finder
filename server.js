@@ -2305,7 +2305,7 @@ app.get("/api/betfair/au/races",async(_req,res)=>{
   const feedUrl=process.env.BETFAIR_FEED_URL||"";
   if(!feedUrl)return res.status(503).json({status:"adapter-url-missing",error:"Set BETFAIR_FEED_URL to the Australian adapter /api/races URL."});
   try{
-    const response=await fetch(feedUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+    const response=await fetch(feedUrl,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
     const body=await response.text();let data;
     try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair racing adapter returned invalid JSON (HTTP "+response.status+").");}
     if(!response.ok)throw new Error(data.error||"Australian Betfair racing adapter HTTP "+response.status);
@@ -2325,7 +2325,7 @@ app.get("/api/betfair/sports",async(_req,res)=>{
   try{
     const sportsFeedUrl=process.env.BETFAIR_SPORTS_FEED_URL||"";
     if(sportsFeedUrl){
-      const response=await fetch(sportsFeedUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+      const response=await fetch(sportsFeedUrl,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair sports adapter returned invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error(data.error||"Australian Betfair sports adapter HTTP "+response.status);
