@@ -955,6 +955,7 @@ async function loadPuntersEdgeRaces() {
     note:"Australian horse, greyhound and harness schedule merged with current runner prices from every bookmaker supported by the connected feed. Sportsbet, bet365 and other supported Australian books appear when they publish a quote. Quote age varies by bookmaker. The feed cannot include bookmakers or races its licensed data provider does not supply."
   };
 }
+function isRaceLive(r){return r.in_play===true||r.inplay===true||r.is_live===true||/live|in.?play|running/i.test(String(r.status||r.market_status||r.event_status||""));}
 function isAustralianRace(race) {
   const country=String(race.country||race.country_code||race.region||"").trim().toLowerCase();
   if (/^(au|aus|australia|australian)(\b|$)/.test(country)) return true;
@@ -1326,6 +1327,21 @@ function dedupeRaces(input) {
   return [...unique.values()].sort((a,b)=>new Date(startTimeOf(a)||0)-new Date(startTimeOf(b)||0));
 }
 
+let racingFeedHealth = {ok:false,status:"checking",fetchedAt:null,feedSource:null,byCode:{},errors:[]};
+const sportsFeedHealth = {};
+let liveSportsFeedHealth = {ok:false,status:"checking",fetchedAt:null,eventCount:0,errors:[]};
+function feedHealthStatus(at, errors=[]) {
+  const age=at?Math.max(0,(Date.now()-Date.parse(at))/1000):Infinity;
+  if(age<=180 && !errors.length)return "active";
+  if(age<=600)return "partial";
+  return "offline";
+}
+app.get("/api/feed-status",(_req,res)=>{
+  const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[]),ageSeconds:racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null};
+  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[]),ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
+  const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[]),ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
+  res.set("Cache-Control","no-store").json({racing,sports,liveSports,checkedAt:new Date().toISOString()});
+});
 app.get("/api/races", async (_req, res) => {
   try {
     const feed = await getGlobalRaces();
@@ -1334,7 +1350,10 @@ app.get("/api/races", async (_req, res) => {
     // They are deliberately merged with the broad public race board; only exact
     // Sportsbet-labelled runner quotes are shown as Sportsbet prices.
     let sportsbetDemoRaces=[];try{sportsbetDemoRaces=await loadSportsbetPublicRaceDemos();}catch(e){console.warn("SPORTSBET_PUBLIC_RACING_DEMO_FAILED",e.message);}
-    const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]);
+    const races = dedupeRaces([...(feed.races||[]),...sportsbetDemoRaces]);    const fetchedAt=new Date().toISOString();
+    const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{races:races.filter(r=>categoryOf(r)===code).length,live:races.filter(r=>categoryOf(r)===code&&isRaceLive(r)).length}]));
+    const feedErrors=(feed.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x)));
+    racingFeedHealth={ok:true,status:feedErrors.length?"partial":"active",fetchedAt,feedSource:feed.feedSource||"Public racing feeds",totalRaces:races.length,byCode,errors:feedErrors,scheduleFetchedAt:feed.scheduleFetchedAt||null,oddsFetchedAt:feed.oddsFetchedAt||null};
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
     try { await recordMarketSnapshots(races, new Date().toISOString()); }
     catch (snapshotError) { console.warn("MARKET_SNAPSHOT_WRITE_FAILED", snapshotError.message); }
@@ -1361,12 +1380,13 @@ app.get("/api/races", async (_req, res) => {
       const name = q.bookmaker || q.name || q.key || "Bookmaker";
       return [bookmakerKey(q), name];
     }))).filter(([key]) => !!key)).entries()].map(([key,name]) => ({key,name}));
-    res.json({races, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
+    res.json({races, feedHealth:racingFeedHealth, providerBookmakers, mode:/demo|public/i.test(String(feed.feedSource||""))?"demo":"live", feedSource:feed.feedSource || "Configured Australian racing feed", fetchedAt:new Date().toISOString(),
       scheduleFetchedAt:feed.scheduleFetchedAt, oddsFetchedAt:feed.oddsFetchedAt,
       horizonHours:feed.horizonHours, providerPlan:feed.providerPlan||feed.meta?.tier||PROVIDER_PLAN, creditsRemaining:feed.creditsRemaining ?? null, feedMeta:feed.meta || null, feedErrors:feed.feedErrors, scope:"Australia",
       note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Sportsbet exact public quotes: "+sportsbetQuotes+"; no-key Sportsbet race snapshots: "+sportsbetDemoRaces.length+". The public Sportsbet snapshot returned no full national card on the last check; the official horse, greyhound and harness schedule links remain available. No other bookmaker price is substituted."});
   } catch (err) {
     const raw=String(err.message||"");
+    racingFeedHealth={ok:false,status:"offline",fetchedAt:new Date().toISOString(),feedSource:"Unavailable",totalRaces:0,byCode:{horse:{races:0,live:0},greyhound:{races:0,live:0},harness:{races:0,live:0}},errors:[raw]};
     const safeWarnings=[];
     if(/PuntersEdge|402|credit limit/i.test(raw)) safeWarnings.push({feed:"PuntersEdge",message:"Free API quota exhausted; public live widgets remain available."});
     if(/Krok Odds|429|monthly api limit/i.test(raw)) safeWarnings.push({feed:"Krok Odds",message:"Monthly API quota reached; waiting for provider reset."});
@@ -1436,10 +1456,11 @@ app.get("/api/live-sports",async(_req,res)=>{
       quoteCount:(e.bookmakers||[]).reduce((n,b)=>n+(b.markets||[]).reduce((m,x)=>m+(x.outcomes||[]).length,0),0)});
    });
    bet365LiveCache={at:Date.now(),events,errors};
+   liveSportsFeedHealth={ok:true,status:errors.length?"partial":"active",fetchedAt:new Date().toISOString(),eventCount:events.length,sportsChecked:sports.length,errors};
    console.info("PUBLIC_LIVE_SPORTS",JSON.stringify({events:events.length,sportsChecked:sports.length,errors:errors.length}));
   }
   res.set("Cache-Control","no-store");
-  res.json({configured:true,provider:"Free public Sportsbet + Bet365 snapshots",events:bet365LiveCache.events,
+  res.json({configured:true,provider:"Free public Sportsbet + Bet365 snapshots",events:bet365LiveCache.events,feedHealth:liveSportsFeedHealth,
     sports:ODDS_DATA_SPORTS.length,bookmakers:["Sportsbet","Bet365"],resultsFetchedAt:new Date(bet365LiveCache.at).toISOString(),
     ageSeconds:Math.round((Date.now()-bet365LiveCache.at)/1000),
     note:"Live events are included only when the public bookmaker snapshot explicitly marks them in-play. This no-key preview may omit live markets; no event or score is inferred."});
@@ -1559,6 +1580,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       return {...b,key,name:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":b.name};
     })}));
     const errors=[...(data.errors||[])];
+    sportsFeedHealth[sport.key]={ok:true,status:errors.length?"partial":"active",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors};
     if(ODDS_API_TOKEN&&events.length<3){
       try{
         const fallback=await loadOddsDataSport(sport,{bulk:true});
@@ -1577,13 +1599,14 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       else unique.get(key).bookmakers=[...(unique.get(key).bookmakers||[]),...(event.bookmakers||[])];
     }
     const rows=[...unique.values()].filter(e=>e.in_play===true||(Number.isFinite(Date.parse(e.commence_time||""))&&Date.parse(e.commence_time)>=Date.now()));
+    sportsFeedHealth[sport.key]={...sportsFeedHealth[sport.key],eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,pricedCount:rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length};
     res.set("Cache-Control","no-store");
     return res.json({sport:{key:sport.key,title:sport.title},events:rows,fetchedAt:new Date().toISOString(),
       provider:data.provider+(ODDS_API_TOKEN?" · Bet365 fallback when public coverage is thin":""),providerErrors:errors,publicDemo:true,
       eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,
       pricedCount:rows.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1)))).length,
       note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 aliases are normalised. Only source-timestamped quotes younger than 180 seconds count as current; old or unknown-age prices are not live. Provider coverage varies by sport."});
-  }catch(error){return res.status(502).json({error:error.message,publicDemo:true});}
+  }catch(error){sportsFeedHealth[sport.key]={ok:false,status:"offline",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors:[error.message]};return res.status(502).json({error:error.message,publicDemo:true});}
 });
 app.get("/api/sports/:sportKey", async (req,res) => {
   const oddsSport=ODDS_DATA_SPORTS.find(x=>x.key===String(req.params.sportKey||"").toLowerCase());
