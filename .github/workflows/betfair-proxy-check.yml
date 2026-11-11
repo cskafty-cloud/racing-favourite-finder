@@ -1,0 +1,28 @@
+name: Betfair adapter syntax checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server.js"
+      - "betfair-au-proxy/**"
+      - ".github/workflows/betfair-proxy-check.yml"
+  pull_request:
+    paths:
+      - "server.js"
+      - "betfair-au-proxy/**"
+
+jobs:
+  node-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check main application syntax
+        run: node --check server.js
+      - name: Check Australian proxy syntax
+        run: node --check betfair-au-proxy/server.js
+      - name: Validate proxy package metadata
+        run: node -e "const p=require('./betfair-au-proxy/package.json'); if(!p.scripts?.start) process.exit(1); console.log(p.name, p.engines.node)"
