@@ -1433,11 +1433,26 @@ async function getGlobalRaces() {
     if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   try {
-    const response=await fetch("https://moviodds.com/racing?code=all&near=200",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
-    const body=await response.text();let payload;
-    try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds racing board returned invalid JSON (HTTP "+response.status+").");}
-    if(!response.ok)throw new Error("MoviOdds racing board HTTP "+response.status+": "+(payload.error||"request failed"));
-    payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country})));
+    // Request each Australian code separately: the combined public board's
+    // near=200 cap can otherwise let one busy code crowd out the others.
+    // This is still the same free, no-key MoviOdds source; it only broadens
+    // schedule coverage and never turns its Bet365 prices into Sportsbet prices.
+    const boardResults=await Promise.all(["horse","greyhound","harness"].map(async code=>{
+      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=200",{
+        headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+      const body=await response.text();let data;
+      try{data=JSON.parse(body);}catch{throw new Error(code+" board invalid JSON (HTTP "+response.status+").");}
+      if(!response.ok)throw new Error(code+" board HTTP "+response.status+": "+(data.error||"request failed"));
+      const rows=Array.isArray(data.races)?data.races:(data.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({
+        ...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country
+      })));
+      return {code,rows,server_time:data.server_time||null};
+    }).map(p=>p.then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason}))));
+    const boardErrors=boardResults.filter(x=>x.status==="rejected").map(x=>x.reason.message);
+    const payload={races:boardResults.filter(x=>x.status==="fulfilled").flatMap(x=>x.value.rows),
+      server_time:boardResults.find(x=>x.status==="fulfilled")?.value.server_time||null};
+    if(!payload.races.length)throw new Error(boardErrors.join(" · ")||"No Australian racing cards returned.");
+    if(boardErrors.length)failures.push({feed:"MoviOdds per-code boards",message:boardErrors.join(" · ")});
 
     const raw=payload.races;
     const sampleRunner=raw.find(r=>(r.runners||r.selections||[]).length)?.runners?.[0]||raw.find(r=>(r.selections||[]).length)?.selections?.[0]||{};
