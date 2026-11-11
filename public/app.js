@@ -335,16 +335,14 @@ function sportsbetMarketPanels(race) {
  const markets=[
   ["FIXED WIN","fixed_win"],["FIXED PLACE","fixed_place"],["TOTE WIN","tote_win"],["TOTE PLACE","tote_place"]
  ];
- const panels=markets.map(([label,key])=>{
-  const exact=sportsbetMarketFavourite(race,key);
-  const estimate=exact?null:indicativeMarketFavourite(race,key);
-  // If neither Sportsbet nor a multi-book market quote exists, show the
-  // Bet365 fixed-WIN leader as a separate reference, never as Sportsbet.
-  const bet365Reference=!exact&&!estimate&&key==="fixed_win"
-    ?(bookmakerFavourite(race,"bet365")||bookmakerUnverifiedFavourite(race,"bet365")):null;
-  const f=exact||estimate||bet365Reference;
-  const detail=exact
-   ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>
+ return markets.map(([label,key])=>{
+  const favourite=sportsbetMarketFavourite(race,key);
+  const detail=favourite
+   ? '<div class="book-fav-runner">'+esc((favourite.number!=null?favourite.number+'. ':'')+favourite.name)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">Sportsbet '+label+' quote · '+(favourite.age==null?'age unavailable':Math.round(favourite.age)+'s old')+'</div>'
+   : '<div class="book-fav-missing">No Sportsbet '+label+' price returned. Other bookmakers and market estimates are not substituted.</div>';
+  return '<div class="book-fav"><div class="book-fav-label">Sportsbet '+label+' favourite</div>'+detail+'</div>';
+ }).join("");
+}
 function sportsbetPlacePanel(favourite) {
  const exact=favourite||null;
  const f=exact||null;
