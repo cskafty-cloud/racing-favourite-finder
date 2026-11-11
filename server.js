@@ -469,14 +469,13 @@ async function loadPublicDemoSport(sport) {
         const ageStamp=quoteUpdatedAt||polledAt;
         const quoteAge=ageStamp?Math.max(0,Math.floor((Date.now()-Date.parse(ageStamp))/1000)):
           (q.age_seconds??q.quote_age_seconds??null);
-        const quoteStale=groupStatus.stale===true||quoteAge==null||Number(quoteAge)>=180;
+        const quoteStale=groupStatus.stale===true||(quoteAge!=null&&Number(quoteAge)>=180);
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:"Bet365",
           last_update:quoteUpdatedAt,age_seconds:quoteAge,
-          stale:quoteStale,
+          stale:groupStatus.stale===true,
           markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds Bet365 feed · quote-level timestamp"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         if(book.age_seconds==null||quoteAge!=null&&quoteAge>book.age_seconds)book.age_seconds=quoteAge;
-        if(quoteStale)book.stale=true;
         // Keep the timestamp and freshness on each individual selection.
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
         const outcome={name:String(name),price,last_update:quoteUpdatedAt,
