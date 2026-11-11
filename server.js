@@ -928,13 +928,26 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
         const number=runner.number??runner.runner_number??null;
         let existing=target.runners.find(x=>number!=null?String(x.number)===String(number):normalizeName(x.name)===normalizeName(name));
         if(!existing){existing={number,name,bookmakers:[]};target.runners.push(existing);}
-        const winRaw=runner.fixed_win??runner.fixed_win_price??runner.win??runner.win_price??runner.win_odds??runner.odds;
-        const placeRaw=runner.fixed_place??runner.fixed_place_price??runner.place??runner.place_price;
-        const win=Number(winRaw), place=Number(placeRaw);
-        if(!runner.scratched && Number.isFinite(win)&&win>1) {
+        const fixedWinRaw=runner.fixed_win??runner.fixed_win_price??runner.fixed_win_odds??runner.win_price??runner.win_odds??null;
+        const fixedPlaceRaw=runner.fixed_place??runner.fixed_place_price??runner.fixed_place_odds??runner.place_price??runner.place_odds??null;
+        const genericWin=runner.win??runner.odds??null, genericPlace=runner.place??null;
+        const rowType=String(runner.bookmaker_type??runner.price_type??runner.market_type??bookRow.bookmaker_type??bookRow.price_type??bookRow.market_type??"fixed").toLowerCase();
+        const genericIsTote=/tote|totalisator|pari.?mutuel/.test(rowType);
+        const fixedWin=Number(fixedWinRaw??(!genericIsTote?genericWin:null));
+        const fixedPlace=Number(fixedPlaceRaw??(!genericIsTote?genericPlace:null));
+        const toteWin=Number(runner.tote_win??runner.tote_win_price??runner.tote?.win??(genericIsTote?genericWin:null));
+        const totePlace=Number(runner.tote_place??runner.tote_place_price??runner.tote?.place??(genericIsTote?genericPlace:null));
+        const valid=(value)=>Number.isFinite(value)&&value>1?value:null;
+        const eachWayTerms=runner.each_way_terms??runner.each_way??runner.ew_terms??race.each_way??null;
+        if(!runner.scratched && [fixedWin,fixedPlace,toteWin,totePlace].some(value=>valid(value)!=null)) {
           const bookmakerId=canonicalBookmakerKey(book);
-          const quote={bookmaker:book,name:book,key:bookmakerId,win_price:win,
-            place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:runner.age_seconds??bookRow.age_seconds??null,
+          const quote={bookmaker:book,name:book,key:bookmakerId,
+            ...(valid(fixedWin)!=null?{win_price:valid(fixedWin),fixed_win_price:valid(fixedWin),market_type:"fixed_win"}:{}),
+            ...(valid(fixedPlace)!=null?{place_price:valid(fixedPlace),fixed_place_price:valid(fixedPlace),place_market_type:"fixed_place"}:{}),
+            ...(valid(toteWin)!=null?{tote_win_price:valid(toteWin)}:{}),
+            ...(valid(totePlace)!=null?{tote_place_price:valid(totePlace)}:{}),
+            ...(eachWayTerms!=null?{each_way_terms:eachWayTerms}:{}),
+            bookmaker_type:rowType,age_seconds:runner.age_seconds??bookRow.age_seconds??null,
             // Only bookmaker update fields qualify as quote timestamps. captured_at
             // is retained separately as feed observation metadata, never promoted.
             last_update:runner.updated_at||runner.last_update||bookRow.updated_at||bookRow.last_update||null,
