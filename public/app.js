@@ -20,6 +20,7 @@ function addStyles(){
  .rf-price-box h4{margin:0 0 8px;font-size:13px}.rf-price-line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid rgba(130,145,165,.16);font-size:12px}
  .price-status{font-size:10px;font-weight:800;letter-spacing:.04em}.verified{color:#42c98a}.unverified{color:#e7ad55}
  .rf-market-section{margin-top:10px}.rf-market-title{font-size:11px;font-weight:800;color:var(--muted,#9aa8b9);text-transform:uppercase;margin:7px 0 3px}
+ .rf-b337-crosscheck{margin-top:12px;padding:10px 12px;border:1px dashed var(--line,#536174);border-radius:9px}.rf-b337-crosscheck>b{font-size:11px;letter-spacing:.06em;display:block;margin-bottom:4px}.rf-b337-crosscheck a{display:inline-block;margin-top:6px;font-size:12px;color:var(--accent,#83b7ff);text-decoration:underline;text-underline-offset:2px}
  .rf-book-label{font-size:9px;letter-spacing:.08em;color:var(--muted,#9aa8b9);font-weight:700;margin-left:5px}.rf-source-meta{font-size:11px;color:var(--muted,#9aa8b9);margin:3px 0 8px}.rf-source-meta>span:first-child{font-size:9px;letter-spacing:.08em;font-weight:800;margin-right:5px}.rf-source-link{color:var(--accent,#83b7ff);text-decoration:underline;text-underline-offset:2px}.rf-source-detail{opacity:.8}
   .rf-empty{padding:14px;color:var(--muted,#9aa8b9);border:1px dashed var(--line,#293342);border-radius:10px}
  .rf-sports-row{padding:10px;border-bottom:1px solid var(--line,#293342);font-size:13px}
@@ -35,6 +36,7 @@ function sourceDetails(q){
    else if(/punters.?edge/.test(lower))url="https://puntersedge.online/";
    else if(/sportsbet/.test(lower))url="https://www.sportsbet.com.au/";
    else if(/bet365/.test(lower))url="https://www.bet365.com.au/";
+   else if(/b337/.test(lower))url="https://www.b337.bet/pricing";
   }
   const safeUrl=/^https?:\\/\\//i.test(url)?url:"";let host=source;
   if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\\./,"")}catch{}}
@@ -75,6 +77,7 @@ function renderRace(r){
   '<div class="rf-fav"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
   (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified tips and rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
   (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
+  '<div class="rf-b337-crosscheck"><b>B337 · MANUAL EXTERNAL CROSS-CHECK</b><div class="rf-muted">Separate B337 Sportsbet/TAB viewing board and price history. Open B337 and compare this race manually where listed. No B337 odds are imported into this card; no automated B337 API connection is active.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
   '</article>';
 }
 function setHeaderConnection(state){
