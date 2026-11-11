@@ -225,15 +225,17 @@ function publicDemoItems(payload) {
   return [];
 }
 const PUNTERS_EDGE_BOOK_SPORTS = {
-  oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",oddsdata_9:"boxing",
-  oddsdata_12:"american-football",oddsdata_13:"tennis",oddsdata_14:"snooker",oddsdata_15:"darts",
-  oddsdata_16:"baseball",oddsdata_17:"ice-hockey",oddsdata_18:"basketball",oddsdata_19:"rugby-league",
-  oddsdata_36:"afl",oddsdata_66:"bowls",oddsdata_75:"gaelic-sports",oddsdata_78:"handball",
-  oddsdata_83:"futsal",oddsdata_90:"floorball",oddsdata_91:"volleyball",oddsdata_92:"table-tennis",
-  oddsdata_94:"badminton",oddsdata_95:"beach-volleyball",oddsdata_107:"squash",oddsdata_110:"water-polo",
-  oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field-hockey"
+  // The no-key bookmaker sandbox accepts display slugs, not ODDS_DATA sport IDs.
+  oddsdata_1:"soccer",oddsdata_3:"cricket",oddsdata_8:"rugby-union",
+  oddsdata_13:"tennis",oddsdata_18:"nba",oddsdata_19:"nrl",
+  oddsdata_36:"afl",oddsdata_162:"mma"
 };
-const PUNTERS_EDGE_BEST_SPORTS = {...PUNTERS_EDGE_BOOK_SPORTS};
+// The best-odds sandbox takes canonical PuntersEdge sport keys (not bookmaker slugs).
+const PUNTERS_EDGE_BEST_SPORTS = {
+  oddsdata_1:"soccer_epl",oddsdata_3:"cricket",oddsdata_8:"rugby_union",
+  oddsdata_13:"tennis",oddsdata_18:"nba",oddsdata_19:"nrl",
+  oddsdata_36:"afl",oddsdata_162:"mma"
+};
 function addPublicOutcome(event, bookKey, name, price, updatedAt=null, ageSeconds=null) {
   if(!Number.isFinite(Number(price))||Number(price)<=1||!name)return;
   const key=canonicalBookmakerKey(bookKey);
