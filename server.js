@@ -224,13 +224,24 @@ function moviQuoteBookmakerKey(quote){
  const value=raw&&typeof raw==="object"?(raw.key||raw.name||raw.slug||raw.title||raw.code||""):raw;
  return canonicalBookmakerKey(value);
 }
+let puntersPublicDemoRetryAt=0;
+let puntersPublicDemoLastError="";
 async function publicDemoRequest(pathname, params={}) {
+  if(Date.now()<puntersPublicDemoRetryAt)throw new Error("PuntersEdge public preview paused until "+new Date(puntersPublicDemoRetryAt).toISOString()+": "+puntersPublicDemoLastError);
   const url=new URL(BASE+pathname);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
   const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
   const body=await response.text(); let data;
   try { data=JSON.parse(body); } catch { throw new Error("Public odds preview returned invalid JSON (HTTP "+response.status+")."); }
-  if(!response.ok) throw new Error("Public odds preview "+response.status+": "+(data.detail||data.error||body.slice(0,180)));
+  if(!response.ok) {
+    const message="HTTP "+response.status+": "+(data.detail||data.error||body.slice(0,180));
+    if(response.status===402||/monthly.*(limit|quota)|credit.*(limit|exhaust)/i.test(message)){
+      puntersPublicDemoRetryAt=Date.now()+6*60*60*1000;puntersPublicDemoLastError=message;
+    }else if(response.status===429||/rate.?limit/i.test(message)){
+      puntersPublicDemoRetryAt=Date.now()+60*60*1000;puntersPublicDemoLastError=message;
+    }
+    throw new Error("Public odds preview "+message);
+  }
   return data;
 }
 const MOVI_SPORT_SLUGS = {
@@ -384,21 +395,23 @@ async function loadPublicDemoSport(sport) {
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
         if(!Number.isFinite(price)||price<=1)continue;
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:bookKey==="bet365"?"Bet365":"Sportsbet",
-          last_update:q.last_update||q.updated_at||match.updated_at||null,
+          last_update:q.last_update||q.updated_at||null,
           age_seconds:q.age_seconds??q.quote_age_seconds??null,
           markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds per-quote bookmaker identity"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-        const outcome={name:String(name),price,last_update:q.last_update||q.updated_at||match.updated_at||null,
+        const outcome={name:String(name),price,last_update:q.last_update||q.updated_at||null,
           age_seconds:q.age_seconds??q.quote_age_seconds??null};
         if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
       }
-      if(!byBook.size)continue;
-      const event={id:String(match.id||[match.home,match.away,match.kickoff_utc].join("|")),
-        home_team:match.home||"Event",away_team:match.away||"",league:match.league||"",
-        sport_name:sport.title,commence_time:match.kickoff_utc||null,in_play:!!match.in_play,
-        status:match.in_play?"LIVE":"UPCOMING",score:match.score||null,
-        bookmakers:[...byBook.values()],_publicDemo:true};
+      const eventStart=match.kickoff_utc||match.start_time||match.commence_time||null;
+      const eventLive=match.in_play===true||/^(live|in.?play|running)$/i.test(String(match.status||""));
+      if(!eventLive&&(!eventStart||!Number.isFinite(Date.parse(eventStart))||Date.parse(eventStart)<Date.now()))continue;
+      const event={id:String(match.id||match.event_id||[match.home,match.away,eventStart].join("|")),
+        home_team:match.home||match.home_team||"Event",away_team:match.away||match.away_team||"",league:match.league||match.competition||"",
+        sport_name:sport.title,commence_time:eventStart,in_play:eventLive,
+        status:eventLive?"LIVE":"UPCOMING",score:match.score||null,
+        bookmakers:[...byBook.values()],_publicDemo:true,_fixtureSource:"MoviOdds event feed"};
       const key=[event.home_team,event.away_team,event.commence_time||"",event.league].join("|").toLowerCase();
       if(!rowsByKey.has(key))rowsByKey.set(key,event);
       else{
@@ -425,7 +438,7 @@ async function loadPublicDemoSport(sport) {
     const t=Date.parse(e.commence_time||"");
     return Number.isFinite(t)&&t>=Date.now();
   }).sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
-  const result={at:Date.now(),rows,errors,provider:"PuntersEdge public demo · Sportsbet + Bet365 snapshots + best odds; MoviOdds"};
+  const result={at:Date.now(),rows,errors,provider:"MoviOdds public event board + PuntersEdge bookmaker snapshots where available"};
   publicDemoCache.set(sport.key,result);
   console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,bookSlug,bestSlug,events:rows.length,live:rows.filter(x=>x.in_play).length,
     sportsbet:rows.filter(x=>x.bookmakers.some(b=>b.key==="sportsbet")).length,
@@ -781,7 +794,8 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  return /(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error)) ? 6 * 60 * 60 * 1000 : 60 * 1000;
+  return /(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error)) ? 6 * 60 * 60 * 1000
+    : /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
