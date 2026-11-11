@@ -151,5 +151,8 @@ document.addEventListener("DOMContentLoaded",()=>{
  }));
  if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
  if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
  });
+ if(document.body.classList.contains("site-entered"))start();
+});
 })();
