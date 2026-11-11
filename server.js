@@ -1330,17 +1330,18 @@ function dedupeRaces(input) {
 let racingFeedHealth = {ok:false,status:"checking",fetchedAt:null,feedSource:null,byCode:{},errors:[]};
 const sportsFeedHealth = {};
 let liveSportsFeedHealth = {ok:false,status:"checking",fetchedAt:null,eventCount:0,errors:[]};
-function feedHealthStatus(at, errors=[]) {
+function feedHealthStatus(at, errors=[], ok=false) {
   if(!at)return "checking";
   const age=Math.max(0,(Date.now()-Date.parse(at))/1000);
-  if(age<=180 && !errors.length)return "active";
-  if(age<=600)return "partial";
+  // Green means the combined endpoint responded recently. Provider warnings remain in errors.
+  if(age<=180 && ok)return "active";
+  if(age<=600 && (ok||errors.length))return "partial";
   return "offline";
 }
 app.get("/api/feed-status",(_req,res)=>{
-  const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[]),ageSeconds:racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null};
-  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[]),ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
-  const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[]),ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
+  const racing={...racingFeedHealth,status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),ageSeconds:racingFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(racingFeedHealth.fetchedAt))/1000):null};
+  const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
+  const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[],liveSportsFeedHealth.ok),ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
   res.set("Cache-Control","no-store").json({racing,sports,liveSports,checkedAt:new Date().toISOString()});
 });
 app.get("/api/races", async (_req, res) => {
