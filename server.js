@@ -824,10 +824,13 @@ function runnerQuoteAudit(runner){
  if(!normalizeName(runnerName)||runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
  const rows=[];
  for(const q of (runner.bookmakers||runner.odds||[])){
-  // Scratched, suspended and stale quotes are excluded entirely, not displayed as alternatives.
-  if(q.stale===true||q.suspended===true||q.scratched===true)continue;
-  const book=bookmakerKey(q),label=q.bookmaker||q.bookmaker_name||q.name||q.key||"Unknown bookmaker";
+  // Keep bookmaker-attributed public previews visible as reference rows even when
+  // they are stale or untimestamped. They remain unverified and never enter
+  // verified favourites, top tips or price comparisons.
+  const book=bookmakerKey(q),publicPreview=q.public_demo===true&&book==="sportsbet";
+  if(q.suspended===true||q.scratched===true||((q.stale===true)&&!publicPreview))continue;
   if(!book)continue;
+  const label=q.bookmaker||q.bookmaker_name||q.name||q.key||"Unknown bookmaker";
   const suppliedRunner=q.runner_name||q.selection_name||q.outcome_name||"";
   if(suppliedRunner&&normalizeName(suppliedRunner)!==normalizeName(runnerName))continue;
   for(const market of ["win","place"]){
@@ -836,10 +839,12 @@ function runnerQuoteAudit(runner){
    const age=racingMarketAge(q,market);
    // Exclude stale, suspended and scratched quotes entirely. Missing timestamps
    // remain visible in the unverified group; old timestamps do not.
-   if(age!=null&&age>=racingQuoteMaxAge())continue;
+   if(age!=null&&age>=racingQuoteMaxAge()&&!publicPreview)continue;
    const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
    const reasons=[];
    if(q.suspended===true||q.scratched===true)continue;
+   if(q.stale===true&&publicPreview)reasons.push("Sportsbet public preview marked stale; reference only");
+   if(age!=null&&age>=racingQuoteMaxAge()&&publicPreview)reasons.push("Sportsbet public preview older than 180 seconds; reference only");
    if(/tote|totalisator|pari.?mutuel/.test(marketType))reasons.push("tote market, not fixed odds");
    if(market==="place"&&!q.place_market_type&&!q.fixed_place_price&&!q.place_price&&!q.fixed_place&&!q.place_odds)reasons.push("fixed PLACE market not identified");
    if(market==="win"&&!q.market_type&&!q.fixed_win_price&&!q.fixed_win&&!q.win_odds)reasons.push("fixed WIN market not identified");
@@ -853,7 +858,7 @@ function runnerQuoteAudit(runner){
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
     status:reasons.length?"unverified":"verified",age_seconds:age,observed_at:observedAt,observed_age_seconds:observedAge,
     captured_at:capturedAt,
-    reasons,verification_label:q.public_demo===true&&age==null?"UNTIMESTAMPED PREVIEW":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
+    reasons,verification_label:publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
   }
  }
  return rows;
@@ -1952,7 +1957,10 @@ function dedupeRaces(input) {
       if(!existing){existing={...runner,name,bookmakers:[]};target.runners.push(existing);}
       for(const q of runner.bookmakers||runner.odds||[]){
         const qkey=bookmakerKey(q); if(!qkey)continue;
-        const ix=existing.bookmakers.findIndex(x=>bookmakerKey(x)===qkey);
+        // Preserve one row per bookmaker AND source class. A timestamped
+        // licensed Sportsbet quote and an untimestamped public Sportsbet preview
+        // can coexist; the preview must not overwrite the verified quote (or vice versa).
+        const ix=existing.bookmakers.findIndex(x=>bookmakerKey(x)===qkey&&Boolean(x.public_demo)===Boolean(q.public_demo));
         if(ix<0)existing.bookmakers.push(q);
         else {
           const old=existing.bookmakers[ix], fresh=Date.parse(q.last_update||q.updated_at||""), prior=Date.parse(old.last_update||old.updated_at||"");
@@ -2034,6 +2042,7 @@ app.get("/api/races", async (_req, res) => {
       verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
       sportsbetPreviewWinQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="WIN").length,0),0),
       sportsbetPreviewPlaceQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified"&&q.market==="PLACE").length,0),0),
+      sportsbetStalePreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.verification_label==="STALE PUBLIC REFERENCE").length,0),0),
       sportsbetUntimestampedPreviewQuotes:races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.age_seconds==null&&q.market==="WIN").length,0),0),
       connectionState:feedErrors.length?"partial":"connected",
       coverageState:feedErrors.length?"limited":"healthy",
