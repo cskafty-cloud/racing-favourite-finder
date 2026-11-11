@@ -770,14 +770,18 @@ function quoteAgeSecondsServer(q) {
 function racingWinPrice(q) {
   const type=String(q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
   if(/tote|totalisator|pari.?mutuel|place/.test(type))return null;
-  const value=q?.fixed_win_price??q?.win_price??q?.fixed_win??q?.win_odds;
-  const price=Number(value);return Number.isFinite(price)&&price>1?price:null;
+  const explicitlyFixed=q?.fixed_win_price??q?.fixed_win;
+  if(explicitlyFixed==null&&!/fixed.?win|win.?fixed/.test(type))return null;
+  const price=Number(explicitlyFixed??q?.win_price??q?.win_odds);
+  return Number.isFinite(price)&&price>1?price:null;
 }
 function racingPlacePrice(q) {
   const type=String(q?.place_market_type||q?.market_type||q?.price_type||q?.bookmaker_type||"").toLowerCase();
   if(/tote|totalisator|pari.?mutuel/.test(type))return null;
-  const value=q?.fixed_place_price??q?.place_price??q?.fixed_place??q?.place_odds;
-  const price=Number(value);return Number.isFinite(price)&&price>1?price:null;
+  const explicitlyFixed=q?.fixed_place_price??q?.fixed_place;
+  if(explicitlyFixed==null&&!/fixed.?place|place.?fixed/.test(type))return null;
+  const price=Number(explicitlyFixed??q?.place_price??q?.place_odds);
+  return Number.isFinite(price)&&price>1?price:null;
 }
 function racingQuoteMaxAge(){return 180;}
 function strictMarketQuoteAge(q,stampFields,ageField){
@@ -849,6 +853,11 @@ function runnerQuoteAudit(runner){
 function raceFavouriteDisplay(race){
  const verified=selectFavourite(race);
  if(verified)return {...verified,status:"verified",label:"VERIFIED MARKET FAVOURITE"};
+ const unverified=(race.runners||[]).flatMap(r=>(r.bookmakerPriceAudit||[]).filter(q=>q.market==="WIN"&&q.status==="unverified").map(q=>({runner:r,quote:q}))).sort((a,b)=>a.quote.price-b.quote.price)[0];
+ if(unverified)return {name:unverified.runner.name||unverified.runner.runner_name||"Favourite",
+   number:unverified.runner.number??unverified.runner.runner_number??null,status:"unverified",
+   label:"UNVERIFIED MARKET FAVOURITE · NOT RANKED",price:unverified.quote.price,
+   priceSource:unverified.quote.bookmaker,quoteCount:0};
  const flagged=(race.runners||[]).find(r=>r.is_favourite===true||r.isFavorite===true||r.favourite===true||r.favorite===true||r.market_favourite===true||
    Number(r.market_rank??r.odds_rank??r.rank)===1);
  if(flagged)return {name:flagged.name||flagged.runner_name||flagged.horse_name||flagged.greyhound_name||"Favourite",
@@ -1981,7 +1990,7 @@ app.get("/api/races", async (_req, res) => {
       verifiedSportsbetFixedWinQuotes:sportsbetQuotes,verifiedSportsbetFixedPlaceQuotes:sportsbetPlaceQuotes,
       verifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.verifiedBookmakerPrices||[]).length,0),
       unverifiedBookmakerPriceCount:races.reduce((n,r)=>n+(r.unverifiedBookmakerPrices||[]).length,0),
-      quotaRecheckAt:new Date(Math.min(...[puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).concat([Infinity]))).toISOString().replace("Infinity",""),
+      quotaRecheckAt:([puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).sort((a,b)=>a-b)[0]||null)?new Date([puntersPublicDemoRetryAt,krokRetryAt].filter(x=>x>Date.now()).sort((a,b)=>a-b)[0]).toISOString():null,
       note:(feed.note||"Australian racing schedule and runner prices from the connected public feeds.")+" Verified Sportsbet fixed WIN quotes: "+sportsbetQuotes+"; verified fixed PLACE quotes: "+sportsbetPlaceQuotes+". Each market requires explicit Sportsbet identity, a valid runner/price match, its own quote timestamp or age, and freshness under 180 seconds. Scratched, suspended, stale, unknown-age, tote and non-Sportsbet prices are excluded. LucasFox is sports-only and is never used for racing."});
   } catch (err) {
     const raw=String(err.message||"");
