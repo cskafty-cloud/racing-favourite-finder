@@ -233,7 +233,7 @@ const PUNTERS_EDGE_BOOK_SPORTS = {
   oddsdata_94:"badminton",oddsdata_95:"beach-volleyball",oddsdata_107:"squash",oddsdata_110:"water-polo",
   oddsdata_151:"esports",oddsdata_162:"mma",oddsdata_163:"bandy",oddsdata_164:"field-hockey"
 };
-const PUNTERS_EDGE_BEST_SPORTS = {oddsdata_36:"afl",oddsdata_19:"nrl",oddsdata_18:"nba"};
+const PUNTERS_EDGE_BEST_SPORTS = {...PUNTERS_EDGE_BOOK_SPORTS};
 function addPublicOutcome(event, bookKey, name, price, updatedAt=null, ageSeconds=null) {
   if(!Number.isFinite(Number(price))||Number(price)<=1||!name)return;
   const key=String(bookKey||"unknown").toLowerCase().replace(/[^a-z0-9]/g,"");
