@@ -8,7 +8,7 @@
   <title>Racing Favourite Finder | Live Racing & Sports</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="icon" type="image/jpeg" href="/logo.jpg"><link rel="apple-touch-icon" href="/logo.jpg"><link rel="stylesheet" href="/styles.css?v=win-favourites-only-20261111-18">
+  <link rel="icon" type="image/jpeg" href="/logo.jpg"><link rel="apple-touch-icon" href="/logo.jpg"><link rel="stylesheet" href="/styles.css?v=sportsbet-all-race-board-20261111">
 </head>
 <body class="entry-pending">
   <section id="entryScreen" class="entry-screen" aria-label="Welcome to Racing Favourite Finder">
@@ -51,13 +51,16 @@
     </section>
 
     <section class="history-panel sportsbet-schedule-panel">
-      <div class="history-heading"><div><div class="eyebrow">OFFICIAL BOOKMAKER RACE LISTINGS</div><h2>Sportsbet · All racing codes</h2><p class="sub">Open Sportsbet's official complete race schedules. This dashboard imports WIN and PLACE prices only when a connected source actually returns them.</p></div><span class="sport-upcoming-label">OFFICIAL LINKS</span></div>
+      <div class="history-heading"><div><div class="eyebrow">OFFICIAL SPORTSBET RACE LISTINGS · LIVE SOURCE</div><h2>Sportsbet · All races & meetings</h2><p class="sub">Open the official Sportsbet race board for the complete live schedule, including Australian, New Zealand and international meetings. Choose Aus/NZ or Int'l on Sportsbet to filter the official list. These links show Sportsbet's own current race listings, not another bookmaker's fixtures.</p></div><span class="sport-upcoming-label">OFFICIAL SPORTSBET</span></div>
       <div class="source-link-grid">
-        <a class="source-link" href="https://www.sportsbet.com.au/next-races" target="_blank" rel="noopener noreferrer"><b>Next to Jump · All codes</b><small>Combined Sportsbet next-to-jump race listing</small></a>
-        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/horse/today" target="_blank" rel="noopener noreferrer"><b>Horse racing · Today</b><small>Sportsbet thoroughbred schedule and markets</small></a>
-        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/greyhound/today" target="_blank" rel="noopener noreferrer"><b>Greyhound racing · Today</b><small>Sportsbet greyhound schedule and markets</small></a>
-        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer"><b>Harness racing · Today</b><small>Sportsbet harness schedule and markets</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/next-races" target="_blank" rel="noopener noreferrer"><b>Next to Jump · All codes</b><small>Live combined horse, greyhound and harness race board</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/today" target="_blank" rel="noopener noreferrer"><b>Today · All races</b><small>All today's Sportsbet meetings, with Aus/NZ and international filters</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/tomorrow" target="_blank" rel="noopener noreferrer"><b>Tomorrow · All races</b><small>All scheduled Sportsbet meetings for tomorrow, across racing codes</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/horse/today" target="_blank" rel="noopener noreferrer"><b>Horse racing · Today</b><small>Sportsbet thoroughbred meetings and markets</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/greyhound/today" target="_blank" rel="noopener noreferrer"><b>Greyhounds · Today</b><small>Sportsbet greyhound meetings and markets</small></a>
+        <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer"><b>Harness · Today</b><small>Sportsbet harness meetings and markets</small></a>
       </div>
+      <p class="sub">WIN and PLACE prices inside this dashboard are counted as verified Sportsbet quotes only when the source explicitly identifies Sportsbet and provides a fresh timestamp for that individual market. A schedule listing alone is never treated as a price.</p>
     </section>
     <section class="history-panel" id="sportsbetCoveragePanel" style="margin:22px 0;padding:22px;border:1px solid var(--line,#293342);border-radius:16px;background:var(--panel,#151c26)">
       <div class="history-heading"><div><div class="eyebrow">LIVE SOURCE AUDIT · AUSTRALIA</div><h2>Sportsbet price coverage</h2><p class="sub">Race-card coverage and verified Sportsbet fixed prices are measured separately. Only Sportsbet-labelled quotes with their own fresh source timestamp count as verified.</p></div><span id="sbCoverageState" class="sport-upcoming-label">CHECKING</span></div>
@@ -199,6 +202,6 @@ const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[]).map(x=>t
 }catch(e){$("sbCoverageState").textContent="COVERAGE CHECK FAILED";$("sbCoverageDetail").textContent=e.message;}}
 load();window.setInterval(load,60000);})();
 </script>
-  <script src="/app.js?v=race-connection-timeout-20261111"></script>
+  <script src="/app.js?v=sportsbet-all-race-board-20261111"></script>
 </body>
 </html>
