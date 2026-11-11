@@ -1886,7 +1886,7 @@ async function getGlobalRaces() {
       failures.push({feed:"Krok Odds",message:error.message});
     }
   }
-  if (false && BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
+  if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
