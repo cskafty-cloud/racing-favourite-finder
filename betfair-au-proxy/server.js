@@ -57,17 +57,29 @@ function raceCategory(name) {
   const s=String(name).toLowerCase();
   return /greyhound/.test(s)?"greyhound":/harness|trotting|pacing/.test(s)?"harness":"horse";
 }
+async function fetchRaceCatalogue(type,from,to){
+ const filter={eventTypeIds:[type.id],marketCountries:['AU'],marketTypeCodes:['WIN','PLACE'],marketStartTime:{from:from.toISOString(),to:to.toISOString()}};
+ try{
+  const markets=await rpc('listMarketCatalogue',{filter,marketProjection:['EVENT','MARKET_START_TIME','RUNNER_DESCRIPTION','MARKET_DESCRIPTION'],sort:'FIRST_TO_START',maxResults:'1000'});
+  return {markets:markets||[],errors:[]};
+ }catch(error){
+  if(!/TOO_MUCH_DATA/i.test(error.message))return {markets:[],errors:[error.message]};
+  const span=to.getTime()-from.getTime();
+  if(span<=30*60*1000)return {markets:[],errors:['Racing catalogue remained oversized at 30-minute resolution: '+error.message]};
+  const mid=new Date(from.getTime()+Math.floor(span/2));
+  const left=await fetchRaceCatalogue(type,from,mid),right=await fetchRaceCatalogue(type,mid,to);
+  const unique=new Map();for(const m of [...left.markets,...right.markets])unique.set(String(m.marketId),m);
+  return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
+ }
+}
 async function loadRaces() {
-  const from=new Date(), to=new Date(Date.now()+48*60*60*1000);
+  const from=new Date(), to=new Date(Date.now()+7*24*60*60*1000);
   const eventTypes=await rpc("listEventTypes",{filter:{marketCountries:["AU"]}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"")}))
     .filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
-    const markets=await rpc("listMarketCatalogue",{filter:{eventTypeIds:[type.id],marketCountries:["AU"],
-      marketTypeCodes:["WIN","PLACE"],marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
-      marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-      sort:"FIRST_TO_START",maxResults:"1000"});
-    return {type,markets:markets||[]};
+    const result=await fetchRaceCatalogue(type,from,to);
+    return {type,markets:result.markets,errors:result.errors};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_type:g.type.name})));
   const books=[];
@@ -113,7 +125,8 @@ async function loadRaces() {
     };
   });
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
-    scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),horizonHours:48,
+    scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),horizonHours:168,
+    feedErrors:groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
     note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
