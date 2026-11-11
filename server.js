@@ -1254,8 +1254,8 @@ async function loadSportsbetPublicRaces(){
 
 let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
- // Do not accept a generic "price" field here: it may be a place or other market.
- // Generic price fields are accepted only inside a row explicitly labelled WIN.
+ // WIN and PLACE are deliberately parsed independently. A generic price is
+ // accepted only inside an explicitly labelled WIN market row.
  const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice"];
  const readPrice=value=>{const n=Number(value);return Number.isFinite(n)&&n>1?n:null;};
  for(const key of directKeys){const n=readPrice(runner?.[key]);if(n)return n;}
@@ -1264,8 +1264,6 @@ function sportsbetDemoPrice(runner){
    for(const key of directKeys.concat(["win","price","decimal","odds","returnWin"])){const n=readPrice(group[key]);if(n)return n;}
   }
  }
- // Public bookmaker snapshots vary: some put win prices under market outcomes,
- // some under a per-runner bookmaker/prices array. Only explicitly named WIN rows qualify.
  const rows=[...(Array.isArray(runner?.markets)?runner.markets:[]),...(Array.isArray(runner?.prices)?runner.prices:[])];
  for(const row of rows){
   const market=String(row.market||row.market_name||row.marketName||row.type||row.name||row.key||"");
@@ -1273,13 +1271,40 @@ function sportsbetDemoPrice(runner){
   const outcomes=row.outcomes||row.selections||row.runners||[row];
   for(const outcome of outcomes){for(const key of ["win_price","fixed_win_price","fixed_win","win_odds","price","odds","decimal","fixedOdds"]){const n=readPrice(outcome?.[key]);if(n)return n;}}
  }
- // A runner can carry a bookmaker-keyed odds object. Accept only the requested
- // Sportsbet entry and only its explicit win field.
  const keyed=runner?.bookmakers||runner?.bookmaker_odds;
  const entries=Array.isArray(keyed)?keyed:Object.values(keyed||{});
  for(const entry of entries){if(canonicalBookmakerKey(entry?.key||entry?.bookmaker||entry?.name)!=="sportsbet")continue;
   for(const key of directKeys){const n=readPrice(entry?.[key]);if(n)return n;}
   const n=readPrice(entry?.win);if(n)return n;
+ }
+ return null;
+}
+function sportsbetDemoPlacePrice(runner){
+ const read=value=>{const n=Number(value);return Number.isFinite(n)&&n>1?n:null;};
+ const keys=["place_price","fixed_place_price","fixed_place","place_odds","place_fixed_odds","fixed_place_odds","placePrice","placeOdds"];
+ for(const key of keys){const n=read(runner?.[key]);if(n)return n;}
+ for(const group of [runner?.place,runner?.place_odds,runner?.fixed_place,runner?.fixedPlaceOdds,runner?.fixed_place_odds,runner?.fixedOdds,runner?.fixed_odds,runner?.odds]){
+  if(group&&typeof group==="object"&&!Array.isArray(group)){
+   for(const key of keys.concat(["price","odds","decimal"])){const n=read(group[key]);if(n)return n;}
+  }
+ }
+ const rows=[...(Array.isArray(runner?.markets)?runner.markets:[]),...(Array.isArray(runner?.prices)?runner.prices:[])];
+ for(const row of rows){
+  const market=String(row.market||row.market_name||row.marketName||row.type||row.name||row.key||"");
+  if(!/place|each.?way/i.test(market))continue;
+  const rawBook=row.bookmaker_key||row.bookmakerKey||row.bookmaker||row.bookmaker_name||row.site;
+  if(rawBook&&canonicalBookmakerKey(rawBook)!=="sportsbet")continue;
+  const outcomes=row.outcomes||row.selections||row.runners||[row];
+  for(const outcome of outcomes){
+   const book=outcome.bookmaker_key||outcome.bookmakerKey||outcome.bookmaker||outcome.bookmaker_name||outcome.site;
+   if(book&&canonicalBookmakerKey(book)!=="sportsbet")continue;
+   for(const key of keys.concat(["price","odds","decimal"])){const n=read(outcome?.[key]);if(n)return n;}
+  }
+ }
+ const keyed=runner?.bookmakers||runner?.bookmaker_odds,entries=Array.isArray(keyed)?keyed:Object.values(keyed||{});
+ for(const entry of entries){if(canonicalBookmakerKey(entry?.key||entry?.bookmaker||entry?.name)!=="sportsbet")continue;
+  for(const key of keys){const n=read(entry?.[key]);if(n)return n;}
+  const n=read(entry?.place);if(n&&typeof entry.place!=="object")return n;
  }
  return null;
 }
@@ -1299,12 +1324,14 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
   if(!name)return null;
   const price=sportsbetDemoPrice(r);
+  const placePrice=bookKey==="sportsbet"?sportsbetDemoPlacePrice(r):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
   const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
-  const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,market_type:"fixed_win",
+  const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
+   ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place"}:{}),
    last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
    age_seconds:r.age_seconds??r.quote_age_seconds??null,feed_observed_at:new Date().toISOString(),stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
-   source:bookName+" fixed-win public bookmaker preview",source_url:sourceUrl,event_url:sourceUrl}]:[];
+   source:bookName+" fixed-win/place public bookmaker preview",source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
  const id=String(item.id||item.race_id||item.event_id||[bookmaker,category,venue,raceNumber,start].join("-"));
