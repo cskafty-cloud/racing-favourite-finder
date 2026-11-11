@@ -84,7 +84,7 @@ function renderRaces(data){
  if($("raceCount"))$("raceCount").textContent=String(active.length);
  count("horseCount");count("dogCount");count("harnessCount");
  if($("updatedAt"))$("updatedAt").textContent=fmtTime(data.fetchedAt);
- if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
+ if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits."+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
  if($("dashboardFeedStatuses"))$("dashboardFeedStatuses").innerHTML='<div class="feed-status-item"><span class="feed-dot '+(data.feedHealth?.errors?.length?"checking":"")+'"></span><span><b>RACING FEEDS · '+(data.feedHealth?.errors?.length?"PARTIAL":"CHECKED")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+active.length+' race cards</small></span></div>';
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
  renderBestTips(active);
