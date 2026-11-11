@@ -1245,7 +1245,7 @@ async function loadSportsbetPublicRaces(){
 
 let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
- const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice"];
+ const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice","price"];
  const readPrice=value=>{const n=Number(value);return Number.isFinite(n)&&n>1?n:null;};
  for(const key of directKeys){const n=readPrice(runner?.[key]);if(n)return n;}
  for(const group of [runner?.fixed_odds,runner?.fixedOdds,runner?.fixed,runner?.fixed_win_odds,runner?.fixedWinOdds,runner?.odds]){
@@ -1293,7 +1293,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const bookmakers=price? [{key:bookKey,bookmaker:bookName,name:bookName,win_price:price,
    last_update:r.last_update||r.captured_at||r.timestamp||r.updated_at||null,
    age_seconds:r.age_seconds??r.quote_age_seconds??null,feed_observed_at:new Date().toISOString(),stale:r.stale===true||(r.age_seconds!=null&&Number(r.age_seconds)>=180),public_demo:true,
-   source_url:sourceUrl,event_url:sourceUrl}]:[];
+   source:"Sportsbet public bookmaker preview (source timestamp unavailable)",source_url:sourceUrl,event_url:sourceUrl}]:[];
   return {name,number,scratched:r.scratched===true||r.status==="scratched",bookmakers};
  }).filter(Boolean);
  const id=String(item.id||item.race_id||item.event_id||[bookmaker,category,venue,raceNumber,start].join("-"));
