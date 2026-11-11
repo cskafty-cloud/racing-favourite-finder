@@ -178,6 +178,8 @@ async function demoRacingFeed() {
         const updated=q.last_update||q.updated_at||q.captured_at||q.timestamp||null;
         return {...q,key,bookmaker:key==="sportsbet"?"Sportsbet":key==="bet365"?"Bet365":q.bookmaker||q.name||rawBook,
           win_price:price,age_seconds:age==null?null:Number(age),last_update:updated,
+          source:q.source||"PuntersEdge public live racing teaser",
+          source_url:q.source_url||q.url||null,event_url:q.source_url||q.url||null,
           stale:q.stale===true||(age!=null&&Number(age)>=180),public_demo:true};
       }).filter(q=>q.key&&Number.isFinite(q.win_price)&&q.win_price>1);
       return {...x,bookmakers};
@@ -901,10 +903,14 @@ async function loadRapidRacing() {
   return rapidRacingCache;
 }
 async function loadSupplementalAustralianRaces() {
+  // RapidOddsAPI racing is not included in the currently configured plan. Do not
+  // spend calls on endpoints that return 403; only opt in after the plan includes racing.
+  // Sportsbet's public web page currently returns 403, so do not scrape/retry it.
+  // Use the provider's supported no-key racing teaser instead; it returns genuine
+  // bookmaker-labelled sample prices and their source links where available.
   const jobs=[
-    ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.resolve({races:[],errors:[]})],
-    ["Sportsbet public race pages",()=>loadSportsbetPublicRaces()],
-    ["Sportsbet public snapshots",()=>loadSportsbetPublicRaceDemos()],
+    ["PuntersEdge public racing demo",()=>demoRacingFeed()],
+    ["RapidOddsAPI",()=>RAPID_ODDS_KEY&&process.env.RAPIDODDS_RACING_ENABLED==="true"?loadRapidRacing():Promise.resolve({races:[],errors:[]})],
     ["Krok Odds",()=>KROKODDS_API_KEY&&process.env.PUBLIC_ONLY_FEEDS!=="true"?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
@@ -1188,7 +1194,7 @@ async function getGlobalRaces() {
         const byCode=Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,combined.filter(r=>categoryOf(r)===code).length]));
         console.info("AUSTRALIAN_RACE_COVERAGE_MERGE",JSON.stringify({primary:(primary.races||[]).length,supplemental:supplemental.races.length,total:combined.length,byCode,errors:supplemental.errors.length}));
         return {...primary,races:combined,feedErrors:[...(primary.feedErrors||[]),...supplemental.errors],
-          feedSource:"PuntersEdge + RapidOddsAPI + Sportsbet public schedule + Krok Odds (where configured)",
+          feedSource:"PuntersEdge live racing + public racing teaser + MoviOdds + Krok Odds (where configured)",
           note:"Australian horse, greyhound and harness races are merged across every configured source that responds. The list is broader than any one provider; it is not a guarantee of every race in Australia. Prices are retained only with their original bookmaker/source labels; missing prices remain unavailable."};
       }
       if (quotaBlocked) {
@@ -1210,7 +1216,7 @@ async function getGlobalRaces() {
         const supplemental=await loadSupplementalAustralianRaces();
         return {...alternate,races:dedupeRaces([...(alternate.races||[]),...supplemental.races]),
           feedErrors:failures.concat(alternate.feedErrors||[],supplemental.errors),
-          feedSource:"Krok Odds + RapidOddsAPI + Sportsbet public schedule",
+          feedSource:"PuntersEdge public racing teaser + MoviOdds + Krok Odds",
           note:"Australian horse, greyhound and harness races are merged across configured feeds that respond. Coverage is broader but not guaranteed to include every national meeting; source-specific odds are never relabelled."};
       }
       failures.push({feed:"Krok Odds",message:(alternate.feedErrors||[]).map(x=>typeof x==="string"?x:(x.message||JSON.stringify(x))).join(" · ")||"No racing markets returned."});
@@ -1327,7 +1333,7 @@ async function getGlobalRaces() {
       return {races:combined,
         scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
         oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
-        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Free public previews · MoviOdds + Sportsbet schedule + RapidOddsAPI/Krok (where configured)",scope:"Australia",
+        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Free public previews · PuntersEdge racing teaser + MoviOdds + Krok (where configured)",scope:"Australia",
         note:"Australian horse, greyhound and harness cards are merged across available public and configured feeds. Public bookmaker prices keep their original source labels. Coverage depends on each provider's returned meetings and is not a guarantee of every national race; missing prices are not estimated."};
     }
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
@@ -1338,7 +1344,7 @@ async function getGlobalRaces() {
     const supplemental=await loadSupplementalAustralianRaces();
     const combined=dedupeRaces([...publicRaceRows,...supplemental.races]);
     return {races:combined,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),
-      horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Public Australian race previews + Sportsbet schedule + RapidOddsAPI/Krok (where configured)",scope:"Australia",
+      horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"PuntersEdge public racing teaser + MoviOdds + Krok (where configured)",scope:"Australia",
       note:"Australian horse, greyhound and harness races are combined from available public and configured sources. Coverage varies by feed and is not guaranteed to include every national race; missing prices are not estimated."};
   }
   if(failures.length) throw new Error(failures.map(x=>x.feed+": "+x.message).join(" · "));
