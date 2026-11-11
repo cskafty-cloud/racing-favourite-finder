@@ -4433,23 +4433,6 @@ async function loadLucasFoxSports(){
 
 
 setInterval(loadLucasFoxSports,15*60*1000);
-+mid.toFixed(2)+' · '+fresh.length+' timestamped fresh quote'+(fresh.length===1?'':'s')+' · not a Sportsbet quote</span>');
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"WIN STALE":unverified?"WIN AGE UNKNOWN · "+(q.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(q.feedSeenAge)+"s ago")+" · not live-confirmed":Math.round(Number(q.age))+"s old · verified fresh";const placeStale=q.placeStale||(q.placeAge!=null&&Number(q.placeAge)>=racingQuoteMaxAge(q.raw||{}));const placeUnverified=q.placePrice!=null&&q.placeAge==null;const placeState=placeStale?"PLACE STALE":placeUnverified?"PLACE AGE UNKNOWN":Math.round(Number(q.placeAge))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b>${Number.isFinite(q.price)&&q.price>1?` <strong>FIXED WIN ${q.price.toFixed(2)}</strong>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?` <strong>FIXED PLACE ${q.placePrice.toFixed(2)}</strong>`:""}${Number.isFinite(q.toteWin)&&q.toteWin>1?` <strong>TOTE WIN ${q.toteWin.toFixed(2)}</strong>`:""}${Number.isFinite(q.totePlace)&&q.totePlace>1?` <strong>TOTE PLACE ${q.totePlace.toFixed(2)}</strong>`:""}${q.eachWayTerms?` <small>EACH WAY ${esc(typeof q.eachWayTerms==="string"?q.eachWayTerms:JSON.stringify(q.eachWayTerms))}</small>`:""}${Number.isFinite(q.price)&&q.price>1?`<small>${stateLabel}</small>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?`<small>${placeState}</small>`:""}${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">NO CURRENT BOOKMAKER WIN OR PLACE QUOTE RETURNED · this runner’s price is unavailable in the connected feeds</span>';
-    return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
-  }).join("");
-  return `<article class="race-card ${live?"live-race-card":""}">
-    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":type==="harness"?"🏇 HARNESS RACING":"🐕 GREYHOUND RACING"}</div>
-      <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
-      <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
-      <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">No current bookmaker win quote returned</div>`}</div>
-    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
-    <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${sportsbetMarketPanels(r)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
-    <div class="all-bookmaker-odds"><div class="odds-heading">RACING WIN & PLACE PRICES <span>Fixed-win and place quotes only · missing prices are not estimated</span></div>${runnerOdds || '<div class="no-odds">No current bookmaker win or place quotes returned by the connected feeds.</div>'}</div>
-  </article>`;
-}
-
 function possibleRaceGaps(rows) {
   const groups = new Map();
   for (const r of rows) {
@@ -9839,23 +9822,6 @@ async function loadLucasFoxSports(){
 
 
 setInterval(loadLucasFoxSports,15*60*1000);
-+mid.toFixed(2)+' · '+fresh.length+' timestamped fresh quote'+(fresh.length===1?'':'s')+' · not a Sportsbet quote</span>');
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"WIN STALE":unverified?"WIN AGE UNKNOWN · "+(q.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(q.feedSeenAge)+"s ago")+" · not live-confirmed":Math.round(Number(q.age))+"s old · verified fresh";const placeStale=q.placeStale||(q.placeAge!=null&&Number(q.placeAge)>=racingQuoteMaxAge(q.raw||{}));const placeUnverified=q.placePrice!=null&&q.placeAge==null;const placeState=placeStale?"PLACE STALE":placeUnverified?"PLACE AGE UNKNOWN":Math.round(Number(q.placeAge))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b>${Number.isFinite(q.price)&&q.price>1?` <strong>FIXED WIN ${q.price.toFixed(2)}</strong>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?` <strong>FIXED PLACE ${q.placePrice.toFixed(2)}</strong>`:""}${Number.isFinite(q.toteWin)&&q.toteWin>1?` <strong>TOTE WIN ${q.toteWin.toFixed(2)}</strong>`:""}${Number.isFinite(q.totePlace)&&q.totePlace>1?` <strong>TOTE PLACE ${q.totePlace.toFixed(2)}</strong>`:""}${q.eachWayTerms?` <small>EACH WAY ${esc(typeof q.eachWayTerms==="string"?q.eachWayTerms:JSON.stringify(q.eachWayTerms))}</small>`:""}${Number.isFinite(q.price)&&q.price>1?`<small>${stateLabel}</small>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?`<small>${placeState}</small>`:""}${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">NO CURRENT BOOKMAKER WIN OR PLACE QUOTE RETURNED · this runner’s price is unavailable in the connected feeds</span>';
-    return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
-  }).join("");
-  return `<article class="race-card ${live?"live-race-card":""}">
-    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":type==="harness"?"🏇 HARNESS RACING":"🐕 GREYHOUND RACING"}</div>
-      <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
-      <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
-      <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">No current bookmaker win quote returned</div>`}</div>
-    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
-    <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${sportsbetMarketPanels(r)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
-    <div class="all-bookmaker-odds"><div class="odds-heading">RACING WIN & PLACE PRICES <span>Fixed-win and place quotes only · missing prices are not estimated</span></div>${runnerOdds || '<div class="no-odds">No current bookmaker win or place quotes returned by the connected feeds.</div>'}</div>
-  </article>`;
-}
-
 function possibleRaceGaps(rows) {
   const groups = new Map();
   for (const r of rows) {
@@ -15246,23 +15212,6 @@ async function loadLucasFoxSports(){
 
 
 setInterval(loadLucasFoxSports,15*60*1000);
-+mid.toFixed(2)+' · '+fresh.length+' timestamped fresh quote'+(fresh.length===1?'':'s')+' · not a Sportsbet quote</span>');
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"WIN STALE":unverified?"WIN AGE UNKNOWN · "+(q.feedSeenAge==null?"feed receipt time unavailable":"seen by feed "+Math.round(q.feedSeenAge)+"s ago")+" · not live-confirmed":Math.round(Number(q.age))+"s old · verified fresh";const placeStale=q.placeStale||(q.placeAge!=null&&Number(q.placeAge)>=racingQuoteMaxAge(q.raw||{}));const placeUnverified=q.placePrice!=null&&q.placeAge==null;const placeState=placeStale?"PLACE STALE":placeUnverified?"PLACE AGE UNKNOWN":Math.round(Number(q.placeAge))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b>${Number.isFinite(q.price)&&q.price>1?` <strong>FIXED WIN ${q.price.toFixed(2)}</strong>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?` <strong>FIXED PLACE ${q.placePrice.toFixed(2)}</strong>`:""}${Number.isFinite(q.toteWin)&&q.toteWin>1?` <strong>TOTE WIN ${q.toteWin.toFixed(2)}</strong>`:""}${Number.isFinite(q.totePlace)&&q.totePlace>1?` <strong>TOTE PLACE ${q.totePlace.toFixed(2)}</strong>`:""}${q.eachWayTerms?` <small>EACH WAY ${esc(typeof q.eachWayTerms==="string"?q.eachWayTerms:JSON.stringify(q.eachWayTerms))}</small>`:""}${Number.isFinite(q.price)&&q.price>1?`<small>${stateLabel}</small>`:""}${Number.isFinite(q.placePrice)&&q.placePrice>1?`<small>${placeState}</small>`:""}${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">NO CURRENT BOOKMAKER WIN OR PLACE QUOTE RETURNED · this runner’s price is unavailable in the connected feeds</span>';
-    return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
-  }).join("");
-  return `<article class="race-card ${live?"live-race-card":""}">
-    <div><div class="race-type">${type==="horse"?"🐎 HORSE RACING":type==="harness"?"🏇 HARNESS RACING":"🐕 GREYHOUND RACING"}</div>
-      <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
-      <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
-      <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">No current bookmaker win quote returned</div>`}</div>
-    <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
-    <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${sportsbetMarketPanels(r)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
-    <div class="all-bookmaker-odds"><div class="odds-heading">RACING WIN & PLACE PRICES <span>Fixed-win and place quotes only · missing prices are not estimated</span></div>${runnerOdds || '<div class="no-odds">No current bookmaker win or place quotes returned by the connected feeds.</div>'}</div>
-  </article>`;
-}
-
 function possibleRaceGaps(rows) {
   const groups = new Map();
   for (const r of rows) {
