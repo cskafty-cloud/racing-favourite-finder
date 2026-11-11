@@ -1888,7 +1888,7 @@ async function getGlobalRaces() {
   }
   if (false && BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
-      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const data=await response.json();
       if(response.ok && Array.isArray(data.races) && data.races.length) return {...data,feedErrors:failures,feedSource:data.feedSource||"Betfair Exchange"};
       failures.push({feed:"Betfair feed adapter",message:data.error||"No Australian markets returned (HTTP "+response.status+")."});
@@ -1913,7 +1913,7 @@ async function getGlobalRaces() {
     // schedule coverage and never turns its Bet365 prices into Sportsbet prices.
     const boardResults=await Promise.all(["horse","greyhound","harness"].map(async code=>{
       const response=await fetch("https://moviodds.com/racing?code="+code+"&near=500",{
-        headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+        headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error(code+" board invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error(code+" board HTTP "+response.status+": "+(data.error||"request failed"));
