@@ -210,6 +210,16 @@ async function loadMoviOddsAllSports(){
  })().catch(error=>{moviOddsAllSportsCache.error=error.message;throw error;}).finally(()=>{moviOddsAllSportsRefresh=null;});
  return moviOddsAllSportsRefresh;
 }
+function moviTimestamp(value){
+ if(value==null||value==="")return null;
+ const numeric=Number(value);
+ if(Number.isFinite(numeric)&&String(value).trim()!==""){
+  const ms=numeric>1000000000000?numeric:numeric>1000000000?numeric*1000:NaN;
+  if(Number.isFinite(ms))return new Date(ms).toISOString();
+ }
+ const parsed=Date.parse(value);
+ return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
 function moviSportMatches(item,sport){
  const wanted=String(sport.id),key=String(sport.key||"").toLowerCase(),slug=String(MOVI_SPORT_SLUGS[key]||PUBLIC_DEMO_SPORTS[key]||"").toLowerCase();
  const ids=[item.sport_id,item.sportId,item.sport?.id,item.sport?.sport_id,item.sport_key,item.sport].filter(x=>x!=null).map(x=>String(typeof x==="object"?(x.key||x.name||x.slug||x.id||""):x).toLowerCase());
@@ -350,7 +360,8 @@ async function loadPublicDemoSport(sport) {
   const bestSlug=PUNTERS_EDGE_BEST_SPORTS[sport.key]||null;
   const jobs=[
     bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport:bookSlug}):Promise.resolve(null),
-    bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"bet365",sport:bookSlug}):Promise.resolve(null),
+    // Bet365 is already supplied by MoviOdds' documented no-key all-sports feed.
+    // Avoid spending the public demo's small shared request allowance on a duplicate book.
     bestSlug?publicDemoRequest("/v1/demo/best-odds",{sport:bestSlug}):Promise.resolve(null),
     (async()=>{
       const all=await loadMoviOddsAllSports();
@@ -448,20 +459,26 @@ async function loadPublicDemoSport(sport) {
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
         if(!Number.isFinite(price)||price<=1)continue;
         const groupStatus=match.group_status?.[String(q.group_id)]||match.group_status?.[q.group_id]||{};
-        const polledAt=groupStatus.polled_at||match.polled_at||null;
-        const serverTime=match._moviServerTime||match.server_time||new Date().toISOString();
-        const pollAge=polledAt?Math.max(0,(Date.parse(serverTime)-Date.parse(polledAt))/1000):null;
-        const quoteAge=pollAge??q.age_seconds??q.quote_age_seconds??null;
+        if(q.suspended===true||groupStatus.suspended===true)continue;
+        // MoviOdds supplies a timestamp on each quote. Use that rather than the
+        // market's last poll time: polling a market does not prove its price changed.
+        const quoteUpdatedAt=moviTimestamp(q.ts??q.timestamp??q.last_update??q.updated_at);
+        const polledAt=moviTimestamp(groupStatus.polled_at||match.polled_at);
+        const ageStamp=quoteUpdatedAt||polledAt;
+        const quoteAge=ageStamp?Math.max(0,Math.floor((Date.now()-Date.parse(ageStamp))/1000)):
+          (q.age_seconds??q.quote_age_seconds??null);
+        const quoteStale=groupStatus.stale===true||quoteAge==null||Number(quoteAge)>=180;
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:"Bet365",
-          last_update:null,age_seconds:quoteAge,
-          stale:groupStatus.stale===true,
-          markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds documented Bet365-only odds feed"});
+          last_update:quoteUpdatedAt,age_seconds:quoteAge,
+          stale:quoteStale,
+          markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds Bet365 feed · quote-level timestamp"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         if(book.age_seconds==null||quoteAge!=null&&quoteAge>book.age_seconds)book.age_seconds=quoteAge;
-        // Market-level stale state is applied to its individual outcomes below.
+        if(quoteStale)book.stale=true;
+        // Keep the timestamp and freshness on each individual selection.
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-        const outcome={name:String(name),price,last_update:null,
-          age_seconds:quoteAge,observed_at:new Date().toISOString(),stale:groupStatus.stale===true};
+        const outcome={name:String(name),price,last_update:quoteUpdatedAt,
+          age_seconds:quoteAge,observed_at:new Date().toISOString(),stale:quoteStale};
         if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
       }
       const eventStart=match.kickoff_utc||match.start_time||match.commence_time||null;
@@ -1571,7 +1588,9 @@ async function getGlobalRaces() {
         const price=Number(fractionPrice??rawPrice);
         // price_ts is the MoviOdds runner-level price timestamp; race.updated_at is not.
         const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||null;
-        const placeUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||updated||null;
+        // Fixed-place prices have their own timestamp. Never borrow the WIN
+        // timestamp to make a PLACE quote appear fresher than it is.
+        const placeUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||null;
         const rawPlace=x.place_odds??x.fixed_place_odds??x.place_price??null;
         const placeFraction=typeof x.place_frac==="string"&&x.place_frac.includes("/")?x.place_frac.split("/").map(Number):null;
         const placeFractionPrice=placeFraction&&placeFraction.length===2&&placeFraction[1]>0?placeFraction[0]/placeFraction[1]+1:null;
@@ -1580,7 +1599,9 @@ async function getGlobalRaces() {
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
-        const placeAge=placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):age;
+        const explicitPlaceAge=x.place_age_seconds??x.place_quote_age_seconds??null;
+        const placeAge=explicitPlaceAge!=null&&Number.isFinite(Number(explicitPlaceAge))
+          ?Math.max(0,Number(explicitPlaceAge)):(placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):null);
         if(quoteIsBet365&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedBet365Quotes++;
         if(quoteIsBet365&&validPlacePrice!=null&&placeAge!=null&&placeAge<180)verifiedBet365PlaceQuotes++;
         if(quoteIsSportsbet&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedSportsbetQuotes++;
@@ -1591,7 +1612,7 @@ async function getGlobalRaces() {
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:((Number.isFinite(price)&&price>1)||validPlacePrice!=null)&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:"Bet365",name:"Bet365",
             ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
-            ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:x.place_stale===true||(placeAge!=null&&placeAge>=180)}:{}),
+            ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:x.place_stale===true||placeAge==null||placeAge>=180}:{}),
             last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed WIN/PLACE public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
