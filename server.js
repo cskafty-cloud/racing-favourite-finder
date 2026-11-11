@@ -834,10 +834,12 @@ function runnerQuoteAudit(runner){
    const price=market==="win"?racingWinPrice(q):racingPlacePrice(q);
    if(price==null)continue;
    const age=racingMarketAge(q,market);
+   // Exclude stale, suspended and scratched quotes entirely. Missing timestamps
+   // remain visible in the unverified group; old timestamps do not.
+   if(age!=null&&age>=racingQuoteMaxAge())continue;
    const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
    const reasons=[];
-   if(q.stale===true||(market==="place"&&q.place_stale===true))reasons.push("provider marked stale");
-   if(q.suspended===true||q.scratched===true)reasons.push("suspended or scratched");
+   if(q.suspended===true||q.scratched===true)continue;
    if(/tote|totalisator|pari.?mutuel/.test(marketType))reasons.push("tote market, not fixed odds");
    if(market==="place"&&!q.place_market_type&&!q.fixed_place_price&&!q.place_price&&!q.fixed_place&&!q.place_odds)reasons.push("fixed PLACE market not identified");
    if(market==="win"&&!q.market_type&&!q.fixed_win_price&&!q.fixed_win&&!q.win_odds)reasons.push("fixed WIN market not identified");
