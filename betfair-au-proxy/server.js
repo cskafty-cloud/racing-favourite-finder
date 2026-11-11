@@ -159,7 +159,7 @@ const server=http.createServer(async(req,res)=>{
     credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),routes:["/api/races","/api/sports"]}));
   if(!PROXY_ACCESS_TOKEN){res.writeHead(503);return res.end(JSON.stringify({error:"BETFAIR_FEED_TOKEN is not configured."}));}
   const authorization = String(req.headers.authorization || "");
-  const bearer = authorization.match(/^Bearer\\s+(.+)$/i)?.[1] || "";
+  const bearer = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
   if(!accessTokenMatches(bearer)){res.writeHead(401);return res.end(JSON.stringify({error:"Shared adapter token mismatch. Check Railway BETFAIR_FEED_TOKEN against the token entered when this adapter started; whitespace and hex letter case are ignored."}));}
   try{
     if(path==="/api/races")return res.end(JSON.stringify(await cached("races",loadRaces)));
