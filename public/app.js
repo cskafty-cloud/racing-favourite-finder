@@ -453,9 +453,10 @@ function renderTopTips() {
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
   const sb=sportsbetDisplayFavourite(r),sbDisplay=sb||bookmakerUnverifiedFavourite(r,"sportsbet");
+  const sbSignal=sb?runnerConsensusSignal(r,sb):null;
   const sbPick={kind:"RACING",category,event,selection:sbDisplay?(sbDisplay.number?sbDisplay.number+". ":"")+sbDisplay.name:"No priced favourite available",odds:sbDisplay?sbDisplay.price:null,time,
-   source:sbDisplay?(sbDisplay.unverified?"Sportsbet-labelled price · UNVERIFIED · source timestamp missing":sbDisplay.displaySource):"No Sportsbet-labelled public runner price returned",
-   score:sb?(sb.quoteCount||1):0,quotes:sb?(sb.quoteCount||1):0,signal:sb?"SPORTSBET · VERIFIED PRICE":sbDisplay?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
+   source:sbDisplay?(sbDisplay.unverified?"Sportsbet-labelled price · UNVERIFIED · source timestamp missing":sbDisplay.displaySource+" · "+Math.round(sb.age)+"s verified quote age · "+(sbSignal?.agreementPct||0)+"% cross-book agreement"):"No Sportsbet-labelled public runner price returned",
+   score:sbSignal?.score||0,quotes:sbSignal?.quoteCount||0,signal:sb?(sbSignal?.signal||"PROVISIONAL · SPORTSBET PRICE"):sbDisplay?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
   sportsbetPicks.push(sbPick);if(sb)sportsbetPriced.push(sbPick);
   const b365=bookmakerFavourite(r,"bet365"),b365Display=b365||bookmakerUnverifiedFavourite(r,"bet365");
   const b365Signal=b365?runnerConsensusSignal(r,b365):null;
