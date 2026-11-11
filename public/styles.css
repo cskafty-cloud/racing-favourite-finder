@@ -326,3 +326,7 @@ body.site-entered .dashboard-start-menu{display:none!important}
 .unverified-quote strong{color:#ffd18a!important}
 .unverified-quote small,.unverified-warning{color:#ffc36b!important}
 .unverified-warning{border-left:3px solid #c28a36;padding:6px 9px;margin-top:5px;background:#2a2115}
+
+/* Activity indicators: green means the feed endpoint has responded successfully within 3 minutes. */
+.feed-dot.active,.live-dot.active,.entry-status-dot,.entry-horse-status.active .entry-horse-light{background:#5be09a!important;box-shadow:0 0 0 3px #5be09a20,0 0 12px #5be09a!important}
+.feed-status-item small{line-height:1.4}
