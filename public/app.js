@@ -1111,7 +1111,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -1778,7 +1778,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -2430,7 +2430,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -3104,7 +3104,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -3757,7 +3757,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -4431,7 +4431,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -5081,7 +5081,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -5755,7 +5755,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -6577,7 +6577,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -7251,7 +7251,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -7903,7 +7903,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -8577,7 +8577,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -9230,7 +9230,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -9904,7 +9904,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -10554,7 +10554,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -11228,7 +11228,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -12051,7 +12051,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -12725,7 +12725,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -13377,7 +13377,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -14051,7 +14051,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -14704,7 +14704,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -15378,7 +15378,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -16028,7 +16028,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
@@ -16702,7 +16702,7 @@ async function syncHistory() {
 $("syncHistoryBtn").addEventListener("click",syncHistory);
 function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false}); }
 tick(); setInterval(tick,1000);
-let dashboardFeedsStarted=false;
+var dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
   if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
