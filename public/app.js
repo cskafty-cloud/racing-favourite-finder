@@ -389,6 +389,18 @@ function renderFullCoverage(rows) {
     return '<details class="full-race-row" '+(live?"open":"")+'><summary><span><b>'+esc(venue)+' R'+esc(number)+'</b><small>'+esc(categoryOf(r))+' · '+esc(r.country||"Country n/a")+' · '+esc(fmtDate(r.start_time))+' '+esc(fmtTime(r.start_time))+(live?' · LIVE NOW':'')+'</small></span><strong>'+raceQuoteCount+' quotes · '+(r.runners||[]).length+' runners</strong><span class="detail-chevron">⌄</span></summary><div class="full-race-runners">'+(all||'<div class="no-odds">No runners supplied by the provider for this race yet.</div>')+'</div></details>';
   }).join("") : '<div class="empty">No races returned by the provider.</div>';
 }
+function sportUnverifiedFavourite(event,wantedBookmaker){
+ const rows=[];
+ for(const b of event.bookmakers||[]){
+  const key=normaliseBookmakerKey(b.key||b.title||b.name||"unknown");
+  if(!bookmakerMatches(key,wantedBookmaker)||b.stale===true)continue;
+  const age=quoteAgeSeconds({age_seconds:b.age_seconds??b.quote_age_seconds,last_update:b.last_update||b.updated_at||b.lastUpdate||null});
+  if(age!=null)continue;
+  for(const market of b.markets||[])if(["h2h","head_to_head"].includes(String(market.key||"").toLowerCase()))
+   for(const o of market.outcomes||[]){const price=Number(o.price);if(o.name&&Number.isFinite(price)&&price>1)rows.push({name:String(o.name),price,books:1,ageSeconds:null,verified:false,unverified:true});}
+ }
+ return rows.sort((a,b)=>a.price-b.price)[0]||null;
+}
 function sportFavourite(event,wantedBookmaker){const rows=sportRankings(event,wantedBookmaker);return rows[0]||null;}
 function sportRankings(event,wantedBookmaker){
  const books=new Map();
@@ -413,7 +425,7 @@ function sportRankings(event,wantedBookmaker){
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
  const raceRows=(state.races||[]).filter(r=>{const t=Date.parse(r.start_time||"");return !Number.isFinite(t)||t>=Date.now()||isExplicitlyLive(r);});
- const sportsbetPicks=[],bet365Picks=[],bet365Priced=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],bet365SportPicks=[],pricedTips=[],sportsbetPriced=[];
+ const sportsbetPicks=[],bet365Picks=[],bet365Priced=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],bet365SportPicks=[],sportsbetSportUnverified=[],bet365SportUnverified=[],pricedTips=[],sportsbetPriced=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
   const sb=sportsbetDisplayFavourite(r),sbDisplay=sb||bookmakerUnverifiedFavourite(r,"sportsbet");
@@ -437,8 +449,8 @@ function renderTopTips() {
   const f=ranks[0],books=f.books||0;
   const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s")+" · "+(f.agreementPct||0)+"% market agreement · "+(f.impliedProbability||0)+"% implied probability · "+(f.meanQuoteAge??"n/a")+"s mean verified quote age",time:e.commence_time,quotes:books,signal:"MARKET AGREEMENT"};
   sportPicks.push(tip);pricedTips.push(tip);
-  const sbSport=sportFavourite(e,"sportsbet");if(sbSport){const support=ranks.find(x=>x.name===sbSport.name);sportsbetSportPicks.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:sbSport.name,odds:sbSport.price,score:support?.score||0,source:"Exact Sportsbet-labelled quote · "+(sbSport.ageSeconds??"n/a")+"s quote age · "+(support?.agreementPct||0)+"% market agreement",time:e.commence_time,quotes:sbSport.books||1,signal:"SPORTSBET · VERIFIED PRICE"});}
-  const b365Sport=sportFavourite(e,"bet365");if(b365Sport){const support=ranks.find(x=>x.name===b365Sport.name);bet365SportPicks.push({kind:"BET365 SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:b365Sport.name,odds:b365Sport.price,score:support?.score||0,source:"Exact Bet365-labelled quote · "+(b365Sport.ageSeconds??"n/a")+"s quote age · "+(support?.agreementPct||0)+"% market agreement",time:e.commence_time,quotes:b365Sport.books||1,signal:"BET365 · VERIFIED PRICE"});}
+  const sbSport=sportFavourite(e,"sportsbet");if(sbSport){const support=ranks.find(x=>x.name===sbSport.name);sportsbetSportPicks.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:sbSport.name,odds:sbSport.price,score:support?.score||0,source:"Exact Sportsbet-labelled quote · "+sbSport.ageSeconds+"s quote age · "+(support?.agreementPct||0)+"% market agreement",time:e.commence_time,quotes:sbSport.books||1,signal:"SPORTSBET · VERIFIED PRICE"});}else{const unverified=sportUnverifiedFavourite(e,"sportsbet");if(unverified)sportsbetSportUnverified.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:unverified.name,odds:unverified.price,score:0,source:"Sportsbet-labelled price · UNVERIFIED · source timestamp missing",time:e.commence_time,quotes:1,signal:"UNVERIFIED · NOT LIVE-CONFIRMED"});}
+  const b365Sport=sportFavourite(e,"bet365");if(b365Sport){const support=ranks.find(x=>x.name===b365Sport.name);bet365SportPicks.push({kind:"BET365 SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:b365Sport.name,odds:b365Sport.price,score:support?.score||0,source:"Exact Bet365-labelled quote · "+b365Sport.ageSeconds+"s quote age · "+(support?.agreementPct||0)+"% market agreement",time:e.commence_time,quotes:b365Sport.books||1,signal:"BET365 · VERIFIED PRICE"});}else{const unverified=sportUnverifiedFavourite(e,"bet365");if(unverified)bet365SportUnverified.push({kind:"BET365 SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:unverified.name,odds:unverified.price,score:0,source:"Bet365-labelled price · UNVERIFIED · source timestamp missing",time:e.commence_time,quotes:1,signal:"UNVERIFIED · NOT LIVE-CONFIRMED"});}
  }
  const today=new Date().toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"});
  const todays=pricedTips.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today);
@@ -462,8 +474,8 @@ function renderTopTips() {
  +section("BET365 FAVOURITES · EVERY RACE","Separate Bet365-labelled favourite for every returned upcoming/live race. Only Bet365-labelled prices are shown.",bet365Picks,"No upcoming races were returned by the racing feed.")
  +section("TOP TIPS · ALL RACES + SPORTS","Top 20 selections across all returned horse, greyhound, harness and sports events, ranked by market agreement and data quality rather than shortest odds.",topTips,"No priced favourites are available from the current public feeds.")
  +section("RACE FAVOURITES · EVERY RACE","Market favourite for each returned race, including races awaiting prices.",racePicks,"No upcoming races were returned by the racing feed.")
- +section("SPORTSBET SPORTS FAVOURITES · ALL RETURNED SPORTS","Only timestamp-verified Sportsbet-labelled public head-to-head prices are shown; unknown-age prices are excluded.",sportsbetSportPicks,"No timestamp-verified Sportsbet-labelled public sports prices were returned for the loaded fixtures.")
- +section("BET365 SPORTS FAVOURITES · ALL RETURNED SPORTS","Only timestamp-verified Bet365-labelled public head-to-head prices are shown; unknown-age prices are excluded.",bet365SportPicks,"No timestamp-verified Bet365-labelled public sports prices were returned for the loaded fixtures.")
+ +section("SPORTSBET SPORTS FAVOURITES · ALL RETURNED SPORTS","Only timestamp-verified Sportsbet-labelled public head-to-head prices are shown; unknown-age prices are excluded.",[...sportsbetSportPicks,...sportsbetSportUnverified],"No timestamp-verified Sportsbet-labelled public sports prices were returned for the loaded fixtures.")
+ +section("BET365 SPORTS FAVOURITES · ALL RETURNED SPORTS","Only timestamp-verified Bet365-labelled public head-to-head prices are shown; unknown-age prices are excluded.",[...bet365SportPicks,...bet365SportUnverified],"No timestamp-verified Bet365-labelled public sports prices were returned for the loaded fixtures.")
  +section("SPORTS FAVOURITES · EVERY SPORT","Priced favourites from all loaded live and upcoming sports fixtures.",sportPicks,"No sports fixtures with usable public head-to-head prices are available.");
 }
 function recordSportTrends(key, events){
