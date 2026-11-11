@@ -268,12 +268,18 @@ function marketFavourite(race) {
 // 1) exact Sportsbet quote (fresh, then stale); 2) fresh overall market median;
 // 3) stale overall market median. The source is always labelled honestly.
 function sportsbetDisplayFavourite(race) {
- // Prefer an exact current Sportsbet quote. If unavailable, show the market leader
- // as an indicative proxy, explicitly not as a Sportsbet price.
+ // Prefer an exact timestamped Sportsbet quote. A source-labelled public preview
+ // can still identify its own favourite, but must remain visibly unverified.
  const exact=bookmakerFavourite(race,"sportsbet");
  if(exact)return {...exact,displaySource:"Sportsbet fixed WIN quote",isFallback:false};
+ const preview=bookmakerUnverifiedFavourite(race,"sportsbet");
+ if(preview)return {...preview,displaySource:"Sportsbet fixed WIN public preview · unverified",isFallback:false};
+ // Only use a proxy when at least two independent non-Sportsbet bookmaker quotes
+ // support a market median. A single quote is not a consensus.
  const proxy=marketFavourite(race);
- return proxy?{...proxy,price:proxy.consensus,displaySource:"Cross-bookmaker market consensus · indicative only",isFallback:true}:null;
+ return proxy&&proxy.quoteCount>=2
+   ? {...proxy,price:proxy.consensus,displaySource:"Cross-bookmaker market median · indicative only",isFallback:true}
+   : null;
 }
 function sportsbetPlaceFavourite(race) {
  const candidates=[];
@@ -310,18 +316,22 @@ function indicativeMarketFavourite(race,field) {
  const grouped=new Map();
  for(const runner of race.runners||[]) {
   if(runner.scratched===true||runner.suspended===true)continue;
+  const byBook=new Map();
   for(const q of runnerPrices(runner)) {
    const key=bookmakerKeyForLink(q);
-   if(bookmakerMatches(key,"sportsbet")||isBetfairQuote(q)||q.suspended||q.stale||!quoteIsCurrent(q))continue;
+   if(!key||bookmakerMatches(key,"sportsbet")||isBetfairQuote(q)||q.suspended||q.stale||!quoteIsCurrent(q))continue;
    const price=getter(q);
    if(!Number.isFinite(price)||price<=1)continue;
-   const id=String(runner.number??runner.runner_number??runner.box??normaliseRunnerName(runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner"));
-   if(!grouped.has(id))grouped.set(id,{runner,prices:[]});
-   grouped.get(id).prices.push(price);
+   const previous=byBook.get(key);
+   const age=quoteAgeSeconds(q);
+   if(!previous||(age!=null&&(previous.age==null||age<previous.age)))byBook.set(key,{price,age});
   }
+  if(byBook.size<2)continue;
+  const id=String(runner.number??runner.runner_number??runner.box??normaliseRunnerName(runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner"));
+  grouped.set(id,{runner,quotes:[...byBook.values()]});
  }
- const candidates=[...grouped.values()].map(({runner,prices})=>{
-  prices.sort((a,b)=>a-b);
+ const candidates=[...grouped.values()].map(({runner,quotes})=>{
+  const prices=quotes.map(q=>q.price).sort((a,b)=>a-b);
   const mid=prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2;
   return {name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",number:runner.number??runner.runner_number??runner.box??null,price:mid,quoteCount:prices.length,indicative:true};
  });
