@@ -77,7 +77,7 @@ function renderRace(r){
   '<div class="rf-fav"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
   (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified tips and rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
   (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
-  '<div class="rf-b337-crosscheck"><b>B337 · MANUAL EXTERNAL CROSS-CHECK</b><div class="rf-muted">Separate B337 Sportsbet/TAB viewing board and price history. Open B337 and compare this race manually where listed. No B337 odds are imported into this card; no automated B337 API connection is active.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
+  '<div class="rf-b337-crosscheck"><b>B337 · FREE PUBLIC REFERENCE</b><div class="rf-muted">Use B337 as a separate reference for publicly accessible racing information. Compare Sportsbet and TAB prices manually where B337 displays them. B337 prices are imported only if an authorised machine-readable public source becomes available. No login bypass or protected-data scraping is used.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
   '</article>';
 }
 function setHeaderConnection(state){
