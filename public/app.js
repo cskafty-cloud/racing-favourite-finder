@@ -445,7 +445,14 @@ function renderTopTips() {
  }
  for(const e of state.sportEvents||[]){
   const t=e.commence_time?Date.parse(e.commence_time):NaN;if(Number.isFinite(t)&&t<Date.now()&&e.in_play!==true)continue;
-  const ranks=sportRankings(e);if(!ranks.length)continue;
+  const ranks=sportRankings(e);
+  if(!ranks.length){
+   const sbOnly=sportUnverifiedFavourite(e,"sportsbet");
+   if(sbOnly)sportsbetSportUnverified.push({kind:"SPORTSBET SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:sbOnly.name,odds:sbOnly.price,score:0,source:"Sportsbet-labelled public market · UNVERIFIED · source quote age missing",time:e.commence_time,quotes:1,signal:"UNVERIFIED · NOT LIVE-CONFIRMED"});
+   const b365Only=sportUnverifiedFavourite(e,"bet365");
+   if(b365Only)bet365SportUnverified.push({kind:"BET365 SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:b365Only.name,odds:b365Only.price,score:0,source:"Bet365-labelled public market · UNVERIFIED · source quote age missing",time:e.commence_time,quotes:1,signal:"UNVERIFIED · NOT LIVE-CONFIRMED"});
+   continue;
+  }
   const f=ranks[0],books=f.books||0;
   const tip={kind:"SPORT",category:e._sport||e.sport||e.sport_name||"SPORT",event:(e.away_team||"")+(e.home_team?" @ "+e.home_team:""),selection:f.name,odds:f.price,score:f.score||0,source:books+" bookmaker quote"+(books===1?"":"s")+" · "+(f.agreementPct||0)+"% market agreement · "+(f.impliedProbability||0)+"% implied probability · "+(f.meanQuoteAge??"n/a")+"s mean verified quote age",time:e.commence_time,quotes:books,signal:"MARKET AGREEMENT"};
   sportPicks.push(tip);pricedTips.push(tip);
