@@ -186,22 +186,78 @@
   </script>
   <div id="legacyFeedCompatibility" hidden><div id="coverageStats"></div><div id="coverageList"></div><div id="liveNowCount"></div><div id="liveNowList"></div><div id="bookmakerUniverse"></div><div id="fullCoverageStats"></div><div id="fullCoverageList"></div></div>
 <script>
-(function(){const $=id=>document.getElementById(id),categories=[["horse","Thoroughbred"],["greyhound","Greyhound"],["harness","Harness"]];
-function category(r){const v=String(r.category||r.code||"").toLowerCase();return /grey/.test(v)?"greyhound":/harness|trot|pace/.test(v)?"harness":"horse";}
-function bookKey(q){return String(q.key||q.bookmaker||q.bookmaker_name||q.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+(function(){
+const $=id=>document.getElementById(id);
+const categories=[["horse","Thoroughbred"],["greyhound","Greyhound"],["harness","Harness"]];
+function category(r){
+ const v=String(r.category||r.code||"").toLowerCase();
+ return /grey/.test(v)?"greyhound":/harness|trot|pace/.test(v)?"harness":"horse";
+}
+function bookKey(q){
+ return String(q.key||q.bookmaker||q.bookmaker_name||q.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+}
 function isSportsbet(q){return bookKey(q).includes("sportsbet");}
-function age(q,field){const keys=field==="place"?["place_age_seconds"]:["age_seconds"];for(const k of keys)if(q[k]!=null&&Number.isFinite(Number(q[k])))return Number(q[k]);const stamps=field==="place"?[q.place_last_update,q.place_updated_at,q.last_place_update]:[q.last_update,q.updated_at,q.captured_at,q.timestamp];for(const stamp of stamps){if(stamp){const n=Date.parse(stamp);if(Number.isFinite(n))return Math.max(0,(Date.now()-n)/1000);}}return null;}
-function price(q,field){const keys=field==="place"?["place_price","fixed_place_price","fixed_place","place_odds"]:["win_price","fixed_win_price","fixed_win","win_odds"];for(const k of keys){const n=Number(q[k]);if(Number.isFinite(n)&&n>1)return n;}return null;}
-function fresh(q,field){const a=age(q,field);return q.stale!==true&&!q.suspended&&a!=null&&a>=0&&a<180;}
+function timestamp(q,field){
+ const keys=field==="place"
+  ?["place_last_update","place_updated_at","last_place_update","place_timestamp","place_captured_at","place_source_timestamp","place_quote_timestamp"]
+  :["win_last_update","win_updated_at","last_update","updated_at","captured_at","timestamp","source_timestamp","quote_timestamp","bookmaker_timestamp"];
+ for(const key of keys){
+  const value=q?.[key];if(value==null||value==="")continue;
+  const n=Number(value);
+  const ms=Number.isFinite(n)&&String(value).trim()!==""?(n>1e12?n:n>1e9?n*1000:NaN):Date.parse(value);
+  if(Number.isFinite(ms))return ms;
+ }
+ return null;
+}
+function age(q,field){
+ const stamp=timestamp(q,field);
+ if(stamp==null)return null;
+ const stamped=Math.max(0,(Date.now()-stamp)/1000);
+ const direct=field==="place"?q.place_age_seconds:q.age_seconds;
+ return direct!=null&&Number.isFinite(Number(direct))?Math.max(stamped,Number(direct)):stamped;
+}
+function price(q,field){
+ const keys=field==="place"
+  ?["place_price","fixed_place_price","fixed_place","place_odds"]
+  :["win_price","fixed_win_price","fixed_win","win_odds"];
+ for(const key of keys){const n=Number(q?.[key]);if(Number.isFinite(n)&&n>1)return n;}
+ return null;
+}
+function fresh(q,field){
+ const a=age(q,field);
+ const marketStale=field==="place"?q.place_stale===true:q.stale===true;
+ return !marketStale&&!q.suspended&&timestamp(q,field)!=null&&a!=null&&a>=0&&a<180;
+}
 function quotes(r){return (r.runners||[]).flatMap(x=>x.bookmakers||x.odds||x.prices||[]);}
-async function load(){try{const res=await fetch("/api/races?coverage="+Date.now(),{cache:"no-store"});if(!res.ok)throw Error("Race feed returned HTTP "+res.status);const data=await res.json(),races=data.races||[],sb=races.flatMap(r=>quotes(r).filter(isSportsbet).map(q=>({r,q}))),win=sb.filter(x=>price(x.q,"win")!=null&&fresh(x.q,"win")),place=sb.filter(x=>price(x.q,"place")!=null&&fresh(x.q,"place")),unverified=sb.filter(x=>(price(x.q,"win")!=null&&!fresh(x.q,"win"))||(price(x.q,"place")!=null&&!fresh(x.q,"place")));
-$("sbCoverageState").textContent=sb.length?"SPORTSBET QUOTES FOUND":"NO SPORTS BET QUOTES";$("sbCoverageCards").innerHTML=[[""+races.length,"Race cards"],[win.length,"Verified WIN quotes"],[place.length,"Verified PLACE quotes"],[unverified.length,"Unverified / stale quotes"]].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
-$("sbCoverageByCode").innerHTML=categories.map(([key,label])=>{const rows=races.filter(r=>category(r)===key),quotesForCode=rows.flatMap(r=>quotes(r).filter(isSportsbet)),w=quotesForCode.filter(q=>price(q,"win")!=null&&fresh(q,"win")).length,p=quotesForCode.filter(q=>price(q,"place")!=null&&fresh(q,"place")).length;return '<div class="source-link"><b>'+label+'</b><small>'+rows.length+' race cards · '+w+' verified WIN · '+p+' verified PLACE</small></div>';}).join("");
-$("sbCoverageDetail").textContent="Latest response: "+new Date(data.fetchedAt||Date.now()).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+". Sportsbet-labelled quote rows: "+sb.length+". Verified prices require an independent source timestamp younger than 3 minutes.";
-const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[]).map(x=>typeof x==="string"?x:x.message||JSON.stringify(x))];$("sbCoverageErrors").textContent=errors.length?"Feed blockers: "+[...new Set(errors)].slice(0,5).join(" · "):"No provider errors were reported by the combined racing endpoint.";
-}catch(e){$("sbCoverageState").textContent="COVERAGE CHECK FAILED";$("sbCoverageDetail").textContent=e.message;}}
-load();window.setInterval(load,60000);})();
+function coverage(rows){
+ const sb=rows.flatMap(r=>quotes(r).filter(isSportsbet).map(q=>({race:r,q})));
+ const win=sb.filter(x=>price(x.q,"win")!=null&&fresh(x.q,"win"));
+ const place=sb.filter(x=>price(x.q,"place")!=null&&fresh(x.q,"place"));
+ const unverified=sb.filter(x=>(price(x.q,"win")!=null&&!fresh(x.q,"win"))||(price(x.q,"place")!=null&&!fresh(x.q,"place")));
+ return {sb,win,place,unverified};
+}
+function paint(data){
+ const races=data.races||[],stats=coverage(races);
+ $("sbCoverageState").textContent=stats.sb.length?"SPORTSBET-LABELLED QUOTES FOUND":"NO SPORTSBET QUOTES";
+ $("sbCoverageCards").innerHTML=[
+  [String(races.length),"Race cards"],
+  [String(stats.win.length),"Verified WIN quotes"],
+  [String(stats.place.length),"Verified PLACE quotes"],
+  [String(stats.unverified.length),"Unverified / stale quote rows"]
+ ].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
+ $("sbCoverageByCode").innerHTML=categories.map(([key,label])=>{
+  const rows=races.filter(r=>category(r)===key),code=coverage(rows);
+  return '<div class="source-link"><b>'+label+'</b><small>'+rows.length+' race cards · '+code.win.length+' verified WIN · '+code.place.length+' verified PLACE · '+code.unverified.length+' unverified quote rows</small></div>';
+ }).join("");
+ $("sbCoverageDetail").textContent="Latest response: "+new Date(data.fetchedAt||Date.now()).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+
+  ". Sportsbet-labelled quote rows: "+stats.sb.length+
+  ". Verification requires a market-specific source timestamp younger than 3 minutes; feed receipt time and age-only values do not qualify.";
+ const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[]).map(x=>typeof x==="string"?x:x.message||JSON.stringify(x))];
+ $("sbCoverageErrors").textContent=errors.length?"Feed blockers: "+[...new Set(errors)].slice(0,7).join(" · "):"No provider errors were reported by the combined racing endpoint.";
+}
+window.addEventListener("racing-data-updated",event=>{if(event.detail)paint(event.detail);});
+})();
 </script>
-  <script src="/app.js?v=sportsbet-all-race-board-20261111"></script>
+  <script src="/app.js?v=sportsbet-market-timestamp-audit-20261111"></script>
 </body>
 </html>
