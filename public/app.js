@@ -63,7 +63,8 @@ function renderRace(r){
 function setHeaderConnection(state){
  const label=$("feedStatus"),dot=document.querySelector(".top-right .live-dot");
  if(label)label.textContent=state;
- if(dot)dot.className="live-dot "+(state==="CONNECTED"?"connected":state==="PARTIAL"?"checking":"offline");
+ const connected=String(state).startsWith("CONNECTED");
+ if(dot)dot.className="live-dot "+(connected?"connected":state==="PARTIAL"||state==="CHECKING"?"checking":"offline");
 }
 function updateBrisbaneClock(){
  const clock=$("clock");
@@ -71,8 +72,10 @@ function updateBrisbaneClock(){
 }
 function renderRaces(data){
  races=data.races||[];
- const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[])];
- setHeaderConnection(errors.length?"PARTIAL":races.length?"CONNECTED":"CONNECTED · NO RACES");
+ const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[])].map(x=>typeof x==="string"?x:x?.message||JSON.stringify(x));
+ // A successful /api/races response means the dashboard connection is healthy.
+ // Provider quota/403 warnings describe source coverage, not a broken app connection.
+ setHeaderConnection(races.length?"CONNECTED":"CONNECTED · NO RACES");
  const active=races.filter(r=>!r.abandoned&&!/abandon|cancel/i.test(String(r.status||"")));
  let shown=active.filter(r=>filter==="all"||String(r.category||r.code||"").toLowerCase().includes(filter));
  shown.sort((a,b)=>{
@@ -85,7 +88,19 @@ function renderRaces(data){
  count("horseCount");count("dogCount");count("harnessCount");
  if($("updatedAt"))$("updatedAt").textContent=fmtTime(data.fetchedAt);
  if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits."+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
- if($("dashboardFeedStatuses"))$("dashboardFeedStatuses").innerHTML='<div class="feed-status-item"><span class="feed-dot '+(data.feedHealth?.errors?.length?"checking":"")+'"></span><span><b>RACING FEEDS · '+(data.feedHealth?.errors?.length?"PARTIAL":"CHECKED")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+active.length+' race cards</small></span></div>';
+ if($("dashboardFeedStatuses")){
+  const audits=active.flatMap(r=>(r.runners||[]).flatMap(x=>x.bookmakerPriceAudit||[]));
+  const count=(book,market,status)=>audits.filter(q=>q.bookmaker_key===book&&q.market===market&&(!status||q.status===status)).length;
+  const sbWin=count("sportsbet","WIN","verified"),sbPlace=count("sportsbet","PLACE","verified");
+  const sbPreviewWin=count("sportsbet","WIN","unverified"),sbPreviewPlace=count("sportsbet","PLACE","unverified");
+  const b365Win=count("bet365","WIN","verified"),b365Place=count("bet365","PLACE","verified");
+  const warningText=errors.length?errors.slice(0,3).join(" · "):"No upstream provider warnings reported.";
+  $("dashboardFeedStatuses").innerHTML=
+   '<div class="feed-status-item"><span class="feed-dot connected"></span><span><b>DASHBOARD CONNECTION · CONNECTED</b><small>/api/races responded successfully · '+active.length+' race cards loaded</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(errors.length?"checking":"connected")+'"></span><span><b>UPSTREAM FEED COVERAGE · '+(errors.length?"LIMITED":"HEALTHY")+'</b><small>'+esc(data.feedSource||"Public feeds")+' · '+(errors.length?esc(warningText):"No reported feed errors")+'</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(sbWin||sbPlace?"connected":"checking")+'"></span><span><b>SPORTSBET FIXED WIN / PLACE</b><small>Verified WIN '+sbWin+' · verified PLACE '+sbPlace+' · unverified preview WIN '+sbPreviewWin+' · preview PLACE '+sbPreviewPlace+'</small></span></div>'+
+   '<div class="feed-status-item"><span class="feed-dot '+(b365Win||b365Place?"connected":"checking")+'"></span><span><b>BET365 FIXED WIN / PLACE</b><small>Verified WIN '+b365Win+' · verified PLACE '+b365Place+'</small></span></div>';
+ }
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
  renderBestTips(active);
 }
