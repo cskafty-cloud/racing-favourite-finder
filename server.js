@@ -894,7 +894,7 @@ function providerRetryDelay(error) {
     // Monthly credits reset at 00:00 UTC. Retrying every six hours only burns
     // requests without restoring quota, so pause until the next reset.
     const now = new Date();
-    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);
+    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 1, 0);
     return Math.max(60 * 1000, nextReset - Date.now());
   }
   return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
