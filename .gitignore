@@ -1,3 +1,7 @@
 node_modules/
 .env
 .DS_Store
+
+# Local Betfair credentials (Windows DPAPI-encrypted; never commit)
+betfair-au-proxy/.betfair-credentials.dpapi
+betfair-au-proxy/.betfair-credentials.dpapi.tmp
