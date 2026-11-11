@@ -156,4 +156,4 @@ const server=http.createServer(async(req,res)=>{
     return res.end(JSON.stringify({error:error.message,feedSource:"Betfair AU proxy",races:[],events:[]}));
   }
 });
-server.listen(PORT,"0.0.0.0",()=>console.info("Betfair AU read-only proxy listening on "+PORT));
+server.listen(PORT,"127.0.0.1",()=>console.info("Betfair AU read-only proxy listening on "+PORT));
