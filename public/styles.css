@@ -332,14 +332,20 @@ body.site-entered .dashboard-start-menu{display:none!important}
 .feed-status-item small{line-height:1.4}
 
 
-/* Compact race cards: show each race's market/bookmaker favourite and WIN prices only. */
-.race-runners-ranked,
-.exchange-reference,
-.runner-estimates,
-.runner-price-chips,
-.runner-estimate-list { display:none!important; }
-.race-list-favourite { grid-template-columns:minmax(0,1fr) auto; }
-.race-list-favourite .favourite-label { grid-column:1/-1; }
-.race-bookmaker-favourites { margin-top:8px; }
-.race-bookmaker-favourites .book-fav { min-width:0; }
-.book-fav-price { font-size:22px; font-weight:800; }
+/* Expand race cards to expose all runners and independently timestamped WIN/PLACE prices. */
+.race-runners-ranked,.runner-estimates,.runner-estimate-list,.exchange-reference{display:block!important}
+.runner-price-chips{display:flex!important;flex-wrap:wrap;gap:6px}
+.race-runners-ranked{margin-top:12px;border-top:1px solid #293a47;padding-top:10px}
+.race-runners-heading{color:#a8bac8;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:8px}
+.race-runner-row{display:grid;grid-template-columns:42px minmax(140px,1fr) auto;gap:6px 10px;align-items:center;padding:9px 0;border-top:1px solid #202e39}
+.race-runner-name{color:#e4edf3;font-size:12px;font-weight:600}
+.race-runner-rank{color:#8fa2b1;font-size:10px}
+.race-runner-estimate{color:#d9c18c;text-align:right}
+.race-runner-row>small{grid-column:2/-1;color:#8495a4;font-size:10px}
+.runner-price-chips{grid-column:1/-1}
+.runner-price-chip{display:inline-flex;flex-wrap:wrap;gap:5px;padding:6px 8px;border:1px solid #344655;border-radius:6px;background:#111b25;color:#c2ced8;font-size:10px}
+.runner-price-chip b{color:#f0c978}
+.race-bookmaker-favourites{margin-top:8px}
+.race-bookmaker-favourites .book-fav{min-width:0}
+.book-fav-price{font-size:22px;font-weight:800}
+@media(max-width:600px){.race-runner-row{grid-template-columns:30px minmax(0,1fr)}.race-runner-estimate{grid-column:2;text-align:left}.race-runner-row>small{grid-column:2}.runner-price-chips{grid-column:1/-1}}
