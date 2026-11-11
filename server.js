@@ -218,8 +218,9 @@ function moviQuoteBookmakerKey(quote){
  // MoviOdds aggregates multiple books. Never infer the bookmaker from the
  // endpoint or event: every accepted price must identify its own bookmaker.
  const raw=quote?.bookmaker_key??quote?.bookmakerKey??quote?.bookmaker??
-  quote?.bookmaker_name??quote?.bookmakerName??quote?.site??quote?.book??
-  quote?.sportsbook??quote?.operator??quote?.provider_name??null;
+  quote?.bookmaker_name??quote?.bookmakerName??quote?.bookmaker_code??quote?.bookmakerCode??
+  quote?.site??quote?.book??quote?.bookie??quote?.sportsbook??quote?.operator??
+  quote?.source_name??quote?.sourceName??quote?.source??quote?.provider_name??null;
  const value=raw&&typeof raw==="object"?(raw.key||raw.name||raw.slug||raw.title||raw.code||""):raw;
  return canonicalBookmakerKey(value);
 }
@@ -1357,6 +1358,12 @@ async function getGlobalRaces() {
     payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country})));
 
     const raw=payload.races;
+    const sampleRunner=raw.find(r=>(r.runners||r.selections||[]).length)?.runners?.[0]||raw.find(r=>(r.selections||[]).length)?.selections?.[0]||{};
+    const samplePrice=(sampleRunner.prices||[])[0]||{};
+    console.info("MOVIODDS_RACING_SCHEMA",JSON.stringify({raceKeys:Object.keys(raw[0]||{}),
+      runnerKeys:Object.keys(sampleRunner||{}),priceKeys:Object.keys(samplePrice||{}),
+      oddsKeys:Object.keys(sampleRunner.odds||{}),identityFields:["bookmaker","bookmaker_key","bookmaker_name","bookmaker_code","site","book","bookie","sportsbook","operator","source","source_name","provider_name"]
+        .reduce((out,key)=>{if(sampleRunner[key]!=null)out.runner[key]=sampleRunner[key];if(samplePrice[key]!=null)out.price[key]=samplePrice[key];if(sampleRunner.odds?.[key]!=null)out.odds[key]=sampleRunner.odds[key];return out;},{runner:{},price:{},odds:{}})}));
     let verifiedBet365Quotes=0,unverifiedPriceRows=0;
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
