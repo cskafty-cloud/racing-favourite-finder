@@ -548,7 +548,7 @@ function sportRankings(event,wantedBookmaker){
   if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
   if(b.stale===true)continue;
   const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
-   .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
+   .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),unverified:event._publicDemo===true||b.public_demo===true||String(o.source||b.source||"").includes("public bookmaker-specific"),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
    .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<racingQuoteMaxAge(o));
   if(!outcomes.length)continue;
   const old=books.get(key);
@@ -561,7 +561,7 @@ function sportRankings(event,wantedBookmaker){
    const previous=values.get(o.name);
    if(!previous||o.age<previous.age)values.set(o.name,o);
   }
-  return [...values.entries()].map(([name,o])=>({name,price:o.price,books:1,ageSeconds:Math.round(o.age),score:0,verified:true}))
+  return [...values.entries()].map(([name,o])=>({name,price:o.price,books:1,ageSeconds:Math.round(o.age),score:0,verified:!o.unverified,unverified:!!o.unverified}))
    .sort((a,b)=>a.price-b.price);
  }
  const names=new Set([...books.values()].flatMap(b=>b.outcomes.map(o=>o.name)));
