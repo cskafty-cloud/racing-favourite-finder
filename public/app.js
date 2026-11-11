@@ -20,32 +20,49 @@ function addStyles(){
  .rf-price-box h4{margin:0 0 8px;font-size:13px}.rf-price-line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid rgba(130,145,165,.16);font-size:12px}
  .price-status{font-size:10px;font-weight:800;letter-spacing:.04em}.verified{color:#42c98a}.unverified{color:#e7ad55}
  .rf-market-section{margin-top:10px}.rf-market-title{font-size:11px;font-weight:800;color:var(--muted,#9aa8b9);text-transform:uppercase;margin:7px 0 3px}
- .rf-empty{padding:14px;color:var(--muted,#9aa8b9);border:1px dashed var(--line,#293342);border-radius:10px}
+ .rf-book-label{font-size:9px;letter-spacing:.08em;color:var(--muted,#9aa8b9);font-weight:700;margin-left:5px}.rf-source-meta{font-size:11px;color:var(--muted,#9aa8b9);margin:3px 0 8px}.rf-source-meta>span:first-child{font-size:9px;letter-spacing:.08em;font-weight:800;margin-right:5px}.rf-source-link{color:var(--accent,#83b7ff);text-decoration:underline;text-underline-offset:2px}.rf-source-detail{opacity:.8}
+  .rf-empty{padding:14px;color:var(--muted,#9aa8b9);border:1px dashed var(--line,#293342);border-radius:10px}
  .rf-sports-row{padding:10px;border-bottom:1px solid var(--line,#293342);font-size:13px}
  .rf-sports-row b{display:block}.rf-sports-quotes{color:var(--muted,#9aa8b9);font-size:12px;margin-top:4px}
  `;document.head.appendChild(style);
 }
 function auditRows(r){return Array.isArray(r.bookmakerPriceAudit)?r.bookmakerPriceAudit:[];}
-function renderRunnerMarkets(r){
- const rows=auditRows(r);if(!rows.length)return "";
- const books=[...new Set(rows.map(x=>x.bookmaker_key||x.bookmaker))];
- return books.map(book=>{
-  const name=rows.find(x=>(x.bookmaker_key||x.bookmaker)===book)?.bookmaker||book;
-  const selected=rows.filter(x=>(x.bookmaker_key||x.bookmaker)===book);
-  const line=(market,status)=>selected.filter(x=>x.market===market&&x.status===status).map(x=>{
-   const detail=status==="verified"?"Captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):
-    (x.reasons||["Not verified"]).join(", ")+(x.age_seconds!=null?" · "+fmtAge(x.age_seconds):"");
-   const observed=x.observed_at?"Feed observed "+fmtTime(x.observed_at)+" · "+fmtAge(x.observed_age_seconds):"Feed observation time unavailable";
-   const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.public_demo?"PUBLIC REFERENCE ONLY · ":"")+(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
-   return '<div class="rf-price-line"><span>'+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(x.source||"Feed")+'</span></div>';
+function sourceDetails(q){
+  const source=String(q.source||"Connected public feed"),lower=source.toLowerCase();
+  let url=String(q.source_url||"");
+  if(!/^https?:\\/\\//i.test(url)){
+   if(/movi.?odds/.test(lower))url="https://moviodds.com/racing";
+   else if(/punters.?edge/.test(lower))url="https://puntersedge.online/";
+   else if(/sportsbet/.test(lower))url="https://www.sportsbet.com.au/";
+   else if(/bet365/.test(lower))url="https://www.bet365.com.au/";
+  }
+  const safeUrl=/^https?:\\/\\//i.test(url)?url:"";let host=source;
+  if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\\./,"")}catch{}}
+  return {source,host,url:safeUrl};
+ }
+ function renderRunnerMarkets(r){
+  const rows=auditRows(r);if(!rows.length)return "";
+  // Same bookmaker from different providers remains a separate, attributable quote group.
+  const groups=new Map();
+  for(const row of rows){
+   const book=row.bookmaker_key||row.bookmaker||"unknown",src=sourceDetails(row),key=[book,src.source,src.url].join("|");
+   if(!groups.has(key))groups.set(key,{name:row.bookmaker||book,source:src.source,host:src.host,url:src.url,rows:[]});
+   groups.get(key).rows.push(row);
+  }
+  return [...groups.values()].map(group=>{
+   const selected=group.rows;
+   const line=(market,status)=>selected.filter(x=>x.market===market&&x.status===status).map(x=>{
+    const observed=x.observed_at?"Feed observed "+fmtTime(x.observed_at)+" · "+fmtAge(x.observed_age_seconds):"Feed observation time unavailable";
+    const explanation=status==="verified"?"Source quote captured "+fmtTime(x.captured_at)+" · "+fmtAge(x.age_seconds):(x.public_demo?"PUBLIC REFERENCE ONLY · ":"")+(x.reasons||["Not verified"]).join(", ")+(x.public_demo?" · "+observed:"");
+    return '<div class="rf-price-line"><span>'+market+' · $'+Number(x.price).toFixed(2)+' '+statusBadge(status,x.verification_label)+'<div class="rf-muted">'+esc(explanation)+'</div></span><span class="rf-muted">'+esc(group.host)+'</span></div>';
+   }).join("");
+   const sourceLink=group.url?'<a class="rf-source-link" href="'+esc(group.url)+'" target="_blank" rel="noopener noreferrer">'+esc(group.host)+' ↗</a>':esc(group.host);
+   return '<div class="rf-price-box"><h4>'+esc(group.name)+' <span class="rf-book-label">BOOKMAKER</span></h4>'+
+    '<div class="rf-source-meta"><span>DATA SOURCE</span> '+sourceLink+' <span class="rf-source-detail">('+esc(group.source)+')</span></div>'+
+    '<div class="rf-market-section"><div class="rf-market-title">Fixed WIN</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
+    '<div class="rf-market-section"><div class="rf-market-title">Fixed PLACE</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
   }).join("");
-  const winVerified=line("WIN","verified"),winUnverified=line("WIN","unverified");
-  const placeVerified=line("PLACE","verified"),placeUnverified=line("PLACE","unverified");
-  return '<div class="rf-price-box"><h4>'+esc(name)+'</h4>'+
-   '<div class="rf-market-section"><div class="rf-market-title">Fixed WIN</div>'+(winVerified||'<div class="rf-muted">No verified WIN quote</div>')+winUnverified+'</div>'+
-   '<div class="rf-market-section"><div class="rf-market-title">Fixed PLACE</div>'+(placeVerified||'<div class="rf-muted">No verified PLACE quote</div>')+placeUnverified+'</div></div>';
- }).join("");
-}
+ }
 function renderRace(r){
  const fav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
  const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
