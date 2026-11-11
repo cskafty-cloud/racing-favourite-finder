@@ -59,6 +59,12 @@
         <a class="source-link" href="https://www.sportsbet.com.au/racing-schedule/harness/today" target="_blank" rel="noopener noreferrer"><b>Harness racing · Today</b><small>Sportsbet harness schedule and markets</small></a>
       </div>
     </section>
+    <section class="history-panel" id="sportsbetCoveragePanel" style="margin:22px 0;padding:22px;border:1px solid var(--line,#293342);border-radius:16px;background:var(--panel,#151c26)">
+      <div class="history-heading"><div><div class="eyebrow">LIVE SOURCE AUDIT · AUSTRALIA</div><h2>Sportsbet price coverage</h2><p class="sub">Race-card coverage and verified Sportsbet fixed prices are measured separately. Only Sportsbet-labelled quotes with their own fresh source timestamp count as verified.</p></div><span id="sbCoverageState" class="sport-upcoming-label">CHECKING</span></div>
+      <div id="sbCoverageCards" class="stats" style="margin:16px 0"><div class="stat"><b>—</b><span>Race cards</span></div><div class="stat"><b>—</b><span>Sportsbet WIN</span></div><div class="stat"><b>—</b><span>Sportsbet PLACE</span></div><div class="stat"><b>—</b><span>Unverified Sportsbet</span></div></div>
+      <div id="sbCoverageByCode" class="source-link-grid"></div><div id="sbCoverageDetail" class="sub" style="margin-top:14px">Checking the latest race and bookmaker response…</div><div id="sbCoverageErrors" class="sub" style="margin-top:8px"></div>
+      <p class="sub" style="margin-top:12px">Bet365, Betfair and other providers are never counted as Sportsbet. A race listing does not count as a Sportsbet price.</p>
+    </section>
     <section class="bookmaker-feed-panel"><div class="coverage-heading"><div><div class="eyebrow">AUSTRALIA · ALL RETURNED RACE CARDS</div><h2>Live & upcoming races</h2><p class="sub">Live races appear first, followed by upcoming races in jump-time order. Horse, greyhound and harness meetings are included when supplied by the feed.</p></div></div><section id="raceList" class="race-list"><div class="loading"><div class="spinner"></div><span>Loading upcoming bookmaker races…</span></div></section></section>
     <section class="stats">
       <div class="stat"><span class="stat-label">RACES RETURNED</span><strong id="raceCount">—</strong></div>
@@ -176,6 +182,23 @@
     })();
   </script>
   <div id="legacyFeedCompatibility" hidden><div id="coverageStats"></div><div id="coverageList"></div><div id="liveNowCount"></div><div id="liveNowList"></div><div id="bookmakerUniverse"></div><div id="fullCoverageStats"></div><div id="fullCoverageList"></div></div>
-  <script src="/app.js?v=sportsbet-win-place-all-sports-20261111-19"></script>
+<script>
+(function(){const $=id=>document.getElementById(id),categories=[["horse","Thoroughbred"],["greyhound","Greyhound"],["harness","Harness"]];
+function category(r){const v=String(r.category||r.code||"").toLowerCase();return /grey/.test(v)?"greyhound":/harness|trot|pace/.test(v)?"harness":"horse";}
+function bookKey(q){return String(q.key||q.bookmaker||q.bookmaker_name||q.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+function isSportsbet(q){return bookKey(q).includes("sportsbet");}
+function age(q,field){const keys=field==="place"?["place_age_seconds"]:["age_seconds"];for(const k of keys)if(q[k]!=null&&Number.isFinite(Number(q[k])))return Number(q[k]);const stamps=field==="place"?[q.place_last_update,q.place_updated_at,q.last_place_update]:[q.last_update,q.updated_at,q.captured_at,q.timestamp];for(const stamp of stamps){if(stamp){const n=Date.parse(stamp);if(Number.isFinite(n))return Math.max(0,(Date.now()-n)/1000);}}return null;}
+function price(q,field){const keys=field==="place"?["place_price","fixed_place_price","fixed_place","place_odds"]:["win_price","fixed_win_price","fixed_win","win_odds"];for(const k of keys){const n=Number(q[k]);if(Number.isFinite(n)&&n>1)return n;}return null;}
+function fresh(q,field){const a=age(q,field);return q.stale!==true&&!q.suspended&&a!=null&&a>=0&&a<180;}
+function quotes(r){return (r.runners||[]).flatMap(x=>x.bookmakers||x.odds||x.prices||[]);}
+async function load(){try{const res=await fetch("/api/races?coverage="+Date.now(),{cache:"no-store"});if(!res.ok)throw Error("Race feed returned HTTP "+res.status);const data=await res.json(),races=data.races||[],sb=races.flatMap(r=>quotes(r).filter(isSportsbet).map(q=>({r,q}))),win=sb.filter(x=>price(x.q,"win")!=null&&fresh(x.q,"win")),place=sb.filter(x=>price(x.q,"place")!=null&&fresh(x.q,"place")),unverified=sb.filter(x=>(price(x.q,"win")!=null&&!fresh(x.q,"win"))||(price(x.q,"place")!=null&&!fresh(x.q,"place")));
+$("sbCoverageState").textContent=sb.length?"SPORTSBET QUOTES FOUND":"NO SPORTS BET QUOTES";$("sbCoverageCards").innerHTML=[[""+races.length,"Race cards"],[win.length,"Verified WIN quotes"],[place.length,"Verified PLACE quotes"],[unverified.length,"Unverified / stale quotes"]].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
+$("sbCoverageByCode").innerHTML=categories.map(([key,label])=>{const rows=races.filter(r=>category(r)===key),quotesForCode=rows.flatMap(r=>quotes(r).filter(isSportsbet)),w=quotesForCode.filter(q=>price(q,"win")!=null&&fresh(q,"win")).length,p=quotesForCode.filter(q=>price(q,"place")!=null&&fresh(q,"place")).length;return '<div class="source-link"><b>'+label+'</b><small>'+rows.length+' race cards · '+w+' verified WIN · '+p+' verified PLACE</small></div>';}).join("");
+$("sbCoverageDetail").textContent="Latest response: "+new Date(data.fetchedAt||Date.now()).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+". Sportsbet-labelled quote rows: "+sb.length+". Verified prices require an independent source timestamp younger than 3 minutes.";
+const errors=[...(data.feedHealth?.errors||[]),...(data.feedErrors||[]).map(x=>typeof x==="string"?x:x.message||JSON.stringify(x))];$("sbCoverageErrors").textContent=errors.length?"Feed blockers: "+[...new Set(errors)].slice(0,5).join(" · "):"No provider errors were reported by the combined racing endpoint.";
+}catch(e){$("sbCoverageState").textContent="COVERAGE CHECK FAILED";$("sbCoverageDetail").textContent=e.message;}}
+load();window.setInterval(load,60000);})();
+</script>
+  <script src="/app.js?v=sportsbet-coverage-audit-20261111-20"></script>
 </body>
 </html>
