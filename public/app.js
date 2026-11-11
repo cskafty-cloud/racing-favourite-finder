@@ -239,11 +239,11 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = fixedRunnerPrices(runner).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:Number(q.win_price??q.win??q.price), age:quoteAgeSeconds(q), stale:!!q.stale,
+      price:Number(q.win_price??q.win??q.price), age:quoteAgeSeconds(q), stale:!!q.stale, publicDemo:q.public_demo===true,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
-    const fresh=quotes.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(Number(q.age))&&Number(q.age)<180);
+    const fresh=quotes.filter(q=>!q.stale&&((q.age!=null&&Number.isFinite(Number(q.age))&&Number(q.age)<180)||(q.age==null&&q.publicDemo)));
     const values=fresh.map(q=>q.price).sort((a,b)=>a-b);
     const mid=values.length?(values.length%2?values[(values.length-1)/2]:(values[values.length/2-1]+values[values.length/2])/2):null;
     const runnerName=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
@@ -653,8 +653,8 @@ function render() {
     const favPanel=fav?'<div class="race-list-favourite"><div class="favourite-label">★ TOP MARKET CONSENSUS</div><b>'+(fav.number?esc(fav.number)+'. ':"")+esc(favName)+'</b><strong>$'+Number(fav.consensus).toFixed(2)+'</strong><small>'+esc(fav.signalLabel||"Market favourite")+' · '+(fav.quoteCount||0)+' bookmaker quotes</small></div>':'<div class="race-list-favourite"><div class="favourite-label">★ RACE FAVOURITE</div><b>Waiting for current bookmaker odds</b></div>';
     const runners=(r.runners||[]).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999));
     const runnerRows=runners.map((runner,rank)=>{
-      const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
+      const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:quoteAgeSeconds(q),stale:!!q.stale,publicDemo:q.public_demo===true})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
+      const fresh=qs.filter(q=>!q.stale&&((q.age!=null&&Number.isFinite(q.age)&&q.age<180)||(q.age==null&&q.publicDemo))), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner", num=runner.number??runner.runner_number??runner.box, isFav=!!fav&&((fav.number!=null&&num!=null&&String(fav.number)===String(num))||(fav.number==null&&normaliseRunnerName(name)===normaliseRunnerName(favName)));
       const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?(q.age==null?' · AGE UNVERIFIED':' · STALE'):' · CURRENT')+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
