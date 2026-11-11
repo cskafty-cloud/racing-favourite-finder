@@ -79,3 +79,24 @@ The main app keeps Exchange prices separate from fixed Sportsbet/Bet365 bookmake
 ### No-card/local-host option
 
 If no Australian cloud host is available, the proxy can run on an Australian Windows PC with Node.js 22 or newer. The PC must remain powered on and connected. A local `localhost` URL is not reachable from Railway; a secure, authenticated inbound connection and stable public endpoint would still be needed. Do not expose the proxy publicly without authentication. This option has not been deployed or connected automatically.
+
+
+### Run the adapter on an Australian Windows PC (no cloud card)
+
+1. Install Node.js 22 or newer from https://nodejs.org/.
+2. Install Tailscale on the Windows PC and sign in. Tailscale Funnel is an optional public HTTPS tunnel; it is available on Tailscale plans but must be enabled for your tailnet.
+3. In Railway, add a private variable named `BETFAIR_FEED_TOKEN` with a long random secret value. Use the same value locally when the PowerShell launcher asks for it. Never commit or paste this token into GitHub.
+4. In the Railway service variables, set:
+   - `BETFAIR_FEED_URL` = `https://YOUR-TAILSCALE-FUNNEL-HOST/api/races`
+   - `BETFAIR_SPORTS_FEED_URL` = `https://YOUR-TAILSCALE-FUNNEL-HOST/api/sports`
+   - `BETFAIR_FEED_TOKEN` = the same secret entered in the Windows launcher.
+5. Download the repository ZIP from GitHub and extract it. Open PowerShell in `betfair-au-proxy`, then run:
+   `Set-ExecutionPolicy -Scope Process Bypass`
+   `./Start-BetfairAuProxy.ps1`
+6. Enter the Betfair delayed app key, session token and shared token when prompted. These values stay in the local process environment and are not saved by the launcher.
+7. In a second PowerShell window, run `tailscale funnel --bg 8080`, approve Funnel in the Tailscale admin flow if prompted, and run `tailscale funnel status`. Copy the HTTPS hostname into the two Railway URL variables above.
+8. Restart/redeploy the Railway service after setting its variables. Test `/health`, then the protected `/api/races` and `/api/sports` routes. The latter two require the bearer token and should return real timestamped quotes before the feed is considered connected.
+
+The Windows adapter binds only to `127.0.0.1`; Funnel supplies HTTPS from outside. The shared bearer token protects the API routes. Keep the PC awake and online. If you stop the Node process, turn off Funnel with `tailscale funnel reset`. Funnel makes the endpoint publicly reachable, so keep the token secret and do not share its URL unnecessarily.
+
+Tailscale Funnel is a third-party service and requires a Tailscale login and enabling Funnel. It is not a Betfair restriction bypass: the adapter still makes normal Betfair API requests from your Australian connection, and Betfair may still deny access or require approved account/API credentials.
