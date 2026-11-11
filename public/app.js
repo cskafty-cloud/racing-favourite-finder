@@ -394,7 +394,7 @@ function sportRankings(event,wantedBookmaker){
  const books=new Map();
  for(const b of event.bookmakers||[]){
   const key=normaliseBookmakerKey(b.key||b.title||b.name||'unknown');if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
-  const directAge=b.age_seconds??b.quote_age_seconds,stamp=b.last_update||b.updated_at||b.lastUpdate||null,parsed=stamp?Date.parse(stamp):NaN,age=directAge!=null&&Number.isFinite(Number(directAge))?Math.max(0,Number(directAge)):Number.isFinite(parsed)?Math.max(0,(Date.now()-parsed)/1000):null;
+  const age=quoteAgeSeconds({age_seconds:b.age_seconds??b.quote_age_seconds,last_update:b.last_update||b.updated_at||b.lastUpdate||null});
   if(age==null||age>=180)continue;
   const outcomes=(b.markets||[]).filter(m=>['h2h','head_to_head'].includes(String(m.key||'').toLowerCase())).flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||''),price:Number(o.price)})).filter(o=>o.name&&o.price>1&&Number.isFinite(o.price));
   if(!outcomes.length)continue;const old=books.get(key);if(!old||(age??999999)<(old.age??999999))books.set(key,{age,outcomes});
@@ -416,14 +416,16 @@ function renderTopTips() {
  const sportsbetPicks=[],bet365Picks=[],bet365Priced=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],bet365SportPicks=[],pricedTips=[],sportsbetPriced=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
-  const sb=sportsbetDisplayFavourite(r);
-  const sbPick={kind:"RACING",category,event,selection:sb?(sb.number?sb.number+". ":"")+sb.name:"No priced favourite available",odds:sb?sb.price:null,time,source:sb?sb.displaySource:"No Sportsbet-labelled public runner price returned",score:sb?(sb.quoteCount||1):0,quotes:sb?(sb.quoteCount||1):0,signal:sb?(sb.isFallback?"SPORTSBET PRICE":"SPORTSBET PRICE · "+(sb.stale?"STALE":"PUBLIC")):"PRICE UNAVAILABLE"};
+  const sb=sportsbetDisplayFavourite(r),sbDisplay=sb||bookmakerUnverifiedFavourite(r,"sportsbet");
+  const sbPick={kind:"RACING",category,event,selection:sbDisplay?(sbDisplay.number?sbDisplay.number+". ":"")+sbDisplay.name:"No priced favourite available",odds:sbDisplay?sbDisplay.price:null,time,
+   source:sbDisplay?(sbDisplay.unverified?"Sportsbet-labelled price · UNVERIFIED · source timestamp missing":sbDisplay.displaySource):"No Sportsbet-labelled public runner price returned",
+   score:sb?(sb.quoteCount||1):0,quotes:sb?(sb.quoteCount||1):0,signal:sb?"SPORTSBET · VERIFIED PRICE":sbDisplay?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
   sportsbetPicks.push(sbPick);if(sb)sportsbetPriced.push(sbPick);
-  const b365=bookmakerFavourite(r,"bet365");
+  const b365=bookmakerFavourite(r,"bet365"),b365Display=b365||bookmakerUnverifiedFavourite(r,"bet365");
   const b365Signal=b365?runnerConsensusSignal(r,b365):null;
-  const b365Tip={kind:"BET365 RACING",category,event,selection:b365?(b365.number?b365.number+". ":"")+b365.name:"No verified Bet365 favourite",odds:b365?b365.price:null,time,
-   source:b365?(b365.source||"Bet365-labelled public quote")+" · "+(b365.age==null?"quote age unavailable":Math.round(b365.age)+"s quote age")+" · "+(b365Signal?.agreementPct||0)+"% cross-book agreement":"No current Bet365 quote returned",
-   score:b365Signal?.score||0,quotes:b365Signal?.quoteCount||0,signal:b365?(b365Signal?.signal||"PROVISIONAL · BET365 PRICE"):"PRICE UNAVAILABLE"};
+  const b365Tip={kind:"BET365 RACING",category,event,selection:b365Display?(b365Display.number?b365Display.number+". ":"")+b365Display.name:"No verified Bet365 favourite",odds:b365Display?b365Display.price:null,time,
+   source:b365?(b365.source||"Bet365-labelled public quote")+" · "+Math.round(b365.age)+"s verified quote age · "+(b365Signal?.agreementPct||0)+"% cross-book agreement":b365Display?"Bet365-labelled price · UNVERIFIED · source timestamp missing":"No current Bet365 quote returned",
+   score:b365Signal?.score||0,quotes:b365Signal?.quoteCount||0,signal:b365?(b365Signal?.signal||"PROVISIONAL · BET365 PRICE"):b365Display?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
   bet365Picks.push(b365Tip);if(b365)bet365Priced.push(b365Tip);
   const fav=marketFavourite(r);
   const tip=fav?{kind:"RACING",category,event,selection:(fav.number?fav.number+". ":"")+fav.name,odds:fav.consensus,score:fav.signalScore||0,source:fav.priceSource+" · "+(fav.agreementPct||0)+"% bookmaker agreement · "+(fav.meanQuoteAge??"n/a")+"s average quote age",time,quotes:fav.quoteCount||0,signal:fav.signalLabel||"MARKET FAVOURITE"}:{kind:"RACING",category,event,selection:"Favourite not confirmed",odds:null,score:0,source:"No fresh fixed-odds quotes returned",time,quotes:0,signal:"AWAITING PRICE"};
