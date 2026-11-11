@@ -843,7 +843,8 @@ function runnerQuoteAudit(runner){
    const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
    const reasons=[];
    if(q.suspended===true||q.scratched===true)continue;
-   if(q.stale===true&&publicPreview)reasons.push("Sportsbet public preview marked stale; reference only");
+   const marketStale=market==="place"?(q.place_stale===true||q.stale===true):q.stale===true;
+   if(marketStale&&publicPreview)reasons.push("Sportsbet public preview marked stale; reference only");
    if(age!=null&&age>=racingQuoteMaxAge()&&publicPreview)reasons.push("Sportsbet public preview older than 180 seconds; reference only");
    if(/tote|totalisator|pari.?mutuel/.test(marketType))reasons.push("tote market, not fixed odds");
    if(market==="place"&&!q.place_market_type&&!q.fixed_place_price&&!q.place_price&&!q.fixed_place&&!q.place_odds)reasons.push("fixed PLACE market not identified");
@@ -2469,8 +2470,11 @@ async function refreshBackgroundRacingFeed() {
         oddsFetchedAt: feed.oddsFetchedAt || null,
         apiKeyConfigured: !!API_KEY,
         sportsbetPublicDemoRaces:sportsbetRaceDemo.length,
-        sportsbetPublicDemoQuotes:sportsbetRaceDemo.reduce((n,r)=>n+r.runners.filter(x=>x.bookmakers.some(q=>q.key==="sportsbet")).length,0),
-        sportsbetQuotesInCombinedFeed:(feed.races||[]).reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet").length,0),0),
+        sportsbetPublicDemoRunnerQuotes:sportsbetRaceDemo.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>bookmakerKey(q)==="sportsbet"&&Number(q.win_price)>1).length,0),0),
+        sportsbetPublicDemoWinQuotes:sportsbetRaceDemo.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>bookmakerKey(q)==="sportsbet"&&Number(q.win_price)>1).length,0),0),
+        sportsbetPublicDemoPlaceQuotes:sportsbetRaceDemo.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>bookmakerKey(q)==="sportsbet"&&Number(q.place_price)>1).length,0),0),
+        sportsbetVerifiedQuotesInCombinedFeed:(feed.races||[]).reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet").length,0),0),
+        sportsbetUnverifiedPublicPreviewRowsInCombinedFeed:(feed.races||[]).reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+runnerQuoteAudit(x).filter(q=>q.bookmaker_key==="sportsbet"&&q.public_demo===true&&q.status==="unverified").length,0),0),
         errors: feed.feedErrors || []
       }));
     } catch (error) {
