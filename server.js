@@ -22,6 +22,37 @@ let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
 let betfairRacingRefresh = null;
 let betfairRetryAt = 0;
 let betfairFeedRetryAt = 0;
+let betfairSessionKeepAliveAt = 0;
+let betfairSessionKeepAliveInFlight = null;
+async function ensureBetfairSession() {
+  if (!BETFAIR_APP_KEY || !BETFAIR_SESSION_TOKEN) throw new Error("Betfair delayed app key or session token is missing in Railway.");
+  // Betfair sessions expire unless Keep Alive is called. Extend a valid
+  // session every six hours, comfortably inside the documented 12-hour window.
+  if (Date.now()-betfairSessionKeepAliveAt < 6*60*60*1000) return;
+  if (betfairSessionKeepAliveInFlight) return betfairSessionKeepAliveInFlight;
+  betfairSessionKeepAliveInFlight=(async()=>{
+    const response=await fetch("https://identitysso.betfair.com/api/keepAlive",{
+      method:"POST",
+      headers:{
+        "X-Application":BETFAIR_APP_KEY,
+        "X-Authentication":BETFAIR_SESSION_TOKEN,
+        "Accept":"application/json",
+        "Content-Type":"application/json"
+      },
+      signal:AbortSignal.timeout(15000)
+    });
+    const body=await response.text();
+    let payload;
+    try{payload=JSON.parse(body)}catch{throw new Error("Betfair session keep-alive returned invalid JSON (HTTP "+response.status+").")}
+    if(!response.ok||payload.status!=="SUCCESS") {
+      const detail=payload.error||payload.status||("HTTP "+response.status);
+      throw new Error("Betfair session expired or could not be extended: "+detail+". Refresh BETFAIR_SESSION_TOKEN in Railway.");
+    }
+    betfairSessionKeepAliveAt=Date.now();
+  })();
+  try{return await betfairSessionKeepAliveInFlight}
+  finally{betfairSessionKeepAliveInFlight=null}
+}
 async function betfairRpc(method, params) {
   if (!BETFAIR_APP_KEY || !BETFAIR_SESSION_TOKEN) throw new Error("Betfair delayed app key or session token is missing in Railway.");
   const response = await fetch(BETFAIR_RPC_URL, {
@@ -53,6 +84,7 @@ function betfairCategory(eventTypeName, eventName, marketName) {
   return "horse";
 }
 async function loadBetfairRaces() {
+  await ensureBetfairSession();
   const eventTypes=await betfairRpc("listEventTypes",{filter:{marketCountries:["AU"]}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:x.eventType.name}));
   const racingTypes=types.filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
