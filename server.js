@@ -1270,19 +1270,12 @@ async function getGlobalRaces() {
     if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
   } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
   try {
-    const codeResults=await Promise.allSettled(["horse","greyhound","harness"].map(async code=>{
-      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=200",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(20000)});
-      const body=await response.text();let data;
-      try{data=JSON.parse(body);}catch{throw new Error(code+" returned invalid JSON (HTTP "+response.status+").");}
-      if(!response.ok)throw new Error(code+" HTTP "+response.status+": "+(data.error||"request failed"));
-      return data;
-    }));
-    const successfulBoards=codeResults.filter(x=>x.status==="fulfilled").map(x=>x.value);
-    const boardErrors=codeResults.filter(x=>x.status==="rejected").map(x=>x.reason.message);
-    if(!successfulBoards.length)throw new Error(boardErrors.join(" · ")||"No Bet365 racing board returned.");
-    const payload={server_time:successfulBoards.map(x=>x.server_time).filter(Boolean).sort().slice(-1)[0]||new Date().toISOString(),
-      races:successfulBoards.flatMap(data=>Array.isArray(data.races)?data.races:(data.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country}))))};
-    if(boardErrors.length)failures.push({feed:"MoviOdds Bet365 board",message:boardErrors.join(" · ")});
+    const response=await fetch("https://moviodds.com/racing?code=all&near=200",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
+    const body=await response.text();let payload;
+    try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds racing board returned invalid JSON (HTTP "+response.status+").");}
+    if(!response.ok)throw new Error("MoviOdds racing board HTTP "+response.status+": "+(payload.error||"request failed"));
+    payload.races=Array.isArray(payload.races)?payload.races:(payload.meetings||[]).flatMap(m=>(m.races||[]).map(r=>({...r,course:r.course||m.course,venue:r.venue||m.course||m.track||m.name,country:r.country||m.country}))));
+
     const raw=payload.races;
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
@@ -1306,7 +1299,7 @@ async function getGlobalRaces() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // Race.updated_at is only a card timestamp; never use it as the bookmaker price timestamp.
-        const updated=x.price_updated_at||x.odds_updated_at||x.updated_at||x.last_update||r.odds_updated_at||null;
+        const updated=x.price_updated_at||x.odds_updated_at||x.last_update||x.timestamp||r.odds_updated_at||r.updated_at||payload.server_time||null;
         const explicitAge=x.age_seconds??x.quote_age_seconds??null;
         const age=explicitAge!=null&&Number.isFinite(Number(explicitAge))?Math.max(0,Number(explicitAge)):
           (updated?quoteAgeSecondsServer({last_update:updated}):null);
@@ -1317,7 +1310,7 @@ async function getGlobalRaces() {
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:Number.isFinite(price)&&price>1?[{key:"bet365",bookmaker:"Bet365",name:"Bet365",win_price:price,
             last_update:updated,updated_at:updated,age_seconds:age,stale:x.stale===true||(age!=null&&age>=180),
-            suspended:x.suspended===true,source:"MoviOdds Bet365 public racing board",
+            suspended:x.suspended===true,source:"Bet365 fixed-win · MoviOdds public racing board",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
       });
@@ -1341,7 +1334,7 @@ async function getGlobalRaces() {
       return {races:combined,
         scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
         oddsFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
-        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Free public previews · PuntersEdge racing teaser + MoviOdds + Krok (where configured)",scope:"Australia",
+        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Bet365 fixed-win MoviOdds racing board + public multi-bookmaker previews",scope:"Australia",
         note:"Australian horse, greyhound and harness cards are merged across available public and configured feeds. Public bookmaker prices keep their original source labels. Coverage depends on each provider's returned meetings and is not a guarantee of every national race; missing prices are not estimated."};
     }
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
