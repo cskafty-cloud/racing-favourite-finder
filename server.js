@@ -858,6 +858,7 @@ function runnerQuoteAudit(runner){
    if(age!=null&&age>=racingQuoteMaxAge()&&!publicPreview)continue;
    const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
    const reasons=[];
+    if(q.exchange===true||book==="betfair")reasons.push("Betfair Exchange quote · delayed feed (up to 180 seconds); not bookmaker fixed odds");
    if(q.suspended===true||q.scratched===true)continue;
    const marketStale=market==="place"?(q.place_stale===true||q.stale===true):q.stale===true;
    if(marketStale&&publicPreview)reasons.push("Sportsbet public preview marked stale; reference only");
