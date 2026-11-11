@@ -63,7 +63,7 @@
       <p class="sub">WIN and PLACE prices inside this dashboard are counted as verified Sportsbet quotes only when the source explicitly identifies Sportsbet and provides a fresh timestamp for that individual market. A schedule listing alone is never treated as a price.</p>
     </section>
     <section class="history-panel" id="sportsbetCoveragePanel" style="margin:22px 0;padding:22px;border:1px solid var(--line,#293342);border-radius:16px;background:var(--panel,#151c26)">
-      <div class="history-heading"><div><div class="eyebrow">LIVE SOURCE AUDIT · AUSTRALIA</div><h2>Sportsbet price coverage</h2><p class="sub">Race-card coverage and verified Sportsbet fixed prices are measured separately. Only Sportsbet-labelled quotes with their own fresh source timestamp count as verified.</p></div><span id="sbCoverageState" class="sport-upcoming-label">CHECKING</span></div>
+      <div class="history-heading"><div><div class="eyebrow">LIVE SOURCE AUDIT · AUSTRALIA</div><h2>Sportsbet price coverage</h2><p class="sub">Race-card coverage and verified Sportsbet fixed prices are measured separately. Only Sportsbet-labelled quotes with their own fresh source timestamp count as verified. The current free Sportsbet preview returns runner prices without per-runner timestamps, so those prices are labelled UNTIMESTAMPED PREVIEW and never counted as live verified odds.</p></div><span id="sbCoverageState" class="sport-upcoming-label">CHECKING</span></div>
       <div id="sbCoverageCards" class="stats" style="margin:16px 0"><div class="stat"><b>—</b><span>Race cards</span></div><div class="stat"><b>—</b><span>Sportsbet WIN</span></div><div class="stat"><b>—</b><span>Sportsbet PLACE</span></div><div class="stat"><b>—</b><span>Unverified Sportsbet</span></div></div>
       <div id="sbCoverageByCode" class="source-link-grid"></div><div id="sbCoverageDetail" class="sub" style="margin-top:14px">Checking the latest race and bookmaker response…</div><div id="sbCoverageErrors" class="sub" style="margin-top:8px"></div>
       <p class="sub" style="margin-top:12px">Bet365, Betfair and other providers are never counted as Sportsbet. A race listing does not count as a Sportsbet price.</p>
@@ -259,6 +259,6 @@ function paint(data){
 window.addEventListener("racing-data-updated",event=>{if(event.detail)paint(event.detail);});
 })();
 </script>
-  <script src="/app.js?v=verified-unverified-price-groups-connection-clock-20261111"></script>
+  <script src="/app.js?v=untimestamped-sportsbet-preview-label-20261111"></script>
 </body>
 </html>
