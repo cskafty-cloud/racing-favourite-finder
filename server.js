@@ -1064,8 +1064,9 @@ async function loadSupplementalAustralianRaces() {
     // The public bookmaker preview is a separate Sportsbet-labelled source.
     // Merge it into the main race list so its horse/greyhound runner quotes
     // are actually available to the dashboard, not just background diagnostics.
+    // Use the no-key public bookmaker preview only. Sportsbet's HTML pages
+    // return HTTP 403 from Railway; do not repeatedly request blocked pages.
     ["Sportsbet public bookmaker preview",()=>loadSportsbetPublicRaceDemos()],
-    ["Sportsbet public racing pages",()=>loadSportsbetPublicRaces()],
     ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.reject(new Error("RAPIDODDSAPI_API_KEY is not configured in Railway."))],
     ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
@@ -1253,7 +1254,9 @@ async function loadSportsbetPublicRaces(){
 
 let sportsbetRacingDemoCache={at:0,races:[],errors:[]};
 function sportsbetDemoPrice(runner){
- const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice","price"];
+ // Do not accept a generic "price" field here: it may be a place or other market.
+ // Generic price fields are accepted only inside a row explicitly labelled WIN.
+ const directKeys=["win_price","fixed_win_price","fixed_win","win_odds","win_fixed_odds","fixed_win_odds","fixedWinOdds","fixedWinPrice","decimal_odds","odds_decimal","winPrice"];
  const readPrice=value=>{const n=Number(value);return Number.isFinite(n)&&n>1?n:null;};
  for(const key of directKeys){const n=readPrice(runner?.[key]);if(n)return n;}
  for(const group of [runner?.fixed_odds,runner?.fixedOdds,runner?.fixed,runner?.fixed_win_odds,runner?.fixedWinOdds,runner?.odds]){
