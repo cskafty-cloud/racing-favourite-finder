@@ -348,7 +348,7 @@ function sportsbetPlacePanel(favourite) {
  const f=exact||null;
  const details=f
   ? '<div class="book-fav-runner">'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</div><div class="book-fav-price">$'+Number(f.price).toFixed(2)+'</div><div class="book-fav-age">Sportsbet fixed PLACE quote · '+(f.age==null?'age unknown':Math.round(f.age)+'s')+'</div>'
-  : '<div class="book-fav-missing">No verified Sportsbet fixed PLACE quote. The separate market panel shows an indicative cross-bookmaker estimate when available.</div>';
+  : '<div class="book-fav-missing">No Sportsbet fixed PLACE price returned. Other bookmakers and market estimates are not substituted.</div>';
  return '<div class="book-fav"><div class="book-fav-label">Sportsbet fixed-PLACE favourite</div>'+details+'</div>';
 }
 function categoryOf(r) {
