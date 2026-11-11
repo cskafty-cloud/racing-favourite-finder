@@ -453,7 +453,9 @@ async function loadPublicDemoSport(sport) {
         // MoviOdds documents /odds as its Bet365 odds feed. Accept its quotes as
         // Bet365 unless an explicit per-quote source contradicts that provenance.
         const explicitBook=moviQuoteBookmakerKey(q);
-        if(explicitBook&&!["bet365","pm"].includes(explicitBook))continue;
+        // MoviOdds is documented as Bet365-only. Its "ws", "poll", "pm" and
+        // "card" values describe transport/feed channels, not other bookmakers.
+        if(explicitBook&&!["bet365","pm","ws","poll","card"].includes(explicitBook))continue;
         const bookKey="bet365";
         const name=q.label||q.name||q.selection||"Selection";
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
@@ -2022,14 +2024,15 @@ app.get("/api/sports/:sportKey", async (req,res) => {
   const oddsSport=ODDS_DATA_SPORTS.find(x=>x.key===String(req.params.sportKey||"").toLowerCase());
   if(oddsSport) {
     try {
-      const bulk=req.query.mode==="all";
-      const data=await loadOddsDataSport(oddsSport,{bulk});
+      const data=await loadPublicDemoSport(oddsSport);
+      const events=(data.rows||[]).filter(e=>e.in_play===true||
+        (e.commence_time&&Number.isFinite(Date.parse(e.commence_time))&&Date.parse(e.commence_time)>=Date.now()));
       res.set("Cache-Control","no-store");
-      return res.json({sport:{key:oddsSport.key,title:oddsSport.title},events:data.rows,
+      return res.json({sport:{key:oddsSport.key,title:oddsSport.title},events,
         fetchedAt:new Date(data.at).toISOString(),provider:data.provider,providerErrors:data.errors,
         refreshSeconds:60,liveInPlayAvailable:true,
-        note:"Fixtures and live scores from the Bet365 data feed. Bookmaker prices are checked for up to "+(bulk?2:6)+" events per sport per refresh; no missing prices are estimated."});
-    } catch(err) { return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365"}); }
+        note:"Free public fixtures and Bet365-labelled prices from MoviOdds, with Sportsbet previews only where separately supplied. Quote timestamps are used for freshness; missing or stale prices are not estimated."});
+    } catch(err) { return res.status(503).json({error:err.message,provider:"Free public sports feeds"}); }
   }
   return res.status(404).json({error:"Sport is not in the connected Bet365 sports catalogue."});
 });
