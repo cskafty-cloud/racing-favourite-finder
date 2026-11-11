@@ -1123,6 +1123,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const winMarket=(item.markets||[]).find(m=>/win|winner/i.test(String(m.name||m.key||m.market_name||"")));
   if(winMarket)rawRunners=(winMarket.outcomes||winMarket.selections||[]).map(o=>({...o,name:o.name||o.selection||o.label,win_price:o.price??o.odds}));
  }
+ const bookKey=canonicalBookmakerKey(bookmaker);
  const runners=(Array.isArray(rawRunners)?rawRunners:[]).map(r=>{
   const name=r.name||r.runner_name||r.horse_name||r.greyhound_name||r.dog_name||r.selection||r.participant||"";
   if(!name)return null;
