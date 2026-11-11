@@ -890,7 +890,13 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  if (/(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error))) {\n    // Monthly credits reset at 00:00 UTC. Retrying every six hours only burns\n    // requests without restoring quota, so pause until the next reset.\n    const now = new Date();\n    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);\n    return Math.max(60 * 1000, nextReset - Date.now());\n  }\n  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
+  if (/(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error))) {
+    // Monthly credits reset at 00:00 UTC. Retrying every six hours only burns
+    // requests without restoring quota, so pause until the next reset.
+    const now = new Date();
+    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);
+    return Math.max(60 * 1000, nextReset - Date.now());
+  }\n  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
