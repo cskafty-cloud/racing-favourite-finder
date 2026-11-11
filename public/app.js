@@ -11,7 +11,7 @@ const fmtDate = value => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",timeZone:"Australia/Brisbane"});
 };
 function racingWinPrice(q) { const v=q?.win_price??q?.fixed_win_price??q?.fixed_win??q?.win_odds;const n=Number(v);return Number.isFinite(n)&&n>1?n:null; }
-function racingQuoteMaxAge(q) { const tier=String(q?.refresh_tier||"").toLowerCase();return tier==="live"?120:tier==="card"?1800:180; }
+function racingQuoteMaxAge(q) { return 180; }
 function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => racingWinPrice(b)!=null); }
 function quoteAgeSeconds(q) {
  const direct=q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds))?Math.max(0,Number(q.age_seconds)):null;
