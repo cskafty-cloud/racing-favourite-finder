@@ -1690,6 +1690,22 @@ async function loadSportsbetPublicRaceDemos(){
 
 async function getGlobalRaces() {
   const failures=[];
+  // Add the user's authorised delayed Betfair Exchange markets as a separate
+  // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
+  let betfairSupplementalRows=[];
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
+    try {
+      const exchange=await getBetfairRaces();
+      betfairSupplementalRows=exchange.races||[];
+      if(!betfairSupplementalRows.length) failures.push({feed:"Betfair Exchange",message:"No Australian WIN/PLACE exchange markets returned."});
+    } catch(error) {
+      console.error("BETFAIR_DIRECT_API_FAILED",error.message);
+      betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
+      failures.push({feed:"Betfair Exchange",message:error.message});
+    }
+  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairRetryAt) {
+    failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
+  }
   // A 402 is a hard monthly quota exhaustion, not a transient error. Do not
   // keep entering the provider loader on every browser/background refresh while
   // both racing endpoints are inside their cooldown; use the free feeds below.
@@ -1742,22 +1758,6 @@ async function getGlobalRaces() {
     } catch(error) {
       failures.push({feed:"Krok Odds",message:error.message});
     }
-  }
-  // Add the user's authorised delayed Betfair Exchange markets as a separate
-  // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
-  let betfairSupplementalRows=[];
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
-    try {
-      const exchange=await getBetfairRaces();
-      betfairSupplementalRows=exchange.races||[];
-      if(!betfairSupplementalRows.length) failures.push({feed:"Betfair Exchange",message:"No Australian WIN/PLACE exchange markets returned."});
-    } catch(error) {
-      console.error("BETFAIR_DIRECT_API_FAILED",error.message);
-      betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
-      failures.push({feed:"Betfair Exchange",message:error.message});
-    }
-  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairRetryAt) {
-    failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
   }
   if (false && BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
