@@ -1053,6 +1053,10 @@ async function loadSupplementalAustralianRaces() {
   // MoviOdds Bet365 separately. Never relabel Bet365 or a public preview as Sportsbet.
   const jobs=[
     ["PuntersEdge public racing demo",()=>demoRacingFeed()],
+    // The public bookmaker preview is a separate Sportsbet-labelled source.
+    // Merge it into the main race list so its horse/greyhound runner quotes
+    // are actually available to the dashboard, not just background diagnostics.
+    ["Sportsbet public bookmaker preview",()=>loadSportsbetPublicRaceDemos()],
     ["Sportsbet public racing pages",()=>loadSportsbetPublicRaces()],
     ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.reject(new Error("RAPIDODDSAPI_API_KEY is not configured in Railway."))],
     ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
