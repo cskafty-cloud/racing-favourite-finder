@@ -393,7 +393,7 @@ async function loadPublicDemoSport(sport) {
         // MoviOdds documents /odds as its Bet365 odds feed. Accept its quotes as
         // Bet365 unless an explicit per-quote source contradicts that provenance.
         const explicitBook=moviQuoteBookmakerKey(q);
-        if(explicitBook&&explicitBook!=="bet365")continue;
+        if(explicitBook&&!["bet365","pm"].includes(explicitBook))continue;
         const bookKey="bet365";
         const name=q.label||q.name||q.selection||"Selection";
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
@@ -402,14 +402,14 @@ async function loadPublicDemoSport(sport) {
         const polledAt=groupStatus.polled_at||match.polled_at||null;
         const serverTime=match._moviServerTime||match.server_time||new Date().toISOString();
         const pollAge=polledAt?Math.max(0,(Date.parse(serverTime)-Date.parse(polledAt))/1000):null;
-        const quoteAge=q.age_seconds??q.quote_age_seconds??pollAge;
+        const quoteAge=pollAge??q.age_seconds??q.quote_age_seconds??null;
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:"Bet365",
           last_update:null,age_seconds:quoteAge,
           stale:groupStatus.stale===true,
           markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds documented Bet365-only odds feed"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         if(book.age_seconds==null||quoteAge!=null&&quoteAge>book.age_seconds)book.age_seconds=quoteAge;
-        if(groupStatus.stale===true)book.stale=true;
+        // Market-level stale state is applied to its individual outcomes below.
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
         const outcome={name:String(name),price,last_update:null,
           age_seconds:quoteAge,observed_at:new Date().toISOString(),stale:groupStatus.stale===true};
