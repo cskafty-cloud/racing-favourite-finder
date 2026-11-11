@@ -159,7 +159,7 @@ function allBookFavouritePanel(f){
  const runner=(f.number!=null?f.number+". ":"")+f.name;
  const age=f.age==null?"Quote age unavailable · public snapshot unverified":"Quote age "+Math.round(f.age)+"s";
  const link=f.url&&String(f.url).startsWith("http")?'<a class="bookmaker-market-link" href="'+esc(f.url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(f.bookmaker)+' ↗</a>':"";
- return '<div class="book-fav"><div class="book-fav-label">'+esc(f.bookmaker)+' public favourite</div><div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+f.price.toFixed(2)+'</div><div class="book-fav-age">'+esc(age)+' · shortest fresh price returned by this bookmaker</div>'+link+'</div>';
+ return '<div class="book-fav"><div class="book-fav-label">'+esc(f.bookmaker)+' public favourite</div><div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+f.price.toFixed(2)+'</div><div class="book-fav-age">'+esc(age)+' · '+(f.age==null?"shortest returned public price · age unverified":"shortest current price returned by this bookmaker")+"</div>"+link+'</div>';
 }
 
 function marketFavourite(race) {
