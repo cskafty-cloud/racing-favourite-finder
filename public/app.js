@@ -394,10 +394,8 @@ function sportUnverifiedFavourite(event,wantedBookmaker){
  for(const b of event.bookmakers||[]){
   const key=normaliseBookmakerKey(b.key||b.title||b.name||"unknown");
   if(!bookmakerMatches(key,wantedBookmaker)||b.stale===true)continue;
-  const age=quoteAgeSeconds({age_seconds:b.age_seconds??b.quote_age_seconds,last_update:b.last_update||b.updated_at||b.lastUpdate||null});
-  if(age!=null)continue;
   for(const market of b.markets||[])if(["h2h","head_to_head"].includes(String(market.key||"").toLowerCase()))
-   for(const o of market.outcomes||[]){const price=Number(o.price);if(o.name&&Number.isFinite(price)&&price>1)rows.push({name:String(o.name),price,books:1,ageSeconds:null,verified:false,unverified:true});}
+   for(const o of market.outcomes||[]){const age=quoteAgeSeconds(o)??quoteAgeSeconds(b),price=Number(o.price);if(age==null&&o.stale!==true&&o.suspended!==true&&o.status!=="SUSPENDED"&&o.name&&Number.isFinite(price)&&price>1)rows.push({name:String(o.name),price,books:1,ageSeconds:null,verified:false,unverified:true});}
  }
  return rows.sort((a,b)=>a.price-b.price)[0]||null;
 }
@@ -405,22 +403,43 @@ function sportFavourite(event,wantedBookmaker){const rows=sportRankings(event,wa
 function sportRankings(event,wantedBookmaker){
  const books=new Map();
  for(const b of event.bookmakers||[]){
-  const key=normaliseBookmakerKey(b.key||b.title||b.name||'unknown');if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
-  const age=quoteAgeSeconds({age_seconds:b.age_seconds??b.quote_age_seconds,last_update:b.last_update||b.updated_at||b.lastUpdate||null});
-  if(age==null||age>=180)continue;
-  const outcomes=(b.markets||[]).filter(m=>['h2h','head_to_head'].includes(String(m.key||'').toLowerCase())).flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||''),price:Number(o.price)})).filter(o=>o.name&&o.price>1&&Number.isFinite(o.price));
-  if(!outcomes.length)continue;const old=books.get(key);if(!old||(age??999999)<(old.age??999999))books.set(key,{age,outcomes});
+  const key=normaliseBookmakerKey(b.key||b.title||b.name||"unknown");
+  if(wantedBookmaker&&!bookmakerMatches(key,wantedBookmaker))continue;
+  if(b.stale===true)continue;
+  const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
+   .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
+   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<180);
+  if(!outcomes.length)continue;
+  const old=books.get(key);
+  const age=Math.max(...outcomes.map(o=>o.age));
+  if(!old||age<old.age)books.set(key,{age,outcomes});
  }
- if(wantedBookmaker){const values=new Map();for(const b of books.values())for(const o of b.outcomes){if(!values.has(o.name))values.set(o.name,[]);values.get(o.name).push({price:o.price,age:b.age});}return [...values.entries()].map(([name,items])=>({name,price:items.reduce((a,b)=>a+b.price,0)/items.length,books:items.length,ageSeconds:Math.round(items.reduce((a,b)=>a+b.age,0)/items.length),score:0})).sort((a,b)=>a.price-b.price);}
- const names=new Set([...books.values()].flatMap(b=>b.outcomes.map(o=>o.name))),stats=new Map([...names].map(n=>[n,{prob:[],votes:0,prices:[],ages:[]}]));
- for(const b of books.values()){const total=b.outcomes.reduce((s,o)=>s+1/o.price,0),leader=b.outcomes.slice().sort((a,z)=>(1/z.price)-(1/a.price))[0];for(const o of b.outcomes){const s=stats.get(o.name);s.prob.push((1/o.price)/total);s.prices.push(o.price);s.ages.push(b.age);if(leader&&leader.name===o.name)s.votes++;}}
+ if(wantedBookmaker){
+  const values=new Map();
+  for(const b of books.values())for(const o of b.outcomes){
+   const previous=values.get(o.name);
+   if(!previous||o.age<previous.age)values.set(o.name,o);
+  }
+  return [...values.entries()].map(([name,o])=>({name,price:o.price,books:1,ageSeconds:Math.round(o.age),score:0,verified:true}))
+   .sort((a,b)=>a.price-b.price);
+ }
+ const names=new Set([...books.values()].flatMap(b=>b.outcomes.map(o=>o.name)));
+ const stats=new Map([...names].map(n=>[n,{prob:[],votes:0,prices:[],ages:[]}]));
+ for(const b of books.values()){
+  const total=b.outcomes.reduce((s,o)=>s+1/o.price,0);
+  const leader=b.outcomes.slice().sort((x,y)=>(1/y.price)-(1/x.price))[0];
+  for(const o of b.outcomes){const s=stats.get(o.name);s.prob.push((1/o.price)/total);s.prices.push(o.price);s.ages.push(o.age);if(leader&&leader.name===o.name)s.votes++;}
+ }
  return [...stats.entries()].map(([name,s])=>{
-  const avg=s.prob.reduce((a,b)=>a+b,0)/s.prob.length,sorted=s.prob.slice().sort((a,b)=>a-b),mid=sorted[Math.floor((sorted.length-1)/2)],spread=s.prob.length>1?Math.max(...s.prob)-Math.min(...s.prob):1,support=s.votes/Math.max(1,books.size);
-  const coverage=Math.min(1,s.prices.length/Math.min(5,Math.max(2,books.size))),known=s.ages.filter(x=>x!=null),fresh=known.length?Math.max(0,1-known.reduce((a,b)=>a+b,0)/known.length/180):.35,consistency=Math.max(0,1-spread/Math.max(mid,.01));
-  const rank=[...stats.values()].filter(x=>x.prob.reduce((a,b)=>a+b,0)/x.prob.length<avg).length,strength=stats.size>1?rank/(stats.size-1):1,score=Math.round(35*support+25*strength+15*coverage+15*fresh+10*consistency);
-  const p=s.prices.slice().sort((a,b)=>a-b),price=p.length%2?p[(p.length-1)/2]:(p[p.length/2-1]+p[p.length/2])/2;
-  return {name,price,books:s.prices.length,score,agreementPct:Math.round(support*100),impliedProbability:+(avg*100).toFixed(1),spread:+(spread*100).toFixed(1),meanQuoteAge:Math.round(s.ages.reduce((a,b)=>a+b,0)/s.ages.length)};
- }).sort((a,b)=>b.score-a.score||b.agreementPct-a.agreementPct||b.impliedProbability-a.impliedProbability||b.books-a.books);
+  const avg=s.prob.reduce((x,y)=>x+y,0)/s.prob.length,sorted=s.prob.slice().sort((x,y)=>x-y),mid=sorted[Math.floor((sorted.length-1)/2)];
+  const spread=s.prob.length>1?Math.max(...s.prob)-Math.min(...s.prob):1,support=s.votes/Math.max(1,books.size);
+  const coverage=Math.min(1,s.prices.length/Math.min(5,Math.max(2,books.size))),fresh=Math.max(0,1-s.ages.reduce((x,y)=>x+y,0)/s.ages.length/180);
+  const consistency=Math.max(0,1-spread/Math.max(mid,.01));
+  const rank=[...stats.values()].filter(x=>x.prob.reduce((a,b)=>a+b,0)/x.prob.length<avg).length,strength=stats.size>1?rank/(stats.size-1):1;
+  const score=Math.round(35*support+25*strength+15*coverage+15*fresh+10*consistency);
+  const p=s.prices.slice().sort((x,y)=>x-y),price=p.length%2?p[(p.length-1)/2]:(p[p.length/2-1]+p[p.length/2])/2;
+  return {name,price,books:s.prices.length,score,agreementPct:Math.round(support*100),impliedProbability:+(avg*100).toFixed(1),spread:+(spread*100).toFixed(1),meanQuoteAge:Math.round(s.ages.reduce((x,y)=>x+y,0)/s.ages.length)};
+ }).sort((x,y)=>y.score-x.score||y.agreementPct-x.agreementPct||y.impliedProbability-x.impliedProbability||y.books-x.books);
 }
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
