@@ -902,7 +902,14 @@ async function loadRaces() {
   if (state.loading) return;
   state.loading = true; $("refreshBtn").disabled = true;
   try {
-    const res = await fetch("/api/races");
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(() => controller.abort(), 20000);
+    let res;
+    try {
+      res = await fetch("/api/races", { cache: "no-store", signal: controller.signal });
+    } finally {
+      clearTimeout(requestTimeout);
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
@@ -921,6 +928,7 @@ async function loadRaces() {
     $("notice").classList.remove("hidden");
     render();
   } catch (err) {
+    console.error("Racing feed connection failed:", err);
     state.feedMode = "public-widgets";
     state.races = [];
     updateEntryHorseStatus();
@@ -1568,7 +1576,14 @@ async function loadRaces() {
   if (state.loading) return;
   state.loading = true; $("refreshBtn").disabled = true;
   try {
-    const res = await fetch("/api/races");
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(() => controller.abort(), 20000);
+    let res;
+    try {
+      res = await fetch("/api/races", { cache: "no-store", signal: controller.signal });
+    } finally {
+      clearTimeout(requestTimeout);
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
