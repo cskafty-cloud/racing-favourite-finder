@@ -1365,13 +1365,21 @@ async function getGlobalRaces() {
         const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
         const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
         const priceRows=Array.isArray(x.prices)?x.prices:[];
-        // Never borrow the first price row: it may be fixed-place, tote or another market.
-        const priceRow=priceRows.find(p=>/^(fixed[_ -]?)?win$|winner|win[_ -]fixed/i.test(String(p.market||p.market_name||p.type||p.key||"")));
-        const rawPrice=x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??
-          x.win_price_decimal??x.fixed_odds_decimal??x.win??
-          nested.win??nested.fixed_win??nested.win_price??
-          fixed.win??fixed.win_price??fixed.decimal??fixed.price??
-          priceRow?.price??priceRow?.odds??priceRow?.decimal??null;
+        // Require explicit Bet365 identity on this runner/quote. A Bet365 page,
+        // race-level label, or unfiltered MoviOdds board is not quote-level proof.
+        const priceRow=priceRows.find(p=>moviQuoteBookmakerKey(p)==="bet365"&&
+          /^(fixed[_ -]?)?win$|winner|win[_ -]fixed/i.test(String(p.market||p.market_name||p.type||p.key||"")));
+        const nestedBet365=nested.bet365??fixed.bet365??x.bet365??null;
+        const explicitRunnerBook=moviQuoteBookmakerKey(x)==="bet365";
+        const explicitNestedBook=moviQuoteBookmakerKey(nested)==="bet365"||moviQuoteBookmakerKey(fixed)==="bet365";
+        const quoteIsBet365=!!priceRow||nestedBet365!=null||explicitRunnerBook||explicitNestedBook;
+        const bet365NestedValue=nestedBet365&&typeof nestedBet365==="object"
+          ?(nestedBet365.win??nestedBet365.fixed_win??nestedBet365.win_price??nestedBet365.price??nestedBet365.odds)
+          :nestedBet365;
+        const rawPrice=quoteIsBet365?(priceRow?.price??priceRow?.odds??priceRow?.decimal??
+          bet365NestedValue??(explicitRunnerBook||explicitNestedBook?
+            (x.win_odds??x.fixed_win_odds??x.fixed_win??x.win_price??x.win_price_decimal??x.fixed_odds_decimal??x.win??
+             nested.win??nested.fixed_win??nested.win_price??fixed.win??fixed.win_price??fixed.decimal??fixed.price):null)):null;
         const fractional=typeof rawPrice==="string"&&rawPrice.includes("/")?rawPrice.split("/").map(Number):null;
         const winFraction=x.win_frac??x.fixed_win_frac??x.odds_fractional??null;
         const fractionText=typeof winFraction==="string"&&winFraction.includes("/")?winFraction.split("/").map(Number):null;
