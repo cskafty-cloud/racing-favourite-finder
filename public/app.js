@@ -511,14 +511,14 @@ async function loadAllSports(){
    const results=await Promise.allSettled(batch.map(async s=>{
     const response=await fetch("/api/public-sports/"+encodeURIComponent(s.key)+"?mode=all");
     const data=await response.json();if(!response.ok)throw Error(data.error||"Feed unavailable");
-    const events=(data.events||[]).filter(e=>e.in_play===true||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
+    const events=(data.events||[]).filter(e=>isSportEventLive(e)||!e.commence_time||new Date(e.commence_time).getTime()>=Date.now());
     return {sport:s,events,errors:data.providerErrors||[]};
    }));
    for(let i=0;i<results.length;i++){
     const result=results[i];if(result.status!=="fulfilled"){failed++;continue;}
     const {sport,events,errors}=result.value;state.sportsByKey[sport.key]=events;recordSportTrends(sport.key,events);loaded++;if(errors.length)failed++;
    }
-   state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>Number(b.in_play===true)-Number(a.in_play===true)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
+   state.sportEvents=Object.entries(state.sportsByKey).flatMap(([sport,events])=>events.map(e=>({...e,_sport:sport}))).sort((a,b)=>{const al=isSportEventLive(a),bl=isSportEventLive(b);if(al!==bl)return al?-1:1;const ta=Date.parse(a.commence_time||""),tb=Date.parse(b.commence_time||"");if(!Number.isFinite(ta)&&!Number.isFinite(tb))return 0;if(!Number.isFinite(ta))return 1;if(!Number.isFinite(tb))return -1;return ta-tb;});
    renderSports();renderTopTips();
   }
   state.selectedSport=null;state.allSportsLoaded=true;
