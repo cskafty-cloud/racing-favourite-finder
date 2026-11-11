@@ -254,7 +254,7 @@ function raceCard(r, live=false) {
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
-    const fresh=quotes.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(Number(q.age))&&Number(q.age)>=0&&Number(q.age)<180);
+    const fresh=quotes.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(Number(q.age))&&Number(q.age)>=0&&Number(q.age)<racingQuoteMaxAge(q.raw||{}));
     const values=fresh.map(q=>q.price).sort((a,b)=>a-b);
     const mid=values.length?(values.length%2?values[(values.length-1)/2]:(values[values.length/2-1]+values[values.length/2])/2):null;
     const runnerName=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
@@ -263,7 +263,7 @@ function raceCard(r, live=false) {
     const estimate=mid==null
       ? '<span class="market-estimate unavailable">Estimate unavailable · no verified fresh quotes (unverified prices excluded)</span>'
       : '<span class="market-estimate">Market estimate $'+mid.toFixed(2)+' · median of '+fresh.length+' fresh quote'+(fresh.length===1?'':'s')+'</span>';
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=180),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
+    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
     return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
   }).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
@@ -383,7 +383,7 @@ function renderFullCoverage(rows) {
       const qs=rawRunnerQuotes(runner).sort((a,b)=>a.name.localeCompare(b.name));
       const quoteHtml=qs.map(q=>{
         const age=q.age==null?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";
-        const stale=q.stale || (q.age!=null && Number(q.age)>=180),unverified=q.age==null&&!q.stale;
+        const stale=q.stale || (q.age!=null && Number(q.age)>=racingQuoteMaxAge(q.raw||{})),unverified=q.age==null&&!q.stale;
         const link=q.url && /^https?:\/\//i.test(q.url) ? ' · <a class="bet-link" href="'+esc(q.url)+'" target="_blank" rel="noopener noreferrer">Open site</a>' : "";
         return '<span class="bookmaker-quote '+(stale?"stale-quote":unverified?"unverified-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":unverified?" · NOT LIVE-CONFIRMED":" · verified fresh")+'</small>'+link+'</span>';
       }).join("");
@@ -413,7 +413,7 @@ function sportRankings(event,wantedBookmaker){
   if(b.stale===true)continue;
   const outcomes=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()))
    .flatMap(m=>m.outcomes||[]).map(o=>({name:String(o.name||""),price:Number(o.price),age:quoteAgeSeconds(o)??quoteAgeSeconds(b),stale:o.stale===true||o.suspended===true||o.status==="SUSPENDED"}))
-   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<180);
+   .filter(o=>o.name&&Number.isFinite(o.price)&&o.price>1&&!o.stale&&o.age!=null&&o.age<racingQuoteMaxAge(q));
   if(!outcomes.length)continue;
   const old=books.get(key);
   const age=Math.max(...outcomes.map(o=>o.age));
@@ -561,7 +561,7 @@ function renderSports(){
   const bookText=(e.bookmakers||[]).map(b=>{
    const stamp=b.last_update||b.updated_at||b.lastUpdate||null,parsed=stamp?Date.parse(stamp):NaN,direct=b.age_seconds??b.quote_age_seconds;
    const age=direct!=null&&Number.isFinite(Number(direct))?Math.max(0,Number(direct)):Number.isFinite(parsed)?Math.max(0,(Date.now()-parsed)/1000):null;
-   const status=age==null?"UNVERIFIED · timestamp missing":age>=180?"STALE":Math.round(age)+"s old · verified fresh";
+   const status=age==null?"UNVERIFIED · timestamp missing":age>=racingQuoteMaxAge(q)?"STALE":Math.round(age)+"s old · verified fresh";
    const markets=(b.markets||[]).filter(m=>["h2h","head_to_head"].includes(String(m.key||"").toLowerCase()));
    const outs=markets.flatMap(m=>m.outcomes||[]).filter(o=>Number(o.price)>1).map(o=>esc(o.name)+" $"+Number(o.price).toFixed(2));
    return outs.length?'<div class="live-bookmaker"><b>'+esc(b.name||b.key||"Bookmaker")+'</b> · '+outs.join(" · ")+' <small>['+status+']</small></div>':"";
@@ -712,7 +712,7 @@ function render() {
     const runners=(r.runners||[]).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999));
     const runnerRows=runners.map((runner,rank)=>{
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:racingWinPrice(q),age:quoteAgeSeconds(q),stale:!!q.stale,publicDemo:q.public_demo===true,raw:q})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
-      const fresh=qs.filter(q=>!q.stale&&((q.age!=null&&Number.isFinite(q.age)&&q.age<racingQuoteMaxAge(q.raw||{}))||(q.false))), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
+      const fresh=qs.filter(q=>!q.stale&&((q.age!=null&&Number.isFinite(q.age)&&q.age<racingQuoteMaxAge(q.raw||{})))), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
       const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner", num=runner.number??runner.runner_number??runner.box, isFav=!!fav&&((fav.number!=null&&num!=null&&String(fav.number)===String(num))||(fav.number==null&&normaliseRunnerName(name)===normaliseRunnerName(favName)));
       const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=racingQuoteMaxAge(q.raw||{}))?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=racingQuoteMaxAge(q.raw||{})?(q.age==null?' · AGE UNVERIFIED':' · STALE'):' · CURRENT')+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
