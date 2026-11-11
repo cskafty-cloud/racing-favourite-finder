@@ -2145,6 +2145,63 @@ app.get("/api/history", async (_req,res) => {
     });
   } catch (err) { res.status(500).json({error:err.message}); }
 });
+
+const LUCASFOX_LATEST_URL = "https://lucasfox.dev/odds-api/v1/latest?bookmaker_key=sportsbet&limit=100";
+let lucasFoxSportsCache={at:0,payload:null,error:null};
+let lucasFoxSportsRefresh=null;
+async function loadLucasFoxSportsFeed(){
+ if(lucasFoxSportsCache.payload&&Date.now()-lucasFoxSportsCache.at<15*60*1000)return lucasFoxSportsCache.payload;
+ if(lucasFoxSportsRefresh)return lucasFoxSportsRefresh;
+ lucasFoxSportsRefresh=(async()=>{
+  const response=await fetch(LUCASFOX_LATEST_URL,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(15000)});
+  const body=await response.text();let data;
+  try{data=JSON.parse(body);}catch{throw new Error("LucasFox returned invalid JSON (HTTP "+response.status+").");}
+  if(!response.ok)throw new Error("LucasFox HTTP "+response.status+": "+(data.detail||data.error||body.slice(0,180)));
+  if(data.tier!=="free"||data.market_scope!=="main")throw new Error("LucasFox response did not confirm the free main-market tier; data not used.");
+  const groups=new Map(),marketCounts={h2h:0,spreads:0,totals:0};
+  for(const q of Array.isArray(data.quotes)?data.quotes:[]){
+   if(String(q.bookmaker_key||"").toLowerCase()!=="sportsbet"||!["h2h","spreads","totals"].includes(String(q.market_key||"").toLowerCase()))continue;
+   const event=q.event||{},eventId=String(q.event_id||event.event_id||"");
+   if(!eventId||!q.selection)continue;
+   const start=event.commence_time||null,stamp=q.captured_at||null,parsed=stamp?Date.parse(stamp):NaN;
+   if(!Number.isFinite(parsed)||parsed>Date.now()+60000)continue;
+   const age=Math.max(Number(q.freshness_seconds)||0,(Date.now()-parsed)/1000);
+   const status=String(event.status||"").toLowerCase();
+   const startMs=Date.parse(start||"");
+   if(Number.isFinite(startMs)&&startMs<Date.now()&&!/live|in.?play|running/.test(status))continue;
+   let row=groups.get(eventId);
+   if(!row){row={id:"lucasfox-"+eventId,event_id:eventId,home_team:event.home_team||"Event",away_team:event.away_team||"",league:event.league_title||"",sport_name:event.sport_key||"Sports",_sport:"lucasfox_"+String(event.sport_key||"sports"),commence_time:start,in_play:/live|in.?play|running/.test(status),status:status||"scheduled",bookmakers:[{key:"sportsbet",name:"Sportsbet",source:"LucasFox free Sportsbet main-market feed",markets:[]}]};groups.set(eventId,row);}
+   const key=String(q.market_key).toLowerCase();
+   let market=row.bookmakers[0].markets.find(m=>m.key===key&&m.line===((q.line??null)));
+   if(!market){market={key,name:key==="h2h"?"Head to head":key==="spreads"?"Spreads":"Totals",line:q.line??null,outcomes:[]};row.bookmakers[0].markets.push(market);}
+   const outcome={name:String(q.selection),price:Number(q.decimal_odds),age_seconds:age,last_update:stamp,captured_at:stamp,source:"LucasFox · Sportsbet",line:q.line??null,deep_link:q.deep_link||null};
+   if(!Number.isFinite(outcome.price)||outcome.price<=1)continue;
+   const prior=market.outcomes.find(x=>x.name===outcome.name);
+   if(!prior)market.outcomes.push(outcome);else if(age<prior.age_seconds)Object.assign(prior,outcome);
+   marketCounts[key]++;
+  }
+  const events=[...groups.values()].map(row=>{
+   row.bookmakers[0].markets=row.bookmakers[0].markets.filter(m=>m.outcomes.length);
+   row.bookmakers[0].markets.forEach(m=>m.outcomes.sort((a,b)=>a.price-b.price));
+   return row;
+  });
+  const quotes=events.reduce((n,e)=>n+e.bookmakers[0].markets.reduce((m,x)=>m+x.outcomes.length,0),0);
+  const fresh=events.reduce((n,e)=>n+e.bookmakers[0].markets.reduce((m,x)=>m+x.outcomes.filter(o=>o.age_seconds<15*60).length,0),0);
+  const payload={events,quoteCount:quotes,eventCount:events.length,verifiedFreshCount:fresh,marketCounts,
+   tier:"free",marketScope:"main",fetchedAt:new Date().toISOString(),provider:"LucasFox free tier · Sportsbet-labelled · h2h/spreads/totals",
+   dailyLimit:100,quoteFreshnessLimitSeconds:900,
+   note:"Sportsbet main sports-market quotes only. Each price retains its own captured_at timestamp and age. Quotes older than 15 minutes remain visible in coverage but are excluded from verified favourites and tips. This feed does not provide horse-racing WIN or PLACE prices."};
+  lucasFoxSportsCache={at:Date.now(),payload,error:null};
+  console.info("LUCASFOX_SPORTSBET_FEED",JSON.stringify({events:events.length,quotes,fresh,markets:marketCounts,cacheUntil:new Date(Date.now()+15*60*1000).toISOString()}));
+  return payload;
+ })().catch(error=>{lucasFoxSportsCache.error=error.message;throw error;}).finally(()=>{lucasFoxSportsRefresh=null;});
+ return lucasFoxSportsRefresh;
+}
+app.get("/api/lucasfox/sports",async(_req,res)=>{
+ try{const data=await loadLucasFoxSportsFeed();res.set("Cache-Control","no-store");return res.json(data);}
+ catch(error){return res.status(503).json({error:error.message,provider:"LucasFox free Sportsbet main-market feed",tier:"free"});}
+});
+
 app.get("*",(_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 // Keep the racing feed warm even when nobody has the dashboard open. The browser
 // still calls /api/races for display, while this server-side poll guarantees provider
