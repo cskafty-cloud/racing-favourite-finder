@@ -589,15 +589,23 @@ function sportRankings(event,wantedBookmaker){
 function renderTopTips() {
  const el=$("bestTipsList");if(!el)return;
  const raceRows=(state.races||[]).filter(r=>{const t=Date.parse(r.start_time||"");return !Number.isFinite(t)||t>=Date.now()||isExplicitlyLive(r);});
- const sportsbetPicks=[],bet365Picks=[],bet365Priced=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],bet365SportPicks=[],sportsbetSportUnverified=[],bet365SportUnverified=[],pricedTips=[],sportsbetPriced=[];
+ const sportsbetPicks=[],bet365Picks=[],bet365Priced=[],racePicks=[],sportPicks=[],sportsbetSportPicks=[],bet365SportPicks=[],sportsbetSportUnverified=[],bet365SportUnverified=[],pricedTips=[],sportsbetPriced=[],sportsbetIndicativeAll=[];
  for(const r of raceRows){
   const event=(r.venue||r.track_name||"Track")+" "+(r.race_number?"R"+r.race_number:""),category=categoryOf(r).toUpperCase(),time=r.start_time;
-  const sb=sportsbetDisplayFavourite(r),sbDisplay=sb||bookmakerUnverifiedFavourite(r,"sportsbet");
-  const sbSignal=sb?runnerConsensusSignal(r,sb):null;
-  const sbPick={kind:"RACING",category,event,selection:sbDisplay?(sbDisplay.number?sbDisplay.number+". ":"")+sbDisplay.name:"No priced favourite available",odds:sbDisplay?sbDisplay.price:null,time,
-   source:sbDisplay?(sbDisplay.unverified?"Sportsbet-labelled price · UNVERIFIED · source timestamp missing":sbDisplay.displaySource+" · "+Math.round(sb.age)+"s verified quote age · "+(sbSignal?.agreementPct||0)+"% cross-book agreement"):"No Sportsbet-labelled public runner price returned",
-   score:sbSignal?.score||0,quotes:sbSignal?.quoteCount||0,signal:sb?(sbSignal?.signal||"PROVISIONAL · SPORTSBET PRICE"):sbDisplay?"UNVERIFIED · NOT LIVE-CONFIRMED":"PRICE UNAVAILABLE"};
-  sportsbetPicks.push(sbPick);if(sb)sportsbetPriced.push(sbPick);
+  const sbExact=bookmakerFavourite(r,"sportsbet");
+  const sbUnverified=sbExact?null:bookmakerUnverifiedFavourite(r,"sportsbet");
+  const sbProxy=sbExact||sbUnverified?null:marketFavourite(r);
+  const sbDisplay=sbExact||sbUnverified||(sbProxy?{...sbProxy,price:sbProxy.consensus,indicative:true}:null);
+  const sbSignal=sbExact?runnerConsensusSignal(r,sbExact):null;
+  const sbPick={kind:"RACING",category,event,selection:sbDisplay?(sbDisplay.number?sbDisplay.number+". ":"")+sbDisplay.name:"No Sportsbet quote returned",odds:sbDisplay?sbDisplay.price:null,time,
+   source:sbExact?(sbExact.source||"Exact Sportsbet quote")+" · "+Math.round(sbExact.age)+"s verified quote age · "+(sbSignal?.agreementPct||0)+"% cross-book agreement":
+    sbUnverified?"Sportsbet-labelled public price · UNVERIFIED · source timestamp missing":
+    sbProxy?"Cross-bookmaker median candidate · INDICATIVE ONLY · NOT a Sportsbet quote":"No Sportsbet-labelled public runner price returned",
+   score:sbSignal?.score||0,quotes:sbSignal?.quoteCount||0,
+   signal:sbExact?(sbSignal?.signal||"SPORTSBET · VERIFIED PRICE"):sbUnverified?"UNVERIFIED · NOT LIVE-CONFIRMED":sbProxy?"INDICATIVE · NOT A SPORTSBET PRICE":"PRICE UNAVAILABLE"};
+  sportsbetPicks.push(sbPick);
+  if(sbExact)sportsbetPriced.push(sbPick);
+  if(sbProxy)sportsbetIndicativeAll.push(sbPick);
   const b365=bookmakerFavourite(r,"bet365"),b365Display=b365||bookmakerUnverifiedFavourite(r,"bet365");
   const b365Signal=b365?runnerConsensusSignal(r,b365):null;
   const b365Tip={kind:"BET365 RACING",category,event,selection:b365Display?(b365Display.number?b365Display.number+". ":"")+b365Display.name:"No verified Bet365 favourite",odds:b365Display?b365Display.price:null,time,
@@ -642,6 +650,7 @@ function renderTopTips() {
  el.innerHTML=section("BEST OF THE DAY · RACING + SPORTS","Top 10 selections ranked by bookmaker agreement, normalised implied probability, quote coverage, freshness and price consistency — not shortest odds. Market indicator only, not a prediction.",bestDay,"No fresh priced race or sports favourites are available for today's shortlist.")
  +section("SPORTSBET BEST OF THE DAY","Verified Sportsbet prices only are ranked. Unknown-age prices are excluded from this verified list.",sportsbetBestOfDay,"No timestamp-verified Sportsbet prices were returned for today's races.")
  +section("SPORTSBET PROVISIONAL PICKS · AGE UNVERIFIED","Sportsbet-labelled public prices with no source quote timestamp. These are not live-confirmed and are kept separate from verified Best of the Day.",sportsbetUnverifiedAll.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,20),"No unverified Sportsbet prices were returned for today's races.")
+ +section("SPORTSBET MARKET PROXIES · NO SPORTS BET QUOTE","Indicative cross-bookmaker median favourites for races where no exact Sportsbet price was returned. These are not Sportsbet odds and are excluded from Sportsbet Best of the Day and Top Tips.",sportsbetIndicativeAll.sort((a,b)=>(a.odds??999)-(b.odds??999)).slice(0,30),"No indicative market proxies are available.")
  +section("SPORTSBET TOP TIPS · ALL RACES","Sportsbet's verified prices only. Unknown-age public snapshots are shown separately as UNVERIFIED, not ranked as live tips.",sportsbetTopTips,"No Sportsbet-labelled public runner prices are available in the returned racing sample.")
  +section("SPORTSBET FAVOURITES · EVERY RACE","One entry for every returned race. Sportsbet-labelled public prices with missing timestamps are visibly marked UNVERIFIED, never confirmed live.",sportsbetPicks,"No upcoming races were returned by the racing feed.")
  +section("BET365 BEST OF THE DAY","Exact timestamp-verified Bet365 prices ranked by market support and freshness. Unknown-age references are excluded from this verified list.",bet365BestDay,"No timestamp-verified Bet365 prices were returned.")
