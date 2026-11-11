@@ -75,7 +75,7 @@ async function betfairRpc(method, params) {
   });
   const body = await response.text();
   let payload;
-  try { payload=JSON.parse(body); } catch { const contentType=response.headers.get("content-type")||"unknown content type"; const excerpt=String(body||"").replace(/\\s+/g," ").replace(/[\\r\\n\\t]+/g," ").slice(0,180); throw new Error("Betfair returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:".")); }
+  try { payload=JSON.parse(body); } catch { const contentType=response.headers.get("content-type")||"unknown content type"; const excerpt=String(body||"").replace(/<script[\\s\\S]*?<\\/script>/gi," ").replace(/<style[\\s\\S]*?<\\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/\\s+/g," ").trim().slice(0,240); throw new Error("Betfair returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:".")); }
   const item=Array.isArray(payload)?payload[0]:payload;
   if (!response.ok || item?.error || item?.result == null) {
     const detail=item?.error?.data?.APINGException?.errorCode || item?.error?.data?.errorCode ||
