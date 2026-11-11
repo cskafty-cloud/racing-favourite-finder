@@ -1002,14 +1002,12 @@ async function loadRapidRacing() {
   return rapidRacingCache;
 }
 async function loadSupplementalAustralianRaces() {
-  // RapidOddsAPI racing is not included in the currently configured plan. Do not
-  // spend calls on endpoints that return 403; only opt in after the plan includes racing.
-  // Sportsbet's public web page currently returns 403, so do not scrape/retry it.
-  // Use the public preview as a schedule/coverage fallback. Sportsbet prices
-  // come from the authenticated, licensed Krok Odds direct bookmaker feed below.
+  // Try the already-configured RapidOddsAPI key against its licensed Australian racing endpoints.
+  // If this key lacks Racing/Pro/Elite entitlement, surface the provider HTTP error and retain
+  // MoviOdds Bet365 separately. Never relabel Bet365 or a public preview as Sportsbet.
   const jobs=[
     ["PuntersEdge public racing demo",()=>demoRacingFeed()],
-    ["RapidOddsAPI",()=>RAPID_ODDS_KEY&&process.env.RAPIDODDS_RACING_ENABLED==="true"?loadRapidRacing():Promise.resolve({races:[],errors:[]})],
+    ["RapidOddsAPI",()=>RAPID_ODDS_KEY?loadRapidRacing():Promise.reject(new Error("RAPIDODDSAPI_API_KEY is not configured in Railway."))],
     ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
@@ -1276,7 +1274,6 @@ async function loadSportsbetPublicRaceDemos(){
    if(race.race_number||race.runners.length)races.push(race);
   }
  }
- if(RAPID_ODDS_KEY){try{races.push(...await loadRapidOddsRacing());}catch(error){errors.push("RapidOddsAPI Sportsbet racing: "+error.message);}}else{errors.push("RapidOddsAPI Sportsbet racing: no API key configured.");}
   sportsbetRacingDemoCache={at:Date.now(),races,errors};
  console.info("PUBLIC_BOOKMAKER_RACING_DEMO",JSON.stringify({raceItems:races.length,
   sportsbet:races.filter(r=>(r.runners||[]).some(x=>x.bookmakers.some(q=>q.key==="sportsbet"))).length,
@@ -1649,54 +1646,7 @@ async function rapidOdds(pathname, params={}) {
  return {data,remaining:response.headers.get("X-RateLimit-Remaining")};
 }
 
-let rapidRacingCache={at:0,races:[],error:null};
-let rapidRacingRefresh=null;
-async function loadRapidOddsRacing(){
- if(!RAPID_ODDS_KEY)throw new Error("RAPIDODDSAPI_API_KEY is not configured in Railway.");
- if(rapidRacingCache.at&&Date.now()-rapidRacingCache.at<60000)return rapidRacingCache.races;
- if(!rapidRacingRefresh)rapidRacingRefresh=(async()=>{
-  const specs=[["thoroughbred","horse"],["greyhound","greyhound"],["harness","harness"]];
-  const meetings=await Promise.allSettled(specs.map(async([code,category])=>{
-   const response=await rapidOdds("/racing/meetings",{code,countries:"AU"});
-   return {code,category,meetings:Array.isArray(response.data?.meetings)?response.data.meetings:[]};
-  }));
-  const errors=[],requests=[];
-  meetings.forEach((r,i)=>{if(r.status!=="fulfilled"){errors.push(specs[i][0]+": "+r.reason.message);return;}
-   for(const track of [...new Set(r.value.meetings.map(m=>m.track||m.name).filter(Boolean))])requests.push({code:r.value.code,category:r.value.category,track});});
-  const races=[];
-  for(let i=0;i<requests.length;i+=5){
-   const batch=await Promise.allSettled(requests.slice(i,i+5).map(async item=>{
-    const r=await rapidOdds("/racing/races",{track:item.track,code:item.code,countries:"AU",bookmakers:"Sportsbet"});
-    return {item,rows:Array.isArray(r.data?.races)?r.data.races:[]};
-   }));
-   for(const result of batch){if(result.status!=="fulfilled"){errors.push(result.reason.message);continue;}
-    const {item,rows}=result.value;
-    for(const race of rows){const runnersByNumber=new Map();
-     for(const book of (race.bookmakers||[]).filter(b=>canonicalBookmakerKey(b.bookmaker||b.name||b.key)==="sportsbet")){
-      const updated=book.last_update||null,age=updated?quoteAgeSecondsServer({last_update:updated}):null;
-      for(const runner of book.runners||[]){const number=runner.number??null,key=String(number??runner.name??"");
-       if(!runnersByNumber.has(key))runnersByNumber.set(key,{name:runner.name||"Runner",number,scratched:runner.scratched===true,bookmakers:[]});
-       const price=Number(runner.win);
-       if(Number.isFinite(price)&&price>1&&!runner.scratched)runnersByNumber.get(key).bookmakers.push({
-        key:"sportsbet",bookmaker:"Sportsbet",name:"Sportsbet",win_price:price,last_update:updated,updated_at:updated,
-        age_seconds:age,stale:age==null||age>=180,feed_observed_at:new Date().toISOString(),
-        source:"RapidOddsAPI authorised Australian racing feed",source_url:book.url||null,public_demo:false});
-      }
-     }
-     const start=race.start_time||null;if(!start||!Number.isFinite(Date.parse(start))||race.closed===true||race.abandoned===true)continue;
-     const id=String(race.race_id||[item.code,item.track,race.race_number,start].join("-"));
-     races.push({id,race_id:id,category:item.category,code:item.code,venue:race.track||item.track,track:race.track||item.track,
-      race_number:race.race_number??null,start_time:start,country:race.country||"AU",status:"scheduled",in_play:false,closed:false,runners:[...runnersByNumber.values()]});
-    }
-   }
-  }
-  rapidRacingCache={at:Date.now(),races,error:errors.join(" · ")||null};
-  console.info("RAPIDODDS_RACING_FEED",JSON.stringify({races:races.length,sportsbetQuotes:races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.length,0),0),
-   categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,races.filter(r=>r.category===k).length])),errors:errors.slice(0,8)}));
-  return races;
- })().catch(e=>{rapidRacingCache.error=e.message;throw e;}).finally(()=>{rapidRacingRefresh=null;});
- return rapidRacingRefresh;
-}
+
 function sportsTeamKey(v){return String(v||"").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g,"");}
 function liveScoreSummary(score){
  if(!score)return null;
