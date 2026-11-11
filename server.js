@@ -824,6 +824,8 @@ function runnerQuoteAudit(runner){
  if(!normalizeName(runnerName)||runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
  const rows=[];
  for(const q of (runner.bookmakers||runner.odds||[])){
+  // Scratched, suspended and stale quotes are excluded entirely, not displayed as alternatives.
+  if(q.stale===true||q.suspended===true||q.scratched===true)continue;
   const book=bookmakerKey(q),label=q.bookmaker||q.bookmaker_name||q.name||q.key||"Unknown bookmaker";
   if(!book)continue;
   const suppliedRunner=q.runner_name||q.selection_name||q.outcome_name||"";
