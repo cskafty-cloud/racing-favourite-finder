@@ -1,4 +1,4 @@
-const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, feedMode:"live", sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false, sportsbetOnly:false };
+const state = { races: [], filter: "all", search: "", sort: "odds", loading: false, feedMode:"live", sports: [], allSportsLoaded: false, selectedSport: null, sportEvents: [], sportsByKey: {}, sportTrendPrices: {}, sportTrendAlerts: [], sportsMode: false, sportsbetOnly:false, feedHealth:null };
 const $ = id => document.getElementById(id);
 const fmtTime = value => {
   if (!value) return "Time TBA";
@@ -98,7 +98,7 @@ function bookmakerFavourite(race,wantedKey) {
     return {name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
       number:runner.number??runner.runner_number??runner.box??null,price:match.price,age:match.age,
       stale:false,suspended:false,scratched:runner.scratched===true,deviationPct:deviation,peerCount:peers.length,
-      source:q.source||q.source_name||q.feed_source||"Bet365-labelled public quote",
+      source:q.source||q.source_name||q.feed_source||(wantedKey==="bet365"?"Bet365-labelled public quote":wantedKey+"-labelled public quote"),
       url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS[wantedKey]};
   }).filter(x=>x&&!x.scratched&&Number.isFinite(x.price)&&x.price>1);
   return candidates.sort((a,b)=>a.price-b.price)[0]||null;
@@ -148,7 +148,7 @@ function allBookmakerFavourites(race){
   if(!key||!Number.isFinite(price)||price<=1||q.stale===true||(age==null?q.public_demo!==true:age>=180))continue;
   if(!quoteIsCurrent(q))continue;
   const current=books.get(key);
-  if(!current||age<current.age)books.set(key,{key,bookmaker:bookmakerDisplayName(key,q),
+  if(!current||(age!=null&&(current.age==null||age<current.age)))books.set(key,{key,bookmaker:bookmakerDisplayName(key,q),
    name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
    number:runner.number??runner.runner_number??runner.box??null,price,age,
    url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS[key]||null});
@@ -157,7 +157,7 @@ function allBookmakerFavourites(race){
 }
 function allBookFavouritePanel(f){
  const runner=(f.number!=null?f.number+". ":"")+f.name;
- const age=f.age==null?"Quote age unavailable":"Quote age "+Math.round(f.age)+"s";
+ const age=f.age==null?"Quote age unavailable · public snapshot unverified":"Quote age "+Math.round(f.age)+"s";
  const link=f.url&&String(f.url).startsWith("http")?'<a class="bookmaker-market-link" href="'+esc(f.url)+'" target="_blank" rel="noopener noreferrer">Open '+esc(f.bookmaker)+' ↗</a>':"";
  return '<div class="book-fav"><div class="book-fav-label">'+esc(f.bookmaker)+' public favourite</div><div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+f.price.toFixed(2)+'</div><div class="book-fav-age">'+esc(age)+' · shortest fresh price returned by this bookmaker</div>'+link+'</div>';
 }
@@ -239,7 +239,7 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = fixedRunnerPrices(runner).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:Number(q.win_price??q.win??q.price), age:q.age_seconds??null, stale:!!q.stale,
+      price:Number(q.win_price??q.win??q.price), age:quoteAgeSeconds(q), stale:!!q.stale,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
@@ -593,14 +593,34 @@ function raceActivityScore(r) {
   const quotes=runners.reduce((n,x)=>n+fixedRunnerPrices(x).filter(q=>!q.stale&&(quoteAgeSeconds(q)==null?q.public_demo===true:quoteAgeSeconds(q)<180)).length,0);
   return runners.length*2+quotes*3+(marketFavourite(r)?8:0);
 }
+function renderFeedStatusRows(health){
+ const rows=[["horse","🐎 HORSE RACING"],["greyhound","🐕 GREYHOUND RACING"],["harness","🏇 HARNESS RACING"]].map(([key,label])=>{
+  const item=health?.racing?.byCode?.[key],status=health?.racing?.status||"checking";
+  const dot=status==="active"?"active":status==="partial"?"partial":status==="offline"?"offline":"checking";
+  const count=item?.races??0,live=item?.live??0;
+  const message=status==="offline"?"FEED OFFLINE":status==="checking"?"CHECKING FEED":live+" LIVE · "+count+" RACES RETURNED";
+  return '<div class="feed-status-item"><span class="feed-dot '+dot+'"></span><span><b>'+label+'</b><small>'+message+'</small></span></div>';
+ }).join("");
+ const liveStatus=health?.liveSports?.status||"checking";
+ const sportDot=liveStatus==="active"?"active":liveStatus==="partial"?"partial":liveStatus==="offline"?"offline":"checking";
+ const sportCount=health?.liveSports?.eventCount??0;
+ const sportsRow='<div class="feed-status-item"><span class="feed-dot '+sportDot+'"></span><span><b>🏆 ALL SPORTS</b><small>'+(liveStatus==="offline"?"FEED OFFLINE":liveStatus==="checking"?"CHECKING LIVE SPORTS":sportCount+" LIVE EVENTS CHECKED")+'</small></span></div>';
+ for(const id of ["entryFeedStatuses","dashboardFeedStatuses"]){const el=$(id);if(el)el.innerHTML=rows+sportsRow;}
+ const headerDot=document.querySelector(".top-right .live-dot");
+ if(headerDot){headerDot.className="live-dot "+(health?.racing?.status==="active"?"active":health?.racing?.status==="partial"?"partial":health?.racing?.status==="offline"?"offline":"checking");}
+}
+async function loadFeedStatus(){
+ try{const r=await fetch("/api/feed-status",{cache:"no-store"});if(!r.ok)throw Error("Feed status unavailable");
+  state.feedHealth=await r.json();renderFeedStatusRows(state.feedHealth);updateEntryHorseStatus();
+ }catch(e){renderFeedStatusRows(null);}
+}
 function updateEntryHorseStatus() {
-  const el=$("entryHorseStatus"); if(!el)return;
-  const horses=state.races.filter(r=>categoryOf(r)==="horse" && (isExplicitlyLive(r)||!Number.isFinite(Date.parse(r.start_time||""))||Date.parse(r.start_time)>=Date.now()));
-  const live=horses.filter(isExplicitlyLive).length, upcoming=horses.length-live;
-  el.classList.remove("checking","active","upcoming");
-  if(live){el.classList.add("active");el.querySelector("small").textContent=live+" LIVE NOW · "+upcoming+" UPCOMING";}
-  else if(upcoming){el.classList.add("upcoming");el.querySelector("small").textContent=upcoming+" UPCOMING · HORSE RACING ACTIVE";}
-  else {el.classList.add("checking");el.querySelector("small").textContent="NO ACTIVE HORSE RACES RETURNED · FEED CHECKING";}
+ const el=$("entryHorseStatus");if(!el)return;
+ const status=state.feedHealth?.racing?.status||"checking";
+ el.classList.remove("checking","active","upcoming","partial","offline");
+ el.classList.add(status==="active"?"active":status==="partial"?"partial":status==="offline"?"offline":"checking");
+ const horse=state.feedHealth?.racing?.byCode?.horse||{races:0,live:0};
+ el.querySelector("small").textContent=status==="offline"?"HORSE RACING FEED OFFLINE":status==="checking"?"CHECKING HORSE RACING FEED":horse.live+" LIVE NOW · "+horse.races+" RACES RETURNED · "+status.toUpperCase();
 }
 function render() {
   const rows = filteredRaces().filter(r => {
@@ -636,8 +656,8 @@ function render() {
       const qs=fixedRunnerPrices(runner).map(q=>({book:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||"Bookmaker",price:Number(q.win_price??q.win??q.price),age:q.age_seconds==null?null:Number(q.age_seconds),stale:!!q.stale})).filter(q=>Number.isFinite(q.price)&&q.price>1).sort((a,b)=>a.price-b.price);
       const fresh=qs.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(q.age)&&q.age<180), prices=fresh.map(q=>q.price).sort((a,b)=>a-b);
       const estimate=prices.length?(prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2):null;
-      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner", num=runner.number??runner.runner_number, isFav=!!fav&&String(name)===String(favName);
-      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?' · STALE / AGE UNVERIFIED':"")+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
+      const name=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner", num=runner.number??runner.runner_number??runner.box, isFav=!!fav&&((fav.number!=null&&num!=null&&String(fav.number)===String(num))||(fav.number==null&&normaliseRunnerName(name)===normaliseRunnerName(favName)));
+      const quoteHtml=qs.length?qs.map(q=>'<span class="runner-price-chip '+(q.stale||(q.age!=null&&q.age>=180)?"stale-quote":"")+'">'+esc(q.book)+' <b>$'+q.price.toFixed(2)+'</b>'+(q.stale||q.age==null||!Number.isFinite(q.age)||q.age>=180?(q.age==null?' · AGE UNVERIFIED':' · STALE'):' · CURRENT')+'</span>').join(""):'<span class="no-odds">No fixed bookmaker price</span>';
       return '<div class="race-runner-row '+(isFav?"is-market-favourite":"")+'"><span class="race-runner-rank">#'+(rank+1)+'</span><span class="race-runner-name">'+(num!=null?esc(num)+'. ':"")+esc(name)+(isFav?' <b class="fav-tag">FAVOURITE</b>':"")+'</span><strong class="race-runner-estimate">'+(estimate==null?"—":"$"+estimate.toFixed(2))+'</strong><small>'+(estimate==null?"Odds unavailable":"Market estimate $"+estimate.toFixed(2))+'</small><div class="runner-price-chips">'+quoteHtml+'</div></div>';
     }).join("");
     const bet365RaceFav=bookmakerFavourite(r,"bet365"), sportsbetRaceFav=sportsbetDisplayFavourite(r);
@@ -657,6 +677,7 @@ async function loadRaces() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Feed request failed");
     state.races = data.races || [];
+    if(data.feedHealth){state.feedHealth={...(state.feedHealth||{}),racing:data.feedHealth};renderFeedStatusRows(state.feedHealth);}
     state.feedMode = data.mode || "live";
     updateEntryHorseStatus();
     $("feedStatus").textContent = state.feedMode === "public-widgets" ? "PUBLIC WIDGETS" : state.feedMode === "demo" ? "FREE PUBLIC DEMO · NO KEY" : (data.feedErrors && data.feedErrors.length ? "LIVE FEED · PARTIAL" : "LIVE FEED");
@@ -750,15 +771,17 @@ function tick(){ $("clock").textContent = new Date().toLocaleTimeString("en-AU",
 tick(); setInterval(tick,1000);
 let dashboardFeedsStarted=false;
 window.startFullDashboardFeeds=function(){
-  if(dashboardFeedsStarted){loadRaces();loadLiveSports();return;}
+  if(dashboardFeedsStarted){loadRaces();loadLiveSports();loadFeedStatus();return;}
   dashboardFeedsStarted=true;
   loadRaces();
+  loadFeedStatus();
   loadSports().then(loadLiveSports);
   loadHistory();
   loadMarketHistory();
 };
 // Poll at a conservative cadence; the data provider bills authenticated requests by credits.
 setInterval(loadRaces,60*1000);
+setInterval(loadFeedStatus,15000);
 setInterval(()=>{if(state.sportsMode&&state.selectedSport)loadSportOdds(state.selectedSport);},15000);
 setInterval(()=>{if(state.sportsMode)loadLiveSports();},10000);
 setInterval(loadMarketHistory,30000);
