@@ -152,10 +152,15 @@ function renderRaces(data){
 function renderBestTips(list){
  const verified=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&Number(x.fav.signalScore||0)>=40)
   .sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)).slice(0,10);
+ const estimatedRaceFavourites=list.map(r=>{
+  const ranked=(r.runners||[]).map(runner=>({runner,q:exchangeEstimate(auditRows(runner),"WIN")})).filter(x=>x.q).sort((a,b)=>a.q.price-b.q.price);
+  return ranked.length?{race:r,...ranked[0]}:null;
+ }).filter(Boolean).slice(0,10);
  const sportMarketFavourites=betfairSportsEvents.filter(e=>e.favourite&&Number(e.favourite.price)>1).sort((a,b)=>Number(a.favourite.price)-Number(b.favourite.price)).slice(0,10);
  const raceHtml=verified.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · score '+esc(x.fav.signalScore)+'</span></div>').join("");
- const sportHtml=sportMarketFavourites.map(x=>'<div class="rf-sports-row"><b>'+esc(x.sport)+' · '+esc(x.event)+' · '+esc(x.favourite.name)+'</b><span>$'+Number(x.favourite.price).toFixed(2)+' · Betfair Exchange BACK · delayed market favourite, not a winner prediction</span></div>').join("");
- if($("bestTipsList"))$("bestTipsList").innerHTML=(raceHtml+sportHtml)||'<div class="rf-empty">No verified race tips or Betfair sports market favourites right now. Unpriced markets are not estimated.</div>';
+ const estimatedRaceHtml=estimatedRaceFavourites.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.runner.name||"Runner")+'</b><span>Estimated WIN $'+x.q.price.toFixed(2)+' (range $'+x.q.low.toFixed(2)+'–$'+x.q.high.toFixed(2)+') · Exchange-derived · NOT bookmaker odds · '+esc(fmtTime(x.q.stamp))+'</span></div>').join("");
+ const sportHtml=sportMarketFavourites.map(x=>{const r=(x.runners||[]).find(y=>y.name===x.favourite.name),b=Number(r?.back?.price),l=Number(r?.lay?.price),ref=b>1?(l>1?(b+l)/2:b):null;return '<div class="rf-sports-row"><b>'+esc(x.sport)+' · '+esc(x.event)+' · '+esc(x.favourite.name)+'</b><span>$'+Number(x.favourite.price).toFixed(2)+' Exchange BACK · '+(ref?'estimated equivalent $'+(ref/1.05).toFixed(2):'estimate unavailable')+' · NOT bookmaker odds</span></div>';}).join("");
+ if($("bestTipsList"))$("bestTipsList").innerHTML=(raceHtml+estimatedRaceHtml+sportHtml)||'<div class="rf-empty">No verified prices or fresh Exchange estimates are available right now.</div>';
 }
 
 async function loadRaces(){
@@ -200,7 +205,9 @@ async function loadBetfairSports(){
    const runnerRows=runners.map(r=>{
     const back=r.back?"$"+Number(r.back.price).toFixed(2)+" · size "+(r.back.availableSize==null?"—":Number(r.back.availableSize).toFixed(2)):"—";
     const lay=r.lay?"$"+Number(r.lay.price).toFixed(2)+" · size "+(r.lay.availableSize==null?"—":Number(r.lay.availableSize).toFixed(2)):"—";
-    return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+'</span></div>';
+    const b=Number(r.back?.price),l=Number(r.lay?.price),ref=b>1?(l>1?(b+l)/2:b):null;
+    const est=ref&&Number.isFinite(ref)?' · EST. $' +(ref/1.05).toFixed(2)+' (range $' +(ref/1.08).toFixed(2)+'–$' +(ref/1.03).toFixed(2)+')':"";
+    return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+est+'</span></div>';
    }).join("");
    const favHtml=favourite?'<div class="rf-fav"><strong>EXCHANGE MARKET FAVOURITE · BACK</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">Lowest available BACK price in this market; not a prediction or guaranteed winner.</div></div>':'<div class="rf-muted">No available BACK offer; no favourite calculated.</div>';
    const pricesHtml=runnerRows?'<div class="rf-market-section">'+runnerRows+'</div>':'<div class="rf-empty">No available BACK/LAY offers returned for this market.</div>';
