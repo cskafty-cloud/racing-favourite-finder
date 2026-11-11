@@ -1637,7 +1637,7 @@ async function loadSportsbetPublicRaceDemos(){
  ];
  const results=await Promise.allSettled(specs.map(([category,sport,book])=>
   publicDemoRequest("/v1/demo/book-sport",{book,sport}).then(payload=>({category,sport,book,payload}))));
- const races=[],errors=[];
+ const races=[],errors=[];let sportsbetSchemaLogged=false;
  for(let i=0;i<results.length;i++){
   const result=results[i],category=specs[i][0],sport=specs[i][1],book=specs[i][2];
   if(result.status!=="fulfilled"){errors.push(book+" "+sport+": "+result.reason.message);continue;}
@@ -1647,7 +1647,13 @@ async function loadSportsbetPublicRaceDemos(){
    ?(category==="horse"?"https://www.sportsbet.com.au/racing-schedule/horse/today":category==="greyhound"?"https://www.sportsbet.com.au/racing-schedule/greyhound/today":"https://www.sportsbet.com.au/racing-schedule/harness/today")
    :(category==="horse"?"https://www.bet365.com.au/#/HO/":category==="greyhound"?"https://www.bet365.com.au/#/HO/": "https://www.bet365.com.au/#/HO/");
   for(const item of items){
-   if(i===0)console.info("SPORTSBET_PUBLIC_DEMO_SCHEMA",JSON.stringify({category,payloadKeys:Object.keys(payload||{}),itemKeys:Object.keys(items[0]||{}),runnerKeys:Object.keys((items[0]?.runners||items[0]?.prices||[])[0]||{}),firstRunner:(items[0]?.runners||items[0]?.prices||[])[0]||null}));
+   if(!sportsbetSchemaLogged&&items.length){
+    const sampleRunner=(items[0]?.runners||items[0]?.prices||items[0]?.selections||[])[0]||{};
+    const timestampKeys=Object.keys(sampleRunner).filter(k=>/time|date|age|update|captur|stamp|fresh/i.test(k));
+    const nestedKeys=["win","fixed_win","win_odds","odds","place","fixed_place","place_odds"].filter(k=>sampleRunner[k]&&typeof sampleRunner[k]==="object").reduce((o,k)=>{o[k]=Object.keys(sampleRunner[k]);return o;},{});
+    console.info("SPORTSBET_PUBLIC_DEMO_SCHEMA",JSON.stringify({category,payloadKeys:Object.keys(payload||{}),itemKeys:Object.keys(items[0]||{}),runnerKeys:Object.keys(sampleRunner),timestampKeys,nestedKeys,sampleRunner}));
+    sportsbetSchemaLogged=true;
+   }
    const race=normalizeSportsbetDemoRace(item,category,sourceUrl,null,book);
    if(race.race_number||race.runners.length)races.push(race);
   }
