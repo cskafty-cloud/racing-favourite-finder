@@ -268,18 +268,12 @@ function marketFavourite(race) {
 // 1) exact Sportsbet quote (fresh, then stale); 2) fresh overall market median;
 // 3) stale overall market median. The source is always labelled honestly.
 function sportsbetDisplayFavourite(race) {
- // Prefer an exact timestamped Sportsbet quote. A source-labelled public preview
- // can still identify its own favourite, but must remain visibly unverified.
+ // Sportsbet race-card fixed-WIN quotes are the sole source for the Sportsbet
+ // favourite. Never substitute a market consensus or another bookmaker.
  const exact=bookmakerFavourite(race,"sportsbet");
  if(exact)return {...exact,displaySource:"Sportsbet fixed WIN quote",isFallback:false};
  const preview=bookmakerUnverifiedFavourite(race,"sportsbet");
- if(preview)return {...preview,displaySource:"Sportsbet fixed WIN public preview · unverified",isFallback:false};
- // Only use a proxy when at least two independent non-Sportsbet bookmaker quotes
- // support a market median. A single quote is not a consensus.
- const proxy=marketFavourite(race);
- return proxy&&proxy.quoteCount>=2
-   ? {...proxy,price:proxy.consensus,displaySource:"Cross-bookmaker market median · indicative only",isFallback:true}
-   : null;
+ return preview?{...preview,displaySource:"Sportsbet fixed WIN race-card preview · unverified",isFallback:false}:null;
 }
 function sportsbetPlaceFavourite(race) {
  const candidates=[];
@@ -375,7 +369,7 @@ function filteredRaces() {
   return rows;
 }
 function raceCard(r, live=false) {
-  const fav = displayMarketFavourite(r);
+  const fav = sportsbetDisplayFavourite(r);
   const bet365Fav = bookmakerFavourite(r,"bet365")||bookmakerUnverifiedFavourite(r,"bet365");
   const sportsbetFav = sportsbetDisplayFavourite(r)||bookmakerUnverifiedFavourite(r,"sportsbet");
   const sportsbetPlaceFav = sportsbetPlaceFavourite(r)||sportsbetPlaceUnverifiedFavourite(r);
@@ -387,7 +381,7 @@ function raceCard(r, live=false) {
   const marketState = live ? "IN PLAY" : (r.market_status || (r.tote_only ? "TOTE ONLY" : (fav ? "ODDS AVAILABLE" : "SCHEDULED · NO ODDS YET")));
   const date = fmtDate(r.start_time);
   const time = fmtTime(r.start_time);
-  const price = fav ? Number(fav.consensus).toFixed(2) : "—";
+  const price = fav ? Number(fav.price).toFixed(2) : "—";
   const mins = Math.max(0,Math.ceil((new Date(r.start_time).getTime()-Date.now())/60000));
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = runnerPrices(runner).filter(q=>!isBetfairQuote(q)).map(q => ({
@@ -413,10 +407,10 @@ function raceCard(r, live=false) {
       <div class="race-title">${esc(venue)} <span style="color:#728395">${number}</span></div>
       <div class="race-meta">${esc(country)} · ${date} ${r.distance_m ? "· "+r.distance_m+"m" : ""}</div>
       <div class="race-time">${time}</div></div>
-    <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">No current bookmaker win quote returned</div>`}</div>
+    <div>${fav ? `<div class="favourite-label">★ SPORTSBET FIXED-WIN FAVOURITE${fav.unverified?" · UNVERIFIED":""}</div><div class="runner-name">${esc(fav.number != null ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${esc(fav.displaySource||"Sportsbet fixed-WIN quote")}${fav.age==null?" · bookmaker timestamp unavailable · not live-confirmed":" · "+Math.round(fav.age)+"s old · source-timestamped"}</div>` : `<div class="favourite-label">★ SPORTSBET FIXED-WIN FAVOURITE</div><div class="runner-name">No Sportsbet win price returned</div><div class="runner-sub">No other bookmaker or market price is substituted</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${sportsbetMarketPanels(r)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
+    <div class="bookmaker-favourites">${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${sportsbetMarketPanels(r)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
     <div class="all-bookmaker-odds"><div class="odds-heading">RACING WIN & PLACE PRICES <span>Fixed-win and place quotes only · missing prices are not estimated</span></div>${runnerOdds || '<div class="no-odds">No current bookmaker win or place quotes returned by the connected feeds.</div>'}</div>
   </article>`;
 }
