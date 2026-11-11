@@ -29,6 +29,20 @@ This is the setup guide for `Start-BetfairAuProxy.ps1`. Do **not** paste real se
 7. Confirm `http://127.0.0.1:8080/health` reports `credentialsConfigured: true`. This confirms only that both Betfair credential fields are present; it does **not** prove Betfair accepts them.
 8. Test the protected `/api/races` and `/api/sports` endpoints. They must return actual markets and timestamped offers before the feed is considered connected.
 
+## Encrypted local credential file
+
+The current Windows launcher saves the three values automatically in
+`betfair-au-proxy/.betfair-credentials.dpapi` using Windows DPAPI protection.
+The values are not written as plaintext, and the file is ignored by Git so it
+is not committed to GitHub. On later launches, choose **Yes** to reuse the
+saved credentials without retyping them. The encrypted file is bound to the
+same Windows user account on the same PC; it cannot be copied to another
+computer and decrypted there. If the Windows profile is reset or the file
+cannot be decrypted, re-enter the credentials through the launcher.
+
+Keep the Betfair session token current. Windows encryption protects local
+storage, but it does not prevent Betfair from expiring or revoking a session.
+
 ## Troubleshooting
 
 - `credentialsConfigured: false`: one or both Betfair credentials were not entered into the local launcher process. Stop the adapter with Ctrl+C and run the launcher again.
