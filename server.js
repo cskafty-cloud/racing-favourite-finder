@@ -1735,7 +1735,7 @@ async function getGlobalRaces() {
   // Add the user's authorised delayed Betfair Exchange markets as a separate
   // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
   let betfairSupplementalRows=[];
-  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairRetryAt) {
+  if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()>=betfairRetryAt) {
     try {
       const exchange=await getBetfairRaces();
       betfairSupplementalRows=exchange.races||[];
@@ -1745,7 +1745,7 @@ async function getGlobalRaces() {
       betfairRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );
       failures.push({feed:"Betfair Exchange",message:error.message});
     }
-  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairRetryAt) {
+  } else if (BETFAIR_APP_KEY && BETFAIR_SESSION_TOKEN && Date.now()<betfairRetryAt) {
     failures.push({feed:"Betfair Exchange",message:"Access temporarily paused after the previous provider response."});
   }
   // A 402 is a hard monthly quota exhaustion, not a transient error. Do not
