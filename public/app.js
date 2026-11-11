@@ -42,25 +42,38 @@ function bookmakerMatches(value,wantedKey) {
  const key=normaliseBookmakerKey(value),wanted=normaliseBookmakerKey(wantedKey);
  return !!key&&key===wanted;
 }
-function bookmakerFavourite(race, wantedKey) {
-  const candidates = (race.runners || []).map(runner => {
-    const quote = fixedRunnerPrices(runner).filter(q =>
-      [q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).some(value => bookmakerMatches(value,wantedKey))
-    ).sort((a,b)=>{
-      const aa=quoteAgeSeconds(a),bb=quoteAgeSeconds(b);
-      const af=a.stale===true||(aa!=null&&aa>=180),bf=b.stale===true||(bb!=null&&bb>=180);
-      return Number(af)-Number(bf);
-    })[0];
-    if (!quote) return null;
-    const age=quoteAgeSeconds(quote),stale=quote.stale===true||(age!=null&&age>=180);
-    return {name:runner.name || runner.runner_name || runner.horse_name || runner.greyhound_name || "Runner",
-      number:runner.number ?? runner.runner_number ?? runner.box ?? null,
-      price:Number(quote.win_price ?? quote.win ?? quote.price),
-      age,stale,suspended:quote.suspended===true||runner.suspended===true,
-      scratched:runner.scratched===true,verified:quote.public_demo!==true,
-      url:quote.event_url||quote.market_url||quote.url||quote.source_url||BOOKMAKER_URLS[wantedKey]};
-  }).filter(x => x && !x.scratched && Number.isFinite(x.price) && x.price > 1);
-  return candidates.sort((a,b)=>Number(a.stale)-Number(b.stale)||Number(a.suspended)-Number(b.suspended)||a.price-b.price)[0] || null;
+function quoteIsCurrent(q) {
+  const age=quoteAgeSeconds(q);
+  return q.stale!==true && age!=null && age<180 && !q.suspended;
+}
+function freshestQuotesByBook(runner) {
+  const byBook=new Map();
+  for(const q of fixedRunnerPrices(runner)){
+    const raw=[q.key,q.bookmaker,q.name,q.bookmaker_name,q.site].filter(Boolean).join(" ");
+    const key=normaliseBookmakerKey(raw),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q);
+    if(!key||!Number.isFinite(price)||price<=1||!quoteIsCurrent(q))continue;
+    const previous=byBook.get(key);
+    if(!previous||age<previous.age)byBook.set(key,{q,key,price,age});
+  }
+  return [...byBook.values()];
+}
+function quoteDeviation(price,peers) {
+  if(!peers.length)return null;
+  const sorted=peers.slice().sort((a,b)=>a-b),mid=sorted.length%2?sorted[(sorted.length-1)/2]:(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
+  return mid>1?Math.abs(price-mid)/mid*100:null;
+}
+function bookmakerFavourite(race,wantedKey) {
+  const candidates=(race.runners||[]).map(runner=>{
+    const quotes=freshestQuotesByBook(runner),match=quotes.find(x=>bookmakerMatches(x.key,wantedKey));
+    if(!match)return null;
+    const peers=quotes.filter(x=>x.key!==match.key).map(x=>x.price),deviation=quoteDeviation(match.price,peers);
+    const outlier=deviation!=null&&peers.length>=2&&deviation>25,q=match.q;
+    return {name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
+      number:runner.number??runner.runner_number??runner.box??null,price:match.price,age:match.age,
+      stale:false,suspended:false,scratched:runner.scratched===true,outlier,deviationPct:deviation,peerCount:peers.length,
+      url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS[wantedKey]};
+  }).filter(x=>x&&!x.scratched&&Number.isFinite(x.price)&&x.price>1&&!x.outlier);
+  return candidates.sort((a,b)=>a.price-b.price)[0]||null;
 }
 function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
   const key=bookmaker.toLowerCase();
@@ -105,8 +118,9 @@ function allBookmakerFavourites(race){
  for(const runner of race.runners||[])for(const q of fixedRunnerPrices(runner)){
   const key=bookmakerKeyForLink(q),price=Number(q.win_price??q.win??q.price),age=quoteAgeSeconds(q);
   if(!key||!Number.isFinite(price)||price<=1||q.stale===true||(age==null?q.public_demo!==true:age>=180))continue;
+  if(!quoteIsCurrent(q))continue;
   const current=books.get(key);
-  if(!current||price<current.price)books.set(key,{key,bookmaker:bookmakerDisplayName(key,q),
+  if(!current||age<current.age)books.set(key,{key,bookmaker:bookmakerDisplayName(key,q),
    name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
    number:runner.number??runner.runner_number??runner.box??null,price,age,
    url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS[key]||null});
@@ -123,22 +137,18 @@ function allBookFavouritePanel(f){
 function marketFavourite(race) {
   const median=values=>{const x=values.slice().sort((a,b)=>a-b);return x.length?(x.length%2?x[(x.length-1)/2]:(x[x.length/2-1]+x[x.length/2])/2):null;};
   const runners=(race.runners||[]).map(r=>{
-    const seen=new Set();
-    const quotes=fixedRunnerPrices(r).filter(q=>{
-      const key=String(q.key||q.bookmaker||q.name||q.bookmaker_name||q.site||"").toLowerCase().replace(/[^a-z0-9]/g,""),age=quoteAgeSeconds(q);
-      if(!key||seen.has(key)||q.stale===true||(age==null?q.public_demo!==true:age>=180))return false;
-      seen.add(key);return true;
-    });
-    const prices=quotes.map(q=>Number(q.win_price??q.win??q.price)).filter(p=>Number.isFinite(p)&&p>1);
-    const consensus=median(prices);if(consensus==null)return null;
+    const quotes=freshestQuotesByBook(r),prices=quotes.map(x=>x.price),consensus=median(prices);
+    if(consensus==null)return null;
     const spread=prices.length>1?(Math.max(...prices)-Math.min(...prices))/consensus:1;
-    return {...r,consensus,quoteCount:quotes.length,spreadPct:+(spread*100).toFixed(1),priceSource:quotes.length>1?"multi-bookmaker median":"single-bookmaker price"};
+    return {...r,consensus,quoteCount:quotes.length,spreadPct:+(spread*100).toFixed(1),
+      priceSource:quotes.length>1?"fresh multi-bookmaker median":"single fresh bookmaker quote"};
   }).filter(Boolean).sort((x,y)=>x.consensus-y.consensus);
   const fav=runners[0];if(!fav)return null;
   const second=runners[1],gap=second?Math.max(0,(1/fav.consensus-1/second.consensus)/(1/fav.consensus)):0;
   fav.gapPct=+(gap*100).toFixed(1);
-  fav.signalScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
-  fav.signalLabel="MARKET FAVOURITE";
+  const rawScore=Math.round(Math.min(40,fav.quoteCount/3*40)+Math.max(0,30*(1-(fav.spreadPct/100)/0.35))+Math.min(30,gap/0.15*30));
+  fav.signalScore=fav.spreadPct>25?Math.min(rawScore,20):fav.spreadPct>15?Math.min(rawScore,45):fav.quoteCount<2?Math.min(rawScore,25):rawScore;
+  fav.signalLabel=fav.quoteCount>=3&&fav.spreadPct<=10&&fav.signalScore>=65?"STRONG MARKET AGREEMENT":fav.quoteCount>=2&&fav.spreadPct<=25?"CAUTION · CHECK PRICE":"LOW DATA CONFIDENCE";
   return fav;
 }
 // Best available display fallback for the Sportsbet panel:
@@ -191,7 +201,7 @@ function raceCard(r, live=false) {
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>Number.isFinite(q.price)&&q.price>1)
       .sort((a,b)=>a.name.localeCompare(b.name)||a.price-b.price);
-    const fresh=quotes.filter(q=>!q.stale&&(q.age==null||!Number.isFinite(Number(q.age))||Number(q.age)<180));
+    const fresh=quotes.filter(q=>!q.stale&&q.age!=null&&Number.isFinite(Number(q.age))&&Number(q.age)<180);
     const values=fresh.map(q=>q.price).sort((a,b)=>a-b);
     const mid=values.length?(values.length%2?values[(values.length-1)/2]:(values[values.length/2-1]+values[values.length/2])/2):null;
     const runnerName=runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner";
@@ -384,7 +394,7 @@ function renderTopTips() {
  const bestDay=(todays.length?todays:pricedTips).slice().sort((a,b)=>b.score-a.score||b.quotes-a.quotes||a.odds-b.odds).slice(0,10);
  const topTips=pricedTips.slice().sort((a,b)=>b.score-a.score||b.quotes-a.quotes||a.odds-b.odds).slice(0,20);
  const sportsbetBestOfDay=sportsbetPriced.filter(t=>!t.time||new Date(t.time).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane"})===today)
-   .sort((a,b)=>a.odds-b.odds).slice(0,10);
+   .sort((a,b)=>b.score-a.score||b.quotes-a.quotes||a.odds-b.odds).slice(0,10);
  const sportsbetTopTips=sportsbetPriced.slice().sort((a,b)=>a.odds-b.odds);
  const card=(t,i,label)=>'<article class="sport-event"><div class="sport-event-heading"><b>#'+(i+1)+' · '+esc(t.selection)+'</b><span class="sport-upcoming-label">'+esc(label||t.kind||"RACING")+'</span></div><div>'+esc(t.event)+' · '+esc(t.category||"")+' · '+esc(t.time?fmtDate(t.time)+" "+fmtTime(t.time):"Time TBA")+'</div><div class="sport-favourite">Odds: <strong>'+(Number.isFinite(Number(t.odds))&&Number(t.odds)>1?'$'+Number(t.odds).toFixed(2):"Unavailable")+'</strong> · '+(t.quotes||0)+' quote'+((t.quotes||0)===1?"":"s")+' · signal '+(t.score||0)+'/100 · '+esc(t.signal||"")+'</div><small>'+esc(t.source||"Public snapshot")+' · market indicator only, not a prediction or guaranteed winner.</small></article>';
  const section=(title,description,items,empty)=>'<section class="tip-section"><h3>'+title+' <span>'+items.length+'</span></h3><p class="sub">'+description+'</p>'+(items.length?items.map((x,i)=>card(x,i,title)).join(""):'<div class="empty compact-empty">'+empty+'</div>')+'</section>';
