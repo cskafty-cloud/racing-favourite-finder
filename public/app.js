@@ -126,8 +126,8 @@ function raceBookmakerPanel(bookmaker, favourite, overallFavourite) {
     ? (favourite.suspended?" · SUSPENDED":favourite.stale?" · STALE PUBLIC PRICE":favourite.age==null?" · UNVERIFIED · timestamp missing · not live-confirmed":" · "+Math.round(Number(favourite.age))+"s old · verified fresh")
     : "";
   const details=favourite
-    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price; no other bookmaker odds are being passed off as Sportsbet.</div>':"")
-    : '<div class="book-fav-missing">Sportsbet fixed-win price unavailable from the connected public feed. No other bookmaker odds are substituted.</div>';
+    ? '<div class="book-fav-runner">'+esc(runner)+'</div><div class="book-fav-price">$'+Number(favourite.price).toFixed(2)+'</div><div class="book-fav-age">'+esc(favourite.displaySource|| (key==="bet365"?"Bet365 public racing feed":"Sportsbet fixed-win public quote"))+freshness+'</div>'+(favourite.unverified?'<div class="book-fav-missing unverified-warning">UNVERIFIED PRICE · source timestamp missing. It is not a confirmed live price.</div>':favourite.isFallback?'<div class="book-fav-missing">Market estimate only. This is not a Sportsbet price.</div>':"")
+    : '<div class="book-fav-missing">'+(key==="bet365"?"Bet365":"Sportsbet")+' fixed-win price unavailable from the connected public feed. No other bookmaker odds are substituted.</div>';
   const heading=favourite&&favourite.unverified?esc(bookmaker)+" favourite · UNVERIFIED":favourite&&favourite.isFallback?"Sportsbet favourite · estimated market proxy":esc(bookmaker)+" fixed-win favourite";
   return '<div class="book-fav"><div class="book-fav-label">'+heading+'</div>'+details+'<a class="bookmaker-market-link" href="'+esc(url||BOOKMAKER_URLS[key])+'" target="_blank" rel="noopener noreferrer">Open '+esc(bookmaker)+' race markets ↗</a>'+extra+'</div>';
 }
@@ -232,7 +232,7 @@ function raceCard(r, live=false) {
   const fav = marketFavourite(r);
   const bet365Fav = bookmakerFavourite(r,"bet365")||bookmakerUnverifiedFavourite(r,"bet365");
   const sportsbetFav = sportsbetDisplayFavourite(r)||bookmakerUnverifiedFavourite(r,"sportsbet");
-  const bookFavourites = allBookmakerFavourites(r).filter(f=>f.key!=="sportsbet");
+  const bookFavourites = allBookmakerFavourites(r).filter(f=>f.key!=="sportsbet"&&f.key!=="bet365");
   const type = categoryOf(r);
   const venue = r.venue || r.track_name || r.venue_canonical || "Track TBA";
   const number = r.race_number ? `R${r.race_number}` : "Race";
@@ -258,7 +258,7 @@ function raceCard(r, live=false) {
     const estimate=mid==null
       ? '<span class="market-estimate unavailable">Estimate unavailable · no verified fresh quotes (unverified prices excluded)</span>'
       : '<span class="market-estimate">Market estimate $'+mid.toFixed(2)+' · median of '+fresh.length+' fresh quote'+(fresh.length===1?'':'s')+'</span>';
-    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=180),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && /^https?:\\/\\//i.test(q.url) ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
+    const quoteHtml=quotes.length?quotes.map(q=>{const stale=q.stale||(q.age!=null&&Number(q.age)>=180),unverified=q.age==null&&!q.stale;const stateLabel=stale?"STALE":unverified?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";return `<span class="bookmaker-quote ${stale?"stale-quote":unverified?"unverified-quote":""}"><b>${esc(q.name)}</b> <strong>${q.price.toFixed(2)}</strong><small>${stateLabel}</small>${q.url && String(q.url).startsWith("http") ? ` <a class="bet-link" href="${esc(q.url)}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : ""}</span>`;}).join(""):'<span class="no-odds">MISSING PRICE · no bookmaker quote returned for this runner</span>';
     return `<div class="odds-runner ${quotes.length?'':'missing-runner-price'}"><span class="odds-runner-name">#${rank+1} · ${esc(runner.number ?? runner.runner_number ?? "")}${runner.number || runner.runner_number ? ". " : ""}${esc(runnerName)}</span>${estimate}<div class="bookmaker-prices">${quoteHtml}${exchangeHtml}</div></div>`;
   }).join("");
   return `<article class="race-card ${live?"live-race-card":""}">
@@ -269,7 +269,7 @@ function raceCard(r, live=false) {
     <div>${fav ? `<div class="favourite-label">★ TOP MARKET CONSENSUS · ${esc(fav.signalLabel)}</div><div class="runner-name">${esc(fav.number ? fav.number+". " : "")}${esc(fav.name)}</div><div class="runner-sub">${fav.quoteCount} independent bookmaker quotes · ${fav.agreementPct||0}% agree on this runner · ${fav.impliedProbability||0}% normalised implied probability · ${fav.signalScore}/100 data score · ${fav.spreadPct}% price spread</div>` : `<div class="favourite-label">★ RACE FAVOURITE · WAITING FOR ODDS</div><div class="runner-name">No current win prices</div><div class="runner-sub">Waiting for bookmaker odds</div>`}</div>
     <div class="price-wrap"><div class="price">${fav ? "$"+price : "—"}</div><div class="price-caption">${fav ? esc(fav.priceSource) : "MARKET PRICE"}</div><div class="bet365">${bookFavourites.length+" bookmaker"+(bookFavourites.length===1?"":"s")+" priced"}</div></div>
     <div class="market-tag ${live?"soon-tag":""}">${live ? "IN PLAY" : (mins===0?"STARTING NOW":`IN ${mins} MIN`)}</div>
-    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${!bet365Fav?raceBookmakerPanel("Bet365",null,fav):""}${!sportsbetFav?raceBookmakerPanel("Sportsbet",null,fav):""}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
+    <div class="bookmaker-favourites">${overallMarketFavouritePanel(fav)}${bookFavourites.map(allBookFavouritePanel).join("")}${raceBookmakerPanel("Bet365",bet365Fav,fav)}${raceBookmakerPanel("Sportsbet",sportsbetFav,fav)}</div><div class="exchange-reference"><b>BETFAIR EXCHANGE REFERENCE</b><span>Exchange prices are displayed separately and are never included in bookmaker consensus or fixed-odds rankings.</span></div>
     <div class="all-bookmaker-odds"><div class="odds-heading">LIVE BOOKMAKER PRICES <span>Missing prices shown · estimates use fresh live quotes only</span></div>${runnerOdds || '<div class="no-odds">Waiting for current bookmaker prices.</div>'}</div>
   </article>`;
 }
@@ -380,7 +380,7 @@ function renderFullCoverage(rows) {
         const age=q.age==null?"UNVERIFIED · timestamp missing":Math.round(Number(q.age))+"s old · verified fresh";
         const stale=q.stale || (q.age!=null && Number(q.age)>=180),unverified=q.age==null&&!q.stale;
         const link=q.url && /^https?:\/\//i.test(q.url) ? ' · <a class="bet-link" href="'+esc(q.url)+'" target="_blank" rel="noopener noreferrer">Open site</a>' : "";
-        return '<span class="bookmaker-quote '+(stale?"stale-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":" · returned")+'</small>'+link+'</span>';
+        return '<span class="bookmaker-quote '+(stale?"stale-quote":unverified?"unverified-quote":"")+'"><b>'+esc(q.name)+'</b><strong>'+q.price.toFixed(2)+'</strong><small>'+age+(stale?" · STALE":unverified?" · NOT LIVE-CONFIRMED":" · verified fresh")+'</small>'+link+'</span>';
       }).join("");
       return '<div class="full-runner"><div class="full-runner-name">'+esc((runner.number??runner.runner_number) ? (runner.number??runner.runner_number)+". " : "")+esc(name)+'</div><div class="bookmaker-prices">'+(quoteHtml||'<span class="no-odds">No bookmaker prices returned for this runner.</span>')+'</div></div>';
     }).join("");
