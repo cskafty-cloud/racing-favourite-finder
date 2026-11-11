@@ -1586,7 +1586,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const price=sportsbetDemoPrice(r)??(bookKey==="sportsbet"&&Number(r.price)>1?Number(r.price):null);
   const placePrice=bookKey==="sportsbet"?(sportsbetDemoPlacePrice(r)??(Number(r.place)>1?Number(r.place):null)):null;
   const number=r.number??r.runner_number??r.runnerNumber??r.saddlecloth??r.box??null;
-  const bookKey=canonicalBookmakerKey(bookmaker),bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
+  const bookName=bookKey==="bet365"?"Bet365":"Sportsbet";
   const winUpdated=r.win_last_update||r.win_updated_at||r.last_update||r.updated_at||r.timestamp||null;
   const placeUpdated=r.place_last_update||r.place_updated_at||r.place_odds_updated_at||r.place_price_updated_at||null;
   const winAge=r.win_age_seconds??r.age_seconds??r.quote_age_seconds??null;
