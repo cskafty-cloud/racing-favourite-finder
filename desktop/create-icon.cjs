@@ -9,7 +9,7 @@ async function main() {
     throw new Error("Website logo not found at public/logo.jpg");
   }
 
-  // Use the exact website logo artwork for every Windows icon size.
+  // Release builds use the exact same logo artwork served by the live website (public/logo.jpg).
   // Transparent padding keeps the logo intact without adding a different
   // background or cropping any of the website's artwork.
   const sizes = [16, 24, 32, 48, 64, 128, 256];
