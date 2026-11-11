@@ -1131,13 +1131,6 @@ setInterval(syncHistory,15*60*1000);
 // Start background checks before the welcome screen is dismissed so its activity dots are real.
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>window.startFullDashboardFeeds(),{once:true});
 else window.startFullDashboardFeeds();
-+f.price.toFixed(2)+'</strong><small>Sportsbet '+esc(label)+' · '+(f.unverified?'UNVERIFIED · source timestamp missing · feed snapshot '+Math.round(f.feedSeenAge)+'s old':Math.round(f.age)+'s · timestamp-verified')+'</small>'
-   : '<span class="book-fav-missing">No Sportsbet '+label.toLowerCase()+' quote returned. No other bookmaker is substituted.</span>';
-  return '<div class="book-fav"><div class="book-fav-label">SPORTSBET '+label+' FAVOURITE</div>'+detail+'</div>';
- }).join("");
- const official='<a class="bookmaker-market-link" href="'+esc(sportsbetOfficialRaceUrl(race))+'" target="_blank" rel="noopener noreferrer">Check official Sportsbet race and current prices ↗</a>';
- return panels+official;
-}
 function sportsbetPlacePanel(favourite) {
  const exact=favourite||null;
  const f=exact||null;
