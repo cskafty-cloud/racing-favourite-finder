@@ -333,7 +333,8 @@ async function loadLucasFoxSports(){
    const event=q.event||{},sportId=LUCASFOX_SPORT_IDS[String(event.sport_key||"").toLowerCase()];
    const eventId=String(q.event_id||event.event_id||""),home=String(event.home_team||"").trim(),away=String(event.away_team||"").trim();
    const start=event.commence_time||null,captured=q.captured_at||null,stamp=captured?Date.parse(captured):NaN;
-   const explicitAge=Number(q.freshness_seconds),age=Number.isFinite(explicitAge)?explicitAge:(Number.isFinite(stamp)?(Date.now()-stamp)/1000:NaN);
+   const explicitAge=Number(q.freshness_seconds),stampAge=Number.isFinite(stamp)?(Date.now()-stamp)/1000:NaN;
+   const age=Number.isFinite(explicitAge)&&Number.isFinite(stampAge)?Math.max(explicitAge,stampAge):stampAge;
    const price=Number(q.decimal_odds);
    if(!sportId||!eventId||!home||!away||!start||!Number.isFinite(Date.parse(start))||!Number.isFinite(stamp)||
       !Number.isFinite(age)||age<0||age>LUCASFOX_MAX_AGE_SECONDS||!Number.isFinite(price)||price<=1||
@@ -775,15 +776,22 @@ function racingPlacePrice(q) {
   const price=Number(value);return Number.isFinite(price)&&price>1?price:null;
 }
 function racingQuoteMaxAge(){return 180;}
+function strictMarketQuoteAge(q,stampFields,ageField){
+  const stamp=stampFields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
+  if(!stamp)return null;
+  const ms=Date.parse(stamp);if(!Number.isFinite(ms))return null;
+  const stamped=Math.max(0,(Date.now()-ms)/1000);
+  const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
+  return direct==null?stamped:Math.max(stamped,direct);
+}
 function racingMarketAge(q,market){
-  if(market==="place"){
-    if(q?.place_age_seconds!=null&&Number.isFinite(Number(q.place_age_seconds)))return Math.max(0,Number(q.place_age_seconds));
-    return q?.place_last_update||q?.place_updated_at?quoteAgeSecondsServer({last_update:q.place_last_update||q.place_updated_at}):null;
-  }
-  return quoteAgeSecondsServer(q);
+  if(market==="place")return strictMarketQuoteAge(q,["place_last_update","place_updated_at","place_captured_at"],"place_age_seconds");
+  return strictMarketQuoteAge(q,["last_update","updated_at","captured_at","timestamp"],"age_seconds");
 }
 function runnerMarketQuotes(runner,market="win"){
-  if(runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
+  const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
+  if(!normalizeName(runnerName)||normalizeName(runnerName)==="runner"||
+     runner?.scratched===true||runner?.suspended===true||/scratched|removed|suspended/i.test(String(runner?.status||"")))return [];
   const unique=new Map();
   for(const q of (runner.bookmakers||runner.odds||[])){
     const key=bookmakerKey(q),price=market==="place"?racingPlacePrice(q):racingWinPrice(q),age=racingMarketAge(q,market);
