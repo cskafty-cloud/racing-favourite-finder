@@ -816,7 +816,7 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
           const quote={bookmaker:book,name:book,key:bookmakerId,win_price:win,
             place_price:Number.isFinite(place)&&place>1?place:null,age_seconds:runner.age_seconds??bookRow.age_seconds??null,
             last_update:runner.captured_at||runner.updated_at||runner.last_update||bookRow.captured_at||bookRow.updated_at||null,
-            observed_at:new Date().toISOString(),source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
+            observed_at:new Date().toISOString(),feed_observed_at:new Date().toISOString(),source:"Krok Odds licensed direct bookmaker feed",url:runner.bet_link||null};
           const prior=existing.bookmakers.findIndex(q=>bookmakerKey(q)===bookmakerId);
           if(prior<0) existing.bookmakers.push(quote);
           else if(Date.parse(quote.last_update||"")>Date.parse(existing.bookmakers[prior].last_update||"")) existing.bookmakers[prior]=quote;
@@ -1246,7 +1246,7 @@ async function getGlobalRaces() {
   }
   // Krok Odds is a separately configured racing provider. It is queried only
   // after the primary feed fails and is cached for 60 seconds by getKrokRaces().
-  if (KROKODDS_API_KEY && process.env.PUBLIC_ONLY_FEEDS !== "true") {
+  if (KROKODDS_API_KEY) {
     try {
       const alternate=await getKrokRaces();
       if (alternate.races?.length) {
