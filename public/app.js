@@ -35,6 +35,14 @@ function racingTotePlacePrice(q) {
 function racingEachWayTerms(q,race) { return q?.each_way_terms??q?.each_way??q?.ew_terms??race?.each_way??null; }
 function racingQuoteMaxAge(q) { return 180; }
 function runnerPrices(runner) { return (runner.bookmakers || runner.odds || []).filter(b => racingWinPrice(b)!=null||racingPlacePrice(b)!=null||racingToteWinPrice(b)!=null||racingTotePlacePrice(b)!=null); }
+function quoteFieldAgeSeconds(q, field) {
+ const ageKey=field==="place"?"place_age_seconds":"age_seconds";
+ const stamp=field==="place"?(q?.place_last_update||q?.place_updated_at||q?.last_place_update):(q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp);
+ const direct=q?.[ageKey];
+ if(direct!=null&&Number.isFinite(Number(direct)))return Math.max(0,Number(direct));
+ if(stamp){const parsed=Date.parse(stamp);if(Number.isFinite(parsed))return Math.max(0,(Date.now()-parsed)/1000);}
+ return field==="place"?null:quoteAgeSeconds(q);
+}
 function quoteAgeSeconds(q) {
  const direct=q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds))?Math.max(0,Number(q.age_seconds)):null;
  const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
@@ -294,8 +302,10 @@ function sportsbetMarketFavourite(race,field) {
  const getter=field==="fixed_win"?racingWinPrice:field==="fixed_place"?racingPlacePrice:field==="tote_win"?racingToteWinPrice:racingTotePlacePrice;
  const rows=[];
  for(const runner of race.runners||[])for(const q of runnerPrices(runner)){
-  const price=getter(q),age=quoteAgeSeconds(q);
-  if(!bookmakerMatches(bookmakerKeyForLink(q),"sportsbet")||price==null||!quoteIsCurrent(q)||q.suspended||runner.scratched===true)continue;
+  const placeField=field==="fixed_place"||field==="tote_place";
+  const price=getter(q),age=quoteFieldAgeSeconds(q,placeField?"place":"win");
+  const stale=placeField?q.place_stale===true:q.stale===true;
+  if(!bookmakerMatches(bookmakerKeyForLink(q),"sportsbet")||price==null||age==null||age>=180||stale||q.suspended||runner.scratched===true)continue;
   rows.push({name:runner.name||runner.runner_name||runner.horse_name||runner.greyhound_name||"Runner",
    number:runner.number??runner.runner_number??runner.box??null,price,age,source:q.source||"Sportsbet direct racing feed",
    url:q.event_url||q.market_url||q.url||q.source_url||BOOKMAKER_URLS.sportsbet});
@@ -332,27 +342,16 @@ function sportsbetOfficialRaceUrl(race) {
  return "https://www.sportsbet.com.au/racing-schedule/"+category+"/today";
 }
 function sportsbetMarketPanels(race) {
- const markets=[
-  ["FIXED WIN","fixed_win"],["FIXED PLACE","fixed_place"],["TOTE WIN","tote_win"],["TOTE PLACE","tote_place"]
- ];
+ const markets=[["FIXED WIN","fixed_win"],["FIXED PLACE","fixed_place"],["TOTE WIN","tote_win"],["TOTE PLACE","tote_place"]];
  const panels=markets.map(([label,key])=>{
-  const exact=sportsbetMarketFavourite(race,key);
-  const estimate=exact?null:indicativeMarketFavourite(race,key);
-  const f=exact||estimate;
-  const detail=exact
-   ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>Sportsbet verified · '+(f.age==null?'age unknown':Math.round(f.age)+'s')+' · '+esc(label)+'</small>'
-   : estimate
-    ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>INDICATIVE '+esc(label)+' · cross-bookmaker median · NOT a Sportsbet quote · '+f.quoteCount+' quote(s)</small>'
-    : '<span class="book-fav-missing">No verified Sportsbet '+label.toLowerCase()+' quote is being supplied for this race. Open Sportsbet to check its current price.</span>';
+  const f=sportsbetMarketFavourite(race,key);
+  const detail=f
+   ? '<b>'+esc((f.number!=null?f.number+'. ':'')+f.name)+'</b><strong>$'+f.price.toFixed(2)+'</strong><small>Sportsbet source-labelled quote · '+Math.round(f.age)+'s old · '+esc(label)+'</small>'
+   : '<span class="book-fav-missing">No verified Sportsbet '+label.toLowerCase()+' price returned for this race. Other bookmakers are not substituted.</span>';
   return '<div class="book-fav"><div class="book-fav-label">SPORTSBET '+label+' FAVOURITE</div>'+detail+'</div>';
  }).join("");
- const fixedWin=sportsbetMarketFavourite(race,"fixed_win")||indicativeMarketFavourite(race,"fixed_win");
- const place=sportsbetMarketFavourite(race,"fixed_place")||indicativeMarketFavourite(race,"fixed_place");
- const eachWay=fixedWin
-  ? '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY · INDICATIVE ONLY</div><b>'+esc((fixedWin.number!=null?fixedWin.number+'. ':'')+fixedWin.name)+'</b><small>WIN '+(fixedWin.price?'$'+fixedWin.price.toFixed(2):'unavailable')+' · PLACE '+(place&&place.price?'$'+place.price.toFixed(2):'unavailable')+' · These are cross-bookmaker estimates, not Sportsbet each-way terms or prices.</small></div>'
-  : '<div class="book-fav"><div class="book-fav-label">SPORTSBET EACH WAY</div><span class="book-fav-missing">No current fixed WIN estimate available.</span></div>';
- const official='<a class="bookmaker-market-link" href="'+esc(sportsbetOfficialRaceUrl(race))+'" target="_blank" rel="noopener noreferrer">Check official Sportsbet prices ↗</a><small class="book-fav-missing">Sportsbet prices are not available in this feed; no Bet365 or market price is presented as a Sportsbet quote.</small>';
- return panels+eachWay+official;
+ const official='<a class="bookmaker-market-link" href="'+esc(sportsbetOfficialRaceUrl(race))+'" target="_blank" rel="noopener noreferrer">Check official Sportsbet race and current prices ↗</a>';
+ return panels+official;
 }
 function sportsbetPlacePanel(favourite) {
  const exact=favourite||null;
@@ -395,7 +394,7 @@ function raceCard(r, live=false) {
   const runnerOdds = (r.runners || []).slice().sort((a,b)=>(runnerFixedOdds(a)??999)-(runnerFixedOdds(b)??999)).map((runner,rank) => {
     const quotes = runnerPrices(runner).filter(q=>!isBetfairQuote(q)).map(q => ({
       name:q.bookmaker||q.bookmaker_name||q.name||q.site||q.key||'Bookmaker',
-      price:racingWinPrice(q), placePrice:racingPlacePrice(q), toteWin:racingToteWinPrice(q), totePlace:racingTotePlacePrice(q), eachWayTerms:racingEachWayTerms(q,r), age:quoteAgeSeconds(q), placeAge:q.place_age_seconds??null, feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), placeStale:q.place_stale===true||(q.place_age_seconds!=null&&Number(q.place_age_seconds)>=180), publicDemo:q.public_demo===true, raw:q,
+      price:racingWinPrice(q), placePrice:racingPlacePrice(q), toteWin:racingToteWinPrice(q), totePlace:racingTotePlacePrice(q), eachWayTerms:racingEachWayTerms(q,r), age:quoteAgeSeconds(q), placeAge:quoteFieldAgeSeconds(q,"place"), feedSeenAge:quoteFeedSeenAgeSeconds(q), stale:!!q.stale || (quoteAgeSeconds(q)!=null&&quoteAgeSeconds(q)>=180), placeStale:q.place_stale===true||(q.place_age_seconds!=null&&Number(q.place_age_seconds)>=180), publicDemo:q.public_demo===true, raw:q,
       url:q.source_link||q.source_url||q.url||null
     })).filter(q=>(Number.isFinite(q.price)&&q.price>1)||(Number.isFinite(q.placePrice)&&q.placePrice>1))
       .sort((a,b)=>a.name.localeCompare(b.name)||(a.price??999)-(b.price??999));
