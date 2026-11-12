@@ -51,7 +51,8 @@ storage, but it does not prevent Betfair from expiring or revoking a session.
 
 - `credentialsConfigured: false`: one or both Betfair credentials were not entered into the local launcher process. Stop the adapter with Ctrl+C and run the launcher again.
 - HTTP 401 / shared adapter token mismatch: the third prompt does not match Railway's `BETFAIR_FEED_TOKEN`. Update Railway and restart the local adapter using the same secret.
-- HTTP 502 / Betfair authentication error: the app key or session token may be invalid, expired, or not authorised for the API. Obtain/refresh credentials through Betfair's authorised process. Never send them to anyone.
+- `INVALID_SESSION_INFORMATION`: Betfair has rejected the saved session token. It is expired or revoked; this is separate from `BETFAIR_FEED_TOKEN`. Obtain a fresh session token through Betfair's official authorised login/API process, stop the adapter with Ctrl+C, rerun the launcher and choose **N** to replace the saved credentials. Re-enter the app key, fresh session token and the same Railway shared token. Never send any of these values in chat.
+- HTTP 502 / other Betfair authentication error: the app key or session token may be invalid or not authorised for the API. Obtain/refresh credentials through Betfair's authorised process. Never send them to anyone.
 - HTTP 403 / Cloudflare or location restriction: this is a host/network restriction, not necessarily a bad password. Do not try to evade Betfair's geographic or API restrictions.
 
 The adapter is read-only. It requests delayed Betfair Exchange markets and does not place bets. Exchange BACK/LAY prices are not Sportsbet or Bet365 fixed odds.
