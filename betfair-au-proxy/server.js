@@ -21,28 +21,35 @@ const CACHE_MS = 30000;
 let cache = new Map();
 let inflight = new Map();
 
+let lastBetfairApiCheck = { status:"not-tested", at:null, method:null, error:null };
 async function rpc(method, params) {
-  if (!APP_KEY || !SESSION_TOKEN) throw new Error("Betfair credentials are not configured on this Australian feed service.");
-  const response = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type":"application/json", "X-Application":APP_KEY, "X-Authentication":SESSION_TOKEN, "Accept":"application/json" },
-    body: JSON.stringify([{ jsonrpc:"2.0", method:"SportsAPING/v1.0/"+method, params, id:1 }]),
-    signal: AbortSignal.timeout(20000)
-  });
-  const body = await response.text();
-  let data;
-  try { data = JSON.parse(body); } catch {
-    const lower = body.toLowerCase();
-    if (response.status === 403 && (lower.includes("cloudflare") || lower.includes("attention required") || lower.includes("unable to access api.betfair.com")))
-      throw new Error("Betfair Cloudflare denied this host (HTTP 403). This service must run from a permitted Australian egress IP; credentials are not confirmed invalid.");
-    throw new Error("Betfair returned non-JSON HTTP " + response.status + ".");
+  try {
+    if (!APP_KEY || !SESSION_TOKEN) throw new Error("Betfair credentials are not configured on this Australian feed service.");
+    const response = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type":"application/json", "X-Application":APP_KEY, "X-Authentication":SESSION_TOKEN, "Accept":"application/json" },
+      body: JSON.stringify([{ jsonrpc:"2.0", method:"SportsAPING/v1.0/"+method, params, id:1 }]),
+      signal: AbortSignal.timeout(20000)
+    });
+    const body = await response.text();
+    let data;
+    try { data = JSON.parse(body); } catch {
+      const lower = body.toLowerCase();
+      if (response.status === 403 && (lower.includes("cloudflare") || lower.includes("attention required") || lower.includes("unable to access api.betfair.com")))
+        throw new Error("Betfair Cloudflare denied this host (HTTP 403). This service must run from a permitted Australian egress IP; credentials are not confirmed invalid.");
+      throw new Error("Betfair returned non-JSON HTTP " + response.status + ".");
+    }
+    const item = Array.isArray(data) ? data[0] : data;
+    if (!response.ok || item?.error || item?.result == null) {
+      const detail = item?.error?.data?.APINGException?.errorCode || item?.error?.message || "request failed";
+      throw new Error("Betfair HTTP " + response.status + ": " + detail);
+    }
+    lastBetfairApiCheck = { status:"accepted", at:new Date().toISOString(), method, error:null };
+    return item.result;
+  } catch (error) {
+    lastBetfairApiCheck = { status:"failed", at:new Date().toISOString(), method, error:String(error.message||error).slice(0,180) };
+    throw error;
   }
-  const item = Array.isArray(data) ? data[0] : data;
-  if (!response.ok || item?.error || item?.result == null) {
-    const detail = item?.error?.data?.APINGException?.errorCode || item?.error?.message || "request failed";
-    throw new Error("Betfair HTTP " + response.status + ": " + detail);
-  }
-  return item.result;
 }
 function quote(level) {
   return level && Number(level.price) > 1 ? { price:Number(level.price), size:Number(level.size)||0 } : null;
@@ -308,7 +315,11 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader("Content-Type","application/json; charset=utf-8");res.setHeader("Cache-Control","no-store");
   const path=req.url.split("?")[0];
   if(path==="/health")return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
-    credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),routes:["/api/races","/api/sports"]}));
+    credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),authentication:lastBetfairApiCheck.status,
+    lastBetfairApiCheck,
+    racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
+    sportsCacheAt:cache.get("sports")?.at?new Date(cache.get("sports").at).toISOString():null,
+    routes:["/api/races","/api/sports"]}));
   if(!PROXY_ACCESS_TOKEN){res.writeHead(503);return res.end(JSON.stringify({error:"BETFAIR_FEED_TOKEN is not configured."}));}
   const authorization = String(req.headers.authorization || "");
   const bearer = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
