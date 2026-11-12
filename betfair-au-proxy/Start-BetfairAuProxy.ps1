@@ -1,8 +1,34 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.16"
+$RffLauncherVersion = "2026-11-13.17"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
+
+# Keep the local read-only adapter in sync with the tested GitHub source.
+# The encrypted DPAPI credential file is separate and is never downloaded or overwritten.
+$AdapterServerPath = Join-Path $PSScriptRoot "server.js"
+$AdapterUpdateUri = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy/server.js"
+$AdapterUpdateTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
+try {
+  Invoke-WebRequest -Uri $AdapterUpdateUri -OutFile $AdapterUpdateTemp -TimeoutSec 20
+  $AdapterCandidate = Get-Content -LiteralPath $AdapterUpdateTemp -Raw
+  if ($AdapterCandidate.Length -lt 5000 -or
+      -not $AdapterCandidate.Contains("accessTokenMatches") -or
+      -not $AdapterCandidate.Contains("BETFAIR_AU_RACING_EVENT_TYPES")) {
+    throw "Downloaded adapter did not pass the expected source checks."
+  }
+  if (Test-Path -LiteralPath $AdapterServerPath) {
+    Copy-Item -LiteralPath $AdapterServerPath -Destination ($AdapterServerPath + ".previous") -Force
+  }
+  Move-Item -LiteralPath $AdapterUpdateTemp -Destination $AdapterServerPath -Force
+  Write-Host "Updated the local adapter from the tested GitHub source." -ForegroundColor Green
+} catch {
+  Write-Warning ("Could not update adapter source; keeping the existing local copy. " + $_.Exception.Message)
+} finally {
+  if (Test-Path -LiteralPath $AdapterUpdateTemp) {
+    Remove-Item -LiteralPath $AdapterUpdateTemp -Force -ErrorAction SilentlyContinue
+  }
+}
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
 $CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\BetfairAdapter"
