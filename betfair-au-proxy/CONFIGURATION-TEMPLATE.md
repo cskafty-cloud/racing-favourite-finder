@@ -25,13 +25,13 @@ This is the setup guide for `Start-BetfairAuProxy.ps1`. Do **not** paste real se
    ```
 
 5. The launcher prompts for the three values in order. Enter your Betfair app key at the first prompt, your active Betfair session token at the second, and the exact same shared secret saved in Railway at the third.
-6. Keep the adapter PowerShell window open. In another PowerShell window, run `tailscale funnel --bg 8080` and then `tailscale funnel status`.
+6. The current launcher starts Funnel using `tailscale.exe` automatically, avoiding the PowerShell execution-policy error caused by the `tailscale.ps1` shim. Keep the adapter PowerShell window open. To check Funnel manually, run `& "$env:ProgramFiles\\Tailscale\\tailscale.exe" funnel status`.
 7. Confirm `http://127.0.0.1:8080/health` reports `credentialsConfigured: true`. This confirms only that both Betfair credential fields are present; it does **not** prove Betfair accepts them.
 8. Test the protected `/api/races` and `/api/sports` endpoints. They must return actual markets and timestamped offers before the feed is considered connected.
 
 ## Encrypted local credential file
 
-The Windows launcher saves all three values automatically using Windows DPAPI in
+Use a fresh ZIP from the repository main branch. Older extracted ZIPs may contain an earlier launcher that prompts each time and does not save credentials. The current Windows launcher saves all three values automatically using Windows DPAPI in
 `%LOCALAPPDATA%\\RacingFavouriteFinder\\BetfairAdapter\\credentials.dpapi`.
 This is outside the repository, so the file survives fresh ZIP downloads,
 folder changes and code updates. Values are encrypted, never written as
