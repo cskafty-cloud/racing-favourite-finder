@@ -26,6 +26,14 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install
+      - name: Run data-quality regression tests
+        run: npm test
+      - name: Check application and adapter syntax
+        run: |
+          node --check server.js
+          node --check betfair-au-proxy/server.js
+          node --check betfair-feed.js
+          node --check public/app.js
       - name: Build portable Windows executable
         run: npm run desktop:dist
       - name: Publish public GitHub release
