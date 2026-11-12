@@ -31,14 +31,18 @@ This is the setup guide for `Start-BetfairAuProxy.ps1`. Do **not** paste real se
 
 ## Encrypted local credential file
 
-The current Windows launcher saves the three values automatically in
-`betfair-au-proxy/.betfair-credentials.dpapi` using Windows DPAPI protection.
-The values are not written as plaintext, and the file is ignored by Git so it
-is not committed to GitHub. On later launches, choose **Yes** to reuse the
-saved credentials without retyping them. The encrypted file is bound to the
-same Windows user account on the same PC; it cannot be copied to another
-computer and decrypted there. If the Windows profile is reset or the file
-cannot be decrypted, re-enter the credentials through the launcher.
+The Windows launcher saves all three values automatically using Windows DPAPI in
+`%LOCALAPPDATA%\\RacingFavouriteFinder\\BetfairAdapter\\credentials.dpapi`.
+This is outside the repository, so the file survives fresh ZIP downloads,
+folder changes and code updates. Values are encrypted, never written as
+plaintext, and never committed to GitHub. On the first launch after the
+persistent-location update, the launcher automatically migrates the older
+repo-local `.betfair-credentials.dpapi` file if present. On later launches,
+choose **Yes** to reuse the saved credentials without retyping them. The
+ciphertext is bound to the same Windows user account on the same PC; it cannot
+be copied to another computer or decrypted under another Windows profile. If
+the Windows profile is reset or the file cannot be decrypted, re-enter the
+credentials through the launcher.
 
 Keep the Betfair session token current. Windows encryption protects local
 storage, but it does not prevent Betfair from expiring or revoking a session.
