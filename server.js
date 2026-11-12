@@ -1374,28 +1374,79 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
+async function probeBetfairAdapterFeed(url, kind) {
+  if (!url) return { configured:false, reachable:false, authorized:false, status:"url-missing" };
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept:"application/json",
+        ...(process.env.BETFAIR_FEED_TOKEN ? {Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN} : {})
+      },
+      signal:AbortSignal.timeout(8000)
+    });
+    const body = await response.text();
+    let data;
+    try { data=JSON.parse(body); }
+    catch { return {configured:true,reachable:true,authorized:false,httpStatus:response.status,
+      status:"invalid-json",error:"Adapter returned invalid JSON."}; }
+    if (!response.ok) return {configured:true,reachable:true,authorized:false,httpStatus:response.status,
+      status:response.status===401||response.status===403?"token-rejected":"http-error",
+      error:String(data.error||("Adapter HTTP "+response.status)).slice(0,220)};
+    const rows = kind==="racing" ? data.races : data.events;
+    if (!Array.isArray(rows)) return {configured:true,reachable:true,authorized:true,httpStatus:response.status,
+      status:"invalid-payload",error:"Adapter response is missing its "+(kind==="racing"?"races":"events")+" array."};
+    return {configured:true,reachable:true,authorized:true,httpStatus:response.status,status:"connected",
+      marketCount:rows.length,
+      pricedMarkets:kind==="racing"
+        ? rows.filter(r=>(r.runners||[]).some(x=>x.exchange?.win?.back||x.exchange?.win?.lay||x.exchange?.place?.back||x.exchange?.place?.lay)).length
+        : Number(data.pricedMarkets)||rows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length,
+      capturedAt:data.capturedAt||data.fetchedAt||data.scheduleFetchedAt||null};
+  } catch(error) {
+    return {configured:true,reachable:false,authorized:false,status:"unreachable",
+      error:String(error.message||error).slice(0,220)};
+  }
+}
+let betfairHealthCache={at:0,data:null};
 app.get("/api/health", async (_req,res) => {
-  let betfairAdapter={configured:!!BETFAIR_FEED_URL,reachable:false,betfairApiAuthenticated:null,authentication:"not-checked",error:null};
+  if (betfairHealthCache.data && Date.now()-betfairHealthCache.at<15000) {
+    return res.set("Cache-Control","no-store").json({...betfairHealthCache.data,
+      serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime())});
+  }
+  let adapterHealth={configured:!!BETFAIR_FEED_URL,reachable:false,betfairApiAuthenticated:null,
+    authentication:"not-checked",error:null};
   if(BETFAIR_FEED_URL){
     try{
-      const healthUrl=BETFAIR_FEED_URL.endsWith("/api/races")?BETFAIR_FEED_URL.slice(0,-10)+"/health":BETFAIR_FEED_URL.replace("/api/races","/health");
+      const healthUrl=BETFAIR_FEED_URL.endsWith("/api/races")
+        ? BETFAIR_FEED_URL.slice(0,-10)+"/health"
+        : BETFAIR_FEED_URL.replace("/api/races","/health");
       const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(6000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error("Adapter health returned invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error("Adapter health HTTP "+response.status);
-      betfairAdapter={configured:true,reachable:true,betfairApiAuthenticated:data.betfairApiAuthenticated===true,
+      adapterHealth={configured:true,reachable:true,betfairApiAuthenticated:data.betfairApiAuthenticated===true,
         authentication:data.authentication||"unknown",lastBetfairApiCheck:data.lastBetfairApiCheck||null,
         racingMarketRows:Number(data.racingMarketRows)||0,sportsMarketRows:Number(data.sportsMarketRows)||0,
         racingCacheAt:data.racingCacheAt||null,sportsCacheAt:data.sportsCacheAt||null,error:data.lastBetfairApiCheck?.error||null};
-    }catch(error){betfairAdapter={...betfairAdapter,error:String(error.message||error).slice(0,220)};}
+    }catch(error){adapterHealth={...adapterHealth,error:String(error.message||error).slice(0,220)};}
   }
-  res.set("Cache-Control","no-store");
-  res.json({ok:true,serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime()),
+  const [racingFeed,sportsFeed]=await Promise.all([
+    probeBetfairAdapterFeed(BETFAIR_FEED_URL,"racing"),
+    probeBetfairAdapterFeed(process.env.BETFAIR_SPORTS_FEED_URL||"","sports")
+  ]);
+  const configuredFeeds=[racingFeed,sportsFeed].filter(feed=>feed.configured);
+  const tokenAuthorized=configuredFeeds.length>0&&configuredFeeds.every(feed=>feed.authorized===true);
+  const betfairAdapter={...adapterHealth,racingFeed,sportsFeed,tokenAuthorized,
+    feedAuthentication:tokenAuthorized?"accepted":configuredFeeds.some(feed=>feed.status==="token-rejected")?"rejected":"unconfirmed"};
+  const result={ok:true,serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime()),
     bettingEnabled:false,mode:"read-only",liveFeedConfigured:!!API_KEY,liveSportsConfigured:!!ODDS_API_TOKEN,
     betfairConfigured:!!(BETFAIR_FEED_URL||BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),
-    betfairMode:betfairAdapter.betfairApiAuthenticated?"authenticated-delayed-exchange":
+    betfairMode:tokenAuthorized&&betfairAdapter.betfairApiAuthenticated?"authenticated-delayed-exchange":
+      configuredFeeds.some(feed=>feed.status==="token-rejected")?"adapter-token-mismatch":
       betfairAdapter.reachable?"adapter-reachable-auth-unconfirmed":BETFAIR_FEED_URL?"adapter-unreachable":"credentials-missing",
-    betfairAdapter,betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR});
+    betfairAdapter,betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR};
+  betfairHealthCache={at:Date.now(),data:result};
+  res.set("Cache-Control","no-store");
+  res.json(result);
 });
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
