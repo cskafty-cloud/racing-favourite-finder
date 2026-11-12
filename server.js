@@ -830,36 +830,17 @@ async function loadPublicDemoSport(sport) {
       }
     }
   }else errors.push("MoviOdds: "+moviResult.reason.message);
-  // LucasFox Sportsbet quotes are merged into supported sports only, never racing.
-  const lucas=await loadLucasFoxSports();
-  if(lucas.error)errors.push("LucasFox free Sportsbet sports feed: "+lucas.error);
-  for(const incoming of (lucas.events||[]).filter(e=>e.sport_id===sport.key)){
-    const key=[normalizeName(incoming.home_team),normalizeName(incoming.away_team),String(incoming.commence_time||"").slice(0,13),normalizeName(incoming.league)].join("|");
-    if(!rowsByKey.has(key))rowsByKey.set(key,incoming);
-    else{
-      const target=rowsByKey.get(key),existing=target.bookmakers.find(b=>canonicalBookmakerKey(b.key||b.name)==="sportsbet");
-      if(!existing)target.bookmakers.push(...incoming.bookmakers);
-      else for(const market of incoming.bookmakers[0].markets){
-        let prior=existing.markets.find(m=>m.key===market.key);
-        if(!prior){existing.markets.push(market);continue;}
-        for(const outcome of market.outcomes){
-          const old=prior.outcomes.find(o=>normalizeName(o.name)===normalizeName(outcome.name)&&o.line===(outcome.line??null));
-          if(!old)prior.outcomes.push(outcome);else if(outcome.age_seconds<old.age_seconds)Object.assign(old,outcome);
-        }
-      }
-    }
-  }
+  // Do not republish LucasFox's free odds: its published terms prohibit
+  // passing API data on to other people. MoviOdds permits use in your own site.
   const rows=[...rowsByKey.values()].filter(e=>{
     if(e.in_play===true)return true;
     const t=Date.parse(e.commence_time||"");
     return Number.isFinite(t)&&t>=Date.now();
   }).sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
-  const result={at:Date.now(),rows,errors,provider:"LucasFox free Sportsbet sports feed + MoviOdds public event board + PuntersEdge previews where available"};
+  const result={at:Date.now(),rows,errors,provider:"MoviOdds Bet365 public sports feed"};
   publicDemoCache.set(sport.key,result);
-  console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,bookSlug,bestSlug,events:rows.length,live:rows.filter(x=>x.in_play).length,
-    sportsbet:rows.filter(x=>x.bookmakers.some(b=>b.key==="sportsbet")).length,
-    bet365:rows.filter(x=>x.bookmakers.some(b=>String(b.key).startsWith("bet365"))).length,
-    bestOdds:rows.filter(x=>x._bestOddsDemo).length,errors:errors.length}));
+  console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,events:rows.length,live:rows.filter(x=>x.in_play).length,
+    bet365:rows.filter(x=>x.bookmakers.some(b=>String(b.key).startsWith("bet365"))).length,errors:errors.length}));
   return result;
 }
 
