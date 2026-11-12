@@ -1373,7 +1373,29 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
-app.get("/api/health", (_req,res) => { res.set("Cache-Control","no-store"); res.json({ok:true, serverTime:new Date().toISOString(), uptimeSeconds:Math.floor(process.uptime()), bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"configured-delayed-exchange":"credentials-missing", betfairMarkets:["WIN","PLACE"], betfairBackLaySeparate:true, storage:DATA_DIR}); });
+app.get("/api/health", async (_req,res) => {
+  let betfairAdapter={configured:!!BETFAIR_FEED_URL,reachable:false,betfairApiAuthenticated:null,authentication:"not-checked",error:null};
+  if(BETFAIR_FEED_URL){
+    try{
+      const healthUrl=BETFAIR_FEED_URL.replace(/\\/api\\/races\\/?$/i,"/health");
+      const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(6000)});
+      const body=await response.text();let data;
+      try{data=JSON.parse(body);}catch{throw new Error("Adapter health returned invalid JSON (HTTP "+response.status+").");}
+      if(!response.ok)throw new Error("Adapter health HTTP "+response.status);
+      betfairAdapter={configured:true,reachable:true,betfairApiAuthenticated:data.betfairApiAuthenticated===true,
+        authentication:data.authentication||"unknown",lastBetfairApiCheck:data.lastBetfairApiCheck||null,
+        racingMarketRows:Number(data.racingMarketRows)||0,sportsMarketRows:Number(data.sportsMarketRows)||0,
+        racingCacheAt:data.racingCacheAt||null,sportsCacheAt:data.sportsCacheAt||null,error:data.lastBetfairApiCheck?.error||null};
+    }catch(error){betfairAdapter={...betfairAdapter,error:String(error.message||error).slice(0,220)};}
+  }
+  res.set("Cache-Control","no-store");
+  res.json({ok:true,serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime()),
+    bettingEnabled:false,mode:"read-only",liveFeedConfigured:!!API_KEY,liveSportsConfigured:!!ODDS_API_TOKEN,
+    betfairConfigured:!!(BETFAIR_FEED_URL||BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),
+    betfairMode:betfairAdapter.betfairApiAuthenticated?"authenticated-delayed-exchange":
+      betfairAdapter.reachable?"adapter-reachable-auth-unconfirmed":BETFAIR_FEED_URL?"adapter-unreachable":"credentials-missing",
+    betfairAdapter,betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR});
+});
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
@@ -2045,7 +2067,8 @@ function normalizeBetfairAdapterRaces(data) {
           key:"betfair",bookmaker:"Betfair Exchange",name:"Betfair Exchange",exchange:true,
           ...(market==="win"?{win_price:price,market_type:"exchange_win"}:
             {place_price:price,place_market_type:"exchange_place"}),
-          last_update:capturedAt,feed_observed_at:capturedAt,
+          ...(level.publishedAt?{last_update:level.publishedAt,captured_at:level.publishedAt}:{}),
+          feed_observed_at:race.captured_at||capturedAt,
           price_side:side.toUpperCase(),available_size:Number(level.size)||0,
           source_delay_max_seconds:180,source:"Betfair Exchange Delayed API · Australian adapter"
         });
