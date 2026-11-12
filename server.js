@@ -501,7 +501,7 @@ async function demoRacingFeed() {
 
 const publicDemoCache = new Map();
 const moviOddsStreamState={status:"starting",connectedAt:null,lastMessageAt:null,lastError:null,reconnects:0};
-let moviOddsStreamSocket=null,moviOddsStreamRetryTimer=null,moviOddsStreamRetryMs=3000;
+let moviOddsStreamSocket=null,moviOddsStreamRetryTimer=null,moviOddsStreamStableTimer=null,moviOddsStreamRetryMs=15000;
 function moviWsQuoteKey(q){
  return [q?.group_id??"",q?.market_id??"",q?.sel_id??""].map(String).join("|");
 }
@@ -585,7 +585,16 @@ function startMoviOddsStream(){
   moviOddsStreamSocket=socket;
   socket.addEventListener("open",()=>{
    moviOddsStreamState.status="connected";moviOddsStreamState.connectedAt=new Date().toISOString();
-   moviOddsStreamState.lastError=null;moviOddsStreamState.reconnects=0;moviOddsStreamRetryMs=3000;
+   moviOddsStreamState.lastError=null;
+   if(moviOddsStreamStableTimer)clearTimeout(moviOddsStreamStableTimer);
+   // Do not reset backoff on the open event: this provider can accept and then
+   // immediately close the socket (1001/1006). Reset only after 60s stability.
+   moviOddsStreamStableTimer=setTimeout(()=>{
+    moviOddsStreamRetryMs=15000;
+    moviOddsStreamState.reconnects=0;
+    moviOddsStreamStableTimer=null;
+   },60000);
+   if(typeof moviOddsStreamStableTimer.unref==="function")moviOddsStreamStableTimer.unref();
    socket.send(JSON.stringify({op:"subscribe"}));
    console.info("MOVIODDS_WEBSOCKET_CONNECTED",JSON.stringify({scope:"all sports and markets",provider:"Bet365"}));
   });
@@ -598,22 +607,25 @@ function startMoviOddsStream(){
   });
   socket.addEventListener("close",event=>{
    if(moviOddsStreamSocket===socket)moviOddsStreamSocket=null;
+   if(moviOddsStreamStableTimer){clearTimeout(moviOddsStreamStableTimer);moviOddsStreamStableTimer=null;}
    moviOddsStreamState.status="disconnected";moviOddsStreamState.reconnects++;
    moviOddsStreamState.lastError="WebSocket closed ("+event.code+")";
    if(!gracefulShutdownStarted){
     const delay=moviOddsStreamRetryMs;
-    moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
+    moviOddsStreamRetryMs=Math.min(300000,moviOddsStreamRetryMs*2);
     if(moviOddsStreamRetryTimer)clearTimeout(moviOddsStreamRetryTimer);
-    moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
-    console.warn("MOVIODDS_WEBSOCKET_RECONNECT",JSON.stringify({closeCode:event.code,retryInMs:delay}));
+    moviOddsStreamRetryTimer=setTimeout(()=>{moviOddsStreamRetryTimer=null;startMoviOddsStream();},delay);
+    if(typeof moviOddsStreamRetryTimer.unref==="function")moviOddsStreamRetryTimer.unref();
+    console.warn("MOVIODDS_WEBSOCKET_RECONNECT",JSON.stringify({closeCode:event.code,retryInMs:delay,nextRetryMs:moviOddsStreamRetryMs}));
    }
   });
  }catch(error){
   moviOddsStreamState.status="disconnected";
   moviOddsStreamState.lastError=String(error.message||error).slice(0,180);
   if(!gracefulShutdownStarted){
-   const delay=moviOddsStreamRetryMs;moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
-   moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+   const delay=moviOddsStreamRetryMs;moviOddsStreamRetryMs=Math.min(300000,moviOddsStreamRetryMs*2);
+   moviOddsStreamRetryTimer=setTimeout(()=>{moviOddsStreamRetryTimer=null;startMoviOddsStream();},delay);
+   if(typeof moviOddsStreamRetryTimer.unref==="function")moviOddsStreamRetryTimer.unref();
   }
  }
 }
@@ -3511,6 +3523,7 @@ function beginGracefulShutdown(signal) {
   clearTimeout(moviStreamStartupTimer);
   clearInterval(backgroundRacingRefreshTimer);
   if(moviOddsStreamRetryTimer){clearTimeout(moviOddsStreamRetryTimer);moviOddsStreamRetryTimer=null;}
+  if(moviOddsStreamStableTimer){clearTimeout(moviOddsStreamStableTimer);moviOddsStreamStableTimer=null;}
   if(moviOddsStreamSocket){
     try{moviOddsStreamSocket.close(1001,"Server shutting down");}catch{}
     moviOddsStreamSocket=null;
