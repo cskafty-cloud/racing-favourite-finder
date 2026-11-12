@@ -1,7 +1,7 @@
 "use strict";
 
-const MOVI_WS_FIXTURE_LIMIT = 1200;
-const MOVI_WS_QUOTES_PER_FIXTURE_LIMIT = 300;
+const MOVI_WS_FIXTURE_LIMIT = 800;
+const MOVI_WS_QUOTES_PER_FIXTURE_LIMIT = 100;
 
 function trimInsertionOrderedMap(map, limit=5000, target=4000) {
   if (!(map instanceof Map)) throw new TypeError("Expected a Map.");
@@ -26,18 +26,23 @@ function trimMoviOddsFixtures(items, options={}) {
   const now=Number.isFinite(options.now)?options.now:Date.now();
   const limit=Number.isInteger(options.limit)&&options.limit>0?options.limit:MOVI_WS_FIXTURE_LIMIT;
   const staleMs=Number.isFinite(options.staleMs)&&options.staleMs>=0?options.staleMs:6*60*60*1000;
-  const retained=items.filter(item=>{
-    if(item?.in_play===true||item?.inPlay===true)return true;
+  // Prune in place instead of allocating/filtering/sorting a second full list
+  // for every WebSocket message. Sort only when a hard-limit trim is required.
+  for(let i=items.length-1;i>=0;i--){
+    const item=items[i];
+    if(item?.in_play===true||item?.inPlay===true)continue;
     const start=fixtureStart(item);
-    return start==null||start>=now-staleMs;
-  });
-  retained.sort((a,b)=>{
-    const liveA=a?.in_play===true||a?.inPlay===true?0:1;
-    const liveB=b?.in_play===true||b?.inPlay===true?0:1;
-    if(liveA!==liveB)return liveA-liveB;
-    return (fixtureStart(a)??Number.MAX_SAFE_INTEGER)-(fixtureStart(b)??Number.MAX_SAFE_INTEGER);
-  });
-  items.splice(0,items.length,...retained.slice(0,limit));
+    if(start!=null&&start<now-staleMs)items.splice(i,1);
+  }
+  if(items.length>limit){
+    items.sort((a,b)=>{
+      const liveA=a?.in_play===true||a?.inPlay===true?0:1;
+      const liveB=b?.in_play===true||b?.inPlay===true?0:1;
+      if(liveA!==liveB)return liveA-liveB;
+      return (fixtureStart(a)??Number.MAX_SAFE_INTEGER)-(fixtureStart(b)??Number.MAX_SAFE_INTEGER);
+    });
+    items.length=limit;
+  }
   return items;
 }
 
