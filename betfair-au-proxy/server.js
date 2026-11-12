@@ -74,7 +74,10 @@ async function fetchRaceCatalogue(type,from,to){
 }
 async function loadRaces() {
   const from=new Date(), to=new Date(Date.now()+7*24*60*60*1000);
-  const eventTypes=await rpc("listEventTypes",{filter:{marketCountries:["AU"]}});
+  // listEventTypes is a tiny global catalogue. Some Betfair regions return
+  // TOO_MUCH_DATA when country filters are applied at this stage; country
+  // scoping is applied safely to each subsequent market-catalogue request.
+  const eventTypes=await rpc("listEventTypes",{filter:{}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"")}))
     .filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
