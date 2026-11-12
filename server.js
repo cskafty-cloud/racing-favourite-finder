@@ -2414,7 +2414,8 @@ function feedHealthStatus(at, errors=[], ok=false) {
   if(!at)return "checking";
   const age=Math.max(0,(Date.now()-Date.parse(at))/1000);
   // Green means the combined endpoint responded recently. Provider warnings remain in errors.
-  if(age<=180 && ok)return "active";
+  if(age<=180 && ok && !errors.length)return "active";
+  if(age<=180 && errors.length)return "partial";
   if(age<=600 && (ok||errors.length))return "partial";
   return "offline";
 }
@@ -2460,8 +2461,8 @@ app.get("/api/races", async (_req, res) => {
     const sportsbetQuotes=races.flatMap(r=>(r.runners||[]).flatMap(x=>runnerQuotes(x).filter(q=>bookmakerKey(q)==="sportsbet"))).length;
      const exchangeWinQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="WIN").length,0),0);
      const exchangePlaceQuotes=races.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakerPriceAudit||[]).filter(q=>q.bookmaker_key==="betfair"&&q.market==="PLACE").length,0),0);
-     const betfairConfigured=!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN);
-     const betfairFailure=(feed.feedErrors||[]).some(x=>typeof x==="object"&&/betfair exchange/i.test(String(x.feed||"")));
+     const betfairConfigured=!!(BETFAIR_FEED_URL||(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN));
+     const betfairFailure=(feed.feedErrors||[]).some(x=>typeof x==="object"&&/betfair/i.test(String(x.feed||"")));
      const betfairStatus=!betfairConfigured?"credentials-missing":
        betfairFailure?"configured-but-unavailable":
        exchangeWinQuotes+exchangePlaceQuotes>0?"connected-delayed":"configured-no-quotes";
@@ -2514,7 +2515,7 @@ app.get("/api/races", async (_req, res) => {
     if(/Krok Odds|429|monthly api limit/i.test(raw)) safeWarnings.push({feed:"Krok Odds",message:"Monthly API quota reached; waiting for provider reset."});
     if(/Betfair|403|fetch failed/i.test(raw)) safeWarnings.push({feed:"Betfair",message:"The current hosting route cannot access the Betfair feed."});
     res.set("Cache-Control","no-store");
-    res.json({races:[],providerBookmakers:[],betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),betfairStatus:!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"credentials-missing":"configured-but-unavailable",exchangeWinQuotes:0,exchangePlaceQuotes:0,mode:"public-widgets",feedSource:"Free public racing widgets",
+    res.json({races:[],providerBookmakers:[],betfairConfigured:!!(BETFAIR_FEED_URL||(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)),betfairStatus:!(BETFAIR_FEED_URL||(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN))?"credentials-missing":"configured-but-unavailable",exchangeWinQuotes:0,exchangePlaceQuotes:0,mode:"public-widgets",feedSource:"Free public racing widgets",
       fetchedAt:new Date().toISOString(),scheduleFetchedAt:null,oddsFetchedAt:null,scope:"Australia",
       feedErrors:safeWarnings,note:"The authenticated race-card feeds are temporarily unavailable. Free public racing widgets and official Australian racing links remain below. No sample races or estimated prices are shown."});
   }
