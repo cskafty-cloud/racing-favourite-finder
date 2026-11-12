@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.9"
+$RffLauncherVersion = "2026-11-13.10"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -128,11 +128,33 @@ if ($railwayPresent.Count -gt 0) {
   Save-EncryptedCredentials $values
   Write-Host "Imported Railway Production Betfair variables and saved them encrypted with Windows DPAPI." -ForegroundColor Green
 } elseif (Test-Path -LiteralPath $CredentialFile) {
-  # Offer a deliberate reauthentication path when Betfair has rejected an expired session.
-  # Default to the saved DPAPI credentials so normal daily starts remain one prompt.
+  # Allow a fresh session to be entered without changing the separate shared feed token.
   $values = Load-EncryptedCredentials
   $credentialChoice = Read-Host "Use saved encrypted credentials? [Y/n]"
-  if ($credentialChoice -match '^(n|no)
+  if ($credentialChoice -match '^(n|no)$') {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Enter the new Betfair app key and session token. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $values = @{
+      BETFAIR_APP_KEY = Read-SecretPlain "Betfair app key (BETFAIR_APP_KEY)"
+      BETFAIR_SESSION_TOKEN = Read-SecretPlain "New Betfair session token (BETFAIR_SESSION_TOKEN)"
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
   Write-Host "No saved credential file found. Enter credentials once to create it."
   $values = Read-NewCredentials
 }
