@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.11"
+$RffLauncherVersion = "2026-11-13.12"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -51,6 +51,17 @@ function Get-NewBetfairSessionToken([string]$AppKey) {
     $password = $null
     $twoFactor = $null
     $body = $null
+  }
+}
+function Offer-CopySessionToken([string]$SessionToken) {
+  $choice = Read-Host "Copy the new session token to the Windows clipboard so you can paste it into Railway Production? [y/N]"
+  if ($choice -match "^(y|yes)$") {
+    try {
+      Set-Clipboard -Value $SessionToken -ErrorAction Stop
+      Write-Host "Session token copied to clipboard. Paste it only into Railway Production BETFAIR_SESSION_TOKEN; do not send it in chat." -ForegroundColor Yellow
+    } catch {
+      Write-Warning "Could not access the clipboard. The new session is saved locally; update Railway BETFAIR_SESSION_TOKEN using a secure method."
+    }
   }
 }
 function Get-ClipboardFeedToken {
@@ -121,6 +132,7 @@ function Read-NewCredentials {
   }
   Save-EncryptedCredentials $values
   Write-Host "Credentials saved locally using Windows DPAPI encryption." -ForegroundColor Green
+  Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
   return $values
 }
 
@@ -178,6 +190,7 @@ if ($railwayPresent.Count -gt 0) {
     }
     Save-EncryptedCredentials $values
     Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
   } else {
     Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
     $newFeedToken = Get-ClipboardFeedToken
