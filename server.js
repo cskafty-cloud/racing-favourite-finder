@@ -1297,8 +1297,8 @@ function selectFavourite(race) {
   const entries=(race.runners||[]).map(r=>{
     const seen=new Set();
     const quotes=runnerQuotes(r).filter(q=>{
-      const key=bookmakerKey(q),age=Number(q.age_seconds);
-      if(!key||seen.has(key)||isEstimatedQuote(q)||q.stale===true||!Number.isFinite(age)||age<0||age>=180)return false;
+      const key=bookmakerKey(q),age=racingMarketAge(q,"win");
+      if(!key||seen.has(key)||isEstimatedQuote(q)||q.stale===true||age==null||!Number.isFinite(age)||age<0||age>=racingQuoteMaxAge())return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(racingWinPrice).filter(p=>p!=null);
@@ -1317,7 +1317,7 @@ function selectFavourite(race) {
   const sourceKeys=[...new Set(best.quotes.map(q=>bookmakerKey(q)).filter(Boolean))];
   const sourceNames=[...new Set(best.quotes.map(q=>q.bookmaker||q.name||q.key).filter(Boolean))];
   const sourceLabel=sourceNames.join(" + ")||sourceKeys.join(" + ")||"Unknown bookmaker";
-  const freshestAge=Math.min(...best.quotes.map(q=>Number(q.age_seconds)));
+  const freshestAge=Math.min(...best.quotes.map(q=>racingMarketAge(q,"win")).filter(Number.isFinite));
   const coveragePoints=best.quotes.length>=3?42:best.quotes.length===2?36:28;
   const freshnessPoints=freshestAge<=30?12:freshestAge<=90?8:4;
   const agreementPoints=best.quotes.length>=2?Math.max(0,20-Math.min(20,Math.round(spreadPct))):0;
@@ -3149,11 +3149,15 @@ async function loadMoviOddsFinalResults(extraDates=[]){
  })().catch(error=>{moviOddsResultsCache.error=error.message;throw error;}).finally(()=>{moviOddsResultsRefresh=null;});
  return moviOddsResultsRefresh;
 }
-// Fetch once at startup and refresh periodically, even before the first history
-// sync request. This verifies the real no-key results response independently of
-// whether the user currently has pending picks.
-void loadMoviOddsFinalResults().catch(error=>console.warn("MOVIODDS_RESULTS_STARTUP_CHECK_FAILED",error.message));
-startMoviOddsStream();
+// Stagger expensive provider work after the HTTP listener is ready. Starting the
+// 7-day results pull, websocket stream, history read and all-sports probe together
+// previously pushed this 1 GB Railway service into a restart loop.
+const moviResultsStartupTimer=setTimeout(()=> {
+  loadMoviOddsFinalResults().catch(error=>console.warn("MOVIODDS_RESULTS_STARTUP_CHECK_FAILED",error.message));
+},30000);
+const moviStreamStartupTimer=setTimeout(()=> {
+  startMoviOddsStream();
+},20000);
 const moviResultsPollTimer=setInterval(()=>loadMoviOddsFinalResults().catch(error=>
  console.warn("MOVIODDS_RESULTS_POLL_FAILED",error.message)),10*60*1000);
 if(typeof moviResultsPollTimer.unref==="function")moviResultsPollTimer.unref();
@@ -3380,21 +3384,12 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
     providerPlan: PROVIDER_PLAN,
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
-  setTimeout(refreshBackgroundRacingFeed, 1500);
+  setTimeout(refreshBackgroundRacingFeed, 12000);
   backgroundRacingRefreshTimer = setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
-  // Run the dashboard history-sync route at boot and log actual production outcomes.
-  setTimeout(async()=>{
-    try{
-      const response=await fetch("http://127.0.0.1:"+PORT+"/api/history/sync",{
-        method:"POST",headers:{"Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(30000)
-      });
-      const payload=await response.json();
-      console.info("RACING_HISTORY_STARTUP_TEST",JSON.stringify({httpStatus:response.status,...payload}));
-      const historyResponse=await fetch("http://127.0.0.1:"+PORT+"/api/history",{signal:AbortSignal.timeout(10000)});
-      const historyPayload=await historyResponse.json();
-      console.info("RACING_HISTORY_STARTUP_SUMMARY",JSON.stringify(historyPayload.summary||{error:historyPayload.error||"No summary returned"}));
-    }catch(error){console.warn("RACING_HISTORY_STARTUP_TEST_FAILED",error.message);}
-  },8000);
+  // Do not run the large history settlement/backfill during boot. It is available
+  // through /api/history/sync when requested by the dashboard; deferring it avoids
+  // competing with the first racing/sports feed refresh on the 1 GB instance.
+  console.info("RACING_HISTORY_STARTUP_SYNC_DEFERRED",JSON.stringify({reason:"bounded startup memory; history sync remains available on demand"}));
   // Run one bounded all-sports probe at boot. Prefer the Australian adapter;
   // if it is not configured, test the already-authorised Betfair session directly.
   if(process.env.BETFAIR_SPORTS_FEED_URL){
@@ -3408,7 +3403,7 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
           errorDetails:Array.isArray(data.errors)?data.errors.slice(0,10):[]
         }));
       }).catch(error=>console.warn("BETFAIR_SPORTS_STARTUP_TEST_FAILED",error.message));
-    },5000);
+    },30000);
   }else if(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN){
     setTimeout(()=>{
       getBetfairSports().then(data=>console.info("BETFAIR_SPORTS_STARTUP_TEST",JSON.stringify({
@@ -3417,7 +3412,7 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
         soccerPricedMarkets:data.soccerPricedMarkets||0,pricedMarkets:data.pricedMarkets||0,
         errors:(data.errors||[]).length
       }))).catch(error=>console.warn("BETFAIR_SPORTS_STARTUP_TEST_FAILED",error.message));
-    },5000);
+    },30000);
   }else{
     console.warn("BETFAIR_SPORTS_STARTUP_TEST_SKIPPED No Australian sports adapter URL or Betfair credentials configured.");
   }
@@ -3436,6 +3431,8 @@ function beginGracefulShutdown(signal) {
   gracefulShutdownStarted = true;
   console.info("RACING_GRACEFUL_SHUTDOWN_START", JSON.stringify({ signal, at: new Date().toISOString() }));
   clearInterval(moviResultsPollTimer);
+  clearTimeout(moviResultsStartupTimer);
+  clearTimeout(moviStreamStartupTimer);
   clearInterval(backgroundRacingRefreshTimer);
   const forceTimer = setTimeout(() => {
     console.error("RACING_GRACEFUL_SHUTDOWN_TIMEOUT", JSON.stringify({ signal }));
