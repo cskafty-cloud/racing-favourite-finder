@@ -38,10 +38,10 @@ test("fixture cache has a strict maximum size",()=>{
   assert.equal(rows.length,MOVI_WS_FIXTURE_LIMIT);
 });
 
-test("fixture trimming preserves provider order when already within the limit",()=>{
-  const rows=[{id:"later",kickoff_utc:"2026-11-14T00:00:00Z"},{id:"soon",kickoff_utc:"2026-11-13T01:00:00Z"}];
+test("fixture trimming preserves live-first and soonest-first order without overflow",()=>{
+  const rows=[{id:"later",kickoff_utc:"2026-11-14T00:00:00Z"},{id:"soon",kickoff_utc:"2026-11-13T01:00:00Z"},{id:"live",in_play:true,kickoff_utc:"2026-11-12T00:00:00Z"}];
   trimMoviOddsFixtures(rows,{now:Date.parse("2026-11-13T00:00:00Z")});
-  assert.deepEqual(rows.map(x=>x.id),["later","soon"]);
+  assert.deepEqual(rows.map(x=>x.id),["live","soon","later"]);
 });
 
 test("quote arrays are bounded while preserving the newest entries",()=>{
