@@ -51,8 +51,8 @@ async function rpc(method, params) {
     throw error;
   }
 }
-function quote(level) {
-  return level && Number(level.price) > 1 ? { price:Number(level.price), size:Number(level.size)||0 } : null;
+function quote(level,publishedAt=null) {
+  return level && Number(level.price) > 1 ? {price:Number(level.price),size:Number(level.size)||0,publishedAt:publishedAt||null} : null;
 }
 function cached(key, loader) {
   const old=cache.get(key);
@@ -130,6 +130,7 @@ async function loadRaces() {
     bookErrors.push(...result.errors);
   }
   const byId=new Map(books.map(b=>[b.marketId,b]));
+  const capturedAt=new Date().toISOString();
   const grouped=new Map();
   for(const market of all){
     const book=byId.get(market.marketId);
@@ -139,7 +140,7 @@ async function loadRaces() {
       category:raceCategory(market._type),code:raceCategory(market._type),venue:market.event?.name||"Unknown track",
       track:market.event?.name||"Unknown track",race_number:null,start_time:market.marketStartTime,
       country:"Australia",status:book.inplay?"in_play":"scheduled",in_play:!!book.inplay,
-      closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:new Date().toISOString(),runners:[]});
+      closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:capturedAt,runners:[]});
     const race=grouped.get(key);
     for(const runner of market.runners||[]){
       let target=race.runners.find(x=>x.selectionId===runner.selectionId);
@@ -148,7 +149,7 @@ async function loadRaces() {
       const priced=(book.runners||[]).find(x=>x.selectionId===runner.selectionId);
       if(!priced||priced.status==="REMOVED")continue;
       const kind=String(market.description?.marketType||market.marketName||"WIN").toUpperCase().includes("PLACE")?"place":"win";
-      target.exchange[kind]={back:quote(priced.ex?.availableToBack?.[0]),lay:quote(priced.ex?.availableToLay?.[0])};
+      target.exchange[kind]={back:quote(priced.ex?.availableToBack?.[0],book.publishTime),lay:quote(priced.ex?.availableToLay?.[0],book.publishTime)};
     }
   }
   const races=[...grouped.values()].map(race=>{
@@ -159,14 +160,16 @@ async function loadRaces() {
     return {...race,
       exchangeFavourite:winFavourite?{name:winFavourite.name,selectionId:winFavourite.selectionId,
         price:winFavourite.exchange.win.back.price,side:"BACK",market:"WIN",
-        source:"Betfair Exchange Delayed API",capturedAt:race.captured_at,delayMaximumSeconds:180}:null,
+        source:"Betfair Exchange Delayed API",capturedAt:winFavourite.exchange.win.back.publishedAt||null,
+        observedAt:race.captured_at,delayMaximumSeconds:180}:null,
       exchangePlaceFavourite:placeFavourite?{name:placeFavourite.name,selectionId:placeFavourite.selectionId,
         price:placeFavourite.exchange.place.back.price,side:"BACK",market:"PLACE",
-        source:"Betfair Exchange Delayed API",capturedAt:race.captured_at,delayMaximumSeconds:180}:null
+        source:"Betfair Exchange Delayed API",capturedAt:placeFavourite.exchange.place.back.publishedAt||null,
+        observedAt:race.captured_at,delayMaximumSeconds:180}:null
     };
   });
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
-    scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),horizonHours:168,
+    scheduleFetchedAt:capturedAt,oddsFetchedAt:capturedAt,horizonHours:168,
     feedErrors:[...groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
       ...bookErrors.map(message=>({sport:"Australian racing",message}))],
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
