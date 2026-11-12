@@ -1,0 +1,74 @@
+name: Dependency security audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Resolve the declared production and desktop dependency tree before auditing.
+      - name: Resolve declared dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Inspect affected dependency tree
+        run: npm ls electron electron-builder sharp extract-zip minimatch @electron/universal app-builder-lib --all || true
+      - name: Preview non-forced remediation
+        run: |
+          npm audit fix --dry-run --json > npm-audit-fix-plan.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = fs.readFileSync('npm-audit-fix-plan.json', 'utf8');
+          try {
+            const plan = JSON.parse(raw);
+            console.log('AUDIT_FIX_PLAN', JSON.stringify({
+              added: plan.added, removed: plan.removed, changed: plan.changed,
+              audit: plan.audit?.metadata?.vulnerabilities || null,
+              advisories: Object.keys(plan.audit?.vulnerabilities || {})
+            }));
+          } catch {
+            console.log('AUDIT_FIX_PLAN_RAW', raw.slice(0, 12000));
+          }
+          NODE
+      - name: Audit all dependencies
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          const counts = report.metadata?.vulnerabilities || {};
+          console.log('DEPENDENCY_AUDIT_SUMMARY', JSON.stringify(counts));
+          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+            console.log('DEPENDENCY_ADVISORY', JSON.stringify({
+              name,
+              severity: item.severity,
+              direct: item.isDirect,
+              range: item.range,
+              fixAvailable: item.fixAvailable,
+              via: item.via.map(v => typeof v === 'string' ? v : {
+                name: v.name, title: v.title, range: v.range, url: v.url
+              })
+            }));
+          }
+          NODE
+      - name: Upload audit report and resolved lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-report
+          path: |
+            npm-audit.json
+            package-lock.json
+          if-no-files-found: warn
+          retention-days: 14
