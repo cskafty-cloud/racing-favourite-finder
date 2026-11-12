@@ -3008,7 +3008,8 @@ async function refreshBackgroundRacingFeed() {
   })().finally(() => { puntersEdgeRefresh = null; });
   return puntersEdgeRefresh;
 }
-app.listen(PORT,"0.0.0.0",()=>{
+let backgroundRacingRefreshTimer = null;
+const httpServer = app.listen(PORT,"0.0.0.0",()=>{
   console.log(`Racing Favourite Finder listening on ${PORT}`);
   console.log("RACING_FEED_CONFIG", JSON.stringify({
     puntersEdgeKeyConfigured: !!API_KEY,
@@ -3016,7 +3017,7 @@ app.listen(PORT,"0.0.0.0",()=>{
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
-  setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
+  backgroundRacingRefreshTimer = setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
   // Run the dashboard history-sync route at boot and log actual production outcomes.
   setTimeout(async()=>{
     try{
@@ -3057,3 +3058,41 @@ app.listen(PORT,"0.0.0.0",()=>{
     console.warn("BETFAIR_SPORTS_STARTUP_TEST_SKIPPED No Australian sports adapter URL or Betfair credentials configured.");
   }
 });
+
+
+/*
+ * Railway sends SIGTERM when replacing a deployment. Stop scheduled work,
+ * let active HTTP requests finish, and flush the serialized history write queue
+ * before exiting. The attached /data volume still prevents overlapping deploys;
+ * this handler protects in-flight requests and history writes, not zero downtime.
+ */
+let gracefulShutdownStarted = false;
+function beginGracefulShutdown(signal) {
+  if (gracefulShutdownStarted) return;
+  gracefulShutdownStarted = true;
+  console.info("RACING_GRACEFUL_SHUTDOWN_START", JSON.stringify({ signal, at: new Date().toISOString() }));
+  clearInterval(moviResultsPollTimer);
+  clearInterval(backgroundRacingRefreshTimer);
+  const forceTimer = setTimeout(() => {
+    console.error("RACING_GRACEFUL_SHUTDOWN_TIMEOUT", JSON.stringify({ signal }));
+    if (typeof httpServer.closeAllConnections === "function") httpServer.closeAllConnections();
+    process.exit(1);
+  }, 25000);
+  if (typeof forceTimer.unref === "function") forceTimer.unref();
+  httpServer.close(async error => {
+    clearTimeout(forceTimer);
+    try {
+      await writeQueue;
+      console.info("RACING_GRACEFUL_SHUTDOWN_COMPLETE", JSON.stringify({
+        signal, at: new Date().toISOString(), historyWritesFlushed: true,
+        serverCloseError: error ? error.message : null
+      }));
+      if (error) process.exitCode = 1;
+    } catch (writeError) {
+      console.error("RACING_GRACEFUL_SHUTDOWN_HISTORY_FLUSH_FAILED", writeError.message);
+      process.exitCode = 1;
+    }
+  });
+}
+process.once("SIGTERM", () => beginGracefulShutdown("SIGTERM"));
+process.once("SIGINT", () => beginGracefulShutdown("SIGINT"));
