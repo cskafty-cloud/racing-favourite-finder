@@ -1062,13 +1062,23 @@ function selectFavourite(race) {
   const spreadPct=best.spread*100;
   // Quote agreement is a hard quality gate: broad disagreement must never be called strong.
   const rawScore=Math.round(Math.min(40,best.quotes.length/3*40)+Math.max(0,30*(1-best.spread/0.35))+Math.min(30,gap/0.15*30));
-  const previewOnly=best.quotes.length>0&&best.quotes.every(q=>q.public_demo===true);
+  // A public data transport does not make a quote a bookmaker preview.
+  // Only Sportsbet's explicitly flagged demo rows are preview-only; verified
+  // Bet365 fixed odds delivered by the MoviOdds board remain eligible.
+  const previewOnly=best.quotes.length>0&&best.quotes.every(q=>q.public_demo===true&&bookmakerKey(q)==="sportsbet");
   const sourceKeys=[...new Set(best.quotes.map(q=>bookmakerKey(q)).filter(Boolean))];
   const sourceNames=[...new Set(best.quotes.map(q=>q.bookmaker||q.name||q.key).filter(Boolean))];
   const sourceLabel=sourceNames.join(" + ")||sourceKeys.join(" + ")||"Unknown bookmaker";
-  const signalScore=previewOnly?Math.min(20,rawScore):(spreadPct>25?Math.min(rawScore,25):spreadPct>15?Math.min(rawScore,55):rawScore);
-  const signalLabel=previewOnly?"PUBLIC PREVIEW · LOW CONFIDENCE":best.quotes.length>=3&&spreadPct<=10&&signalScore>=65?"STRONG SIGNAL"
-    :best.quotes.length>=2&&spreadPct<=25&&signalScore>=40?"CAUTION":"NO BET · WEAK SIGNAL";
+  const freshestAge=Math.min(...best.quotes.map(q=>Number(q.age_seconds)));
+  const coveragePoints=best.quotes.length>=3?42:best.quotes.length===2?36:28;
+  const freshnessPoints=freshestAge<=30?12:freshestAge<=90?8:4;
+  const agreementPoints=best.quotes.length>=2?Math.max(0,20-Math.min(20,Math.round(spreadPct))):0;
+  const separationPoints=Math.min(26,Math.round(gap/0.15*26));
+  const signalScore=previewOnly?Math.min(15,rawScore):Math.min(100,coveragePoints+freshnessPoints+agreementPoints+separationPoints);
+  const signalLabel=previewOnly?"SPORTSBET PUBLIC PREVIEW · NOT RANKED":
+    best.quotes.length>=3&&spreadPct<=10&&signalScore>=75?"MULTI-BOOKMAKER CONSENSUS":
+    best.quotes.length>=2&&spreadPct<=20&&signalScore>=55?"AGREEMENT · GOOD COVERAGE":
+    best.quotes.length===1?"SINGLE BOOKMAKER · LIMITED CONFIRMATION":"MIXED MARKET · CHECK PRICES";
   const r=best.runner;
   return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name,number:r.number??r.runner_number??null,
     price:best.fair,priceSource:sourceLabel+" fixed WIN quote"+(best.quotes.length>1?"s":""),quoteCount:best.quotes.length,bookmakerKeys:sourceKeys,
