@@ -7,7 +7,7 @@ on:
       - 'desktop/**'
       - 'public/app.js'
       - 'package.json'
-      - '.github/workflows/windows-app.yml'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -18,14 +18,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
       - name: Run data-quality regression tests
         run: npm test
       - name: Check application and adapter syntax
@@ -37,7 +37,7 @@ jobs:
       - name: Build portable Windows executable
         run: npm run desktop:dist
       - name: Publish public GitHub release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: desktop-v1.0.${{ github.run_number }}
           name: Racing Favourite Finder for Windows v1.0.${{ github.run_number }}
