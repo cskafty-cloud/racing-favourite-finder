@@ -160,6 +160,7 @@ async function loadBetfairRaces() {
   return {races,eventTypes:types};
 }
 async function getBetfairRaces() {
+  if(Date.now()<betfairRetryAt&&betfairRacingCache.error)throw new Error("Betfair racing API paused until "+new Date(betfairRetryAt).toISOString()+": "+betfairRacingCache.error);
   if(!betfairRacingCache.at||Date.now()-betfairRacingCache.at>=30000) {
     if(!betfairRacingRefresh) betfairRacingRefresh=(async()=>{
       const result=await loadBetfairRaces();
@@ -167,7 +168,13 @@ async function getBetfairRaces() {
       console.info("BETFAIR_RACING_FEED",JSON.stringify({at:new Date(betfairRacingCache.at).toISOString(),
         races:result.races.length,categories:Object.fromEntries(["horse","greyhound","harness"].map(k=>[k,result.races.filter(r=>r.category===k).length])),
         pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length}));
-    })().catch(error=>{betfairRacingCache.error=error.message;throw error;}).finally(()=>{betfairRacingRefresh=null;});
+    })().catch(error=>{
+      betfairRacingCache.error=error.message;
+      const blocked=/HTTP 403|egress\/IP-location block|geographic/i.test(error.message);
+      betfairRetryAt=Date.now()+(blocked?6*60*60*1000:15*60*1000);
+      console.warn("BETFAIR_RACING_CIRCUIT_OPEN",JSON.stringify({retryAt:new Date(betfairRetryAt).toISOString(),reason:error.message.slice(0,180)}));
+      throw error;
+    }).finally(()=>{betfairRacingRefresh=null;});
     await betfairRacingRefresh;
   }
   return {races:betfairRacingCache.races,scheduleFetchedAt:new Date(betfairRacingCache.at).toISOString(),
@@ -1223,14 +1230,20 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  if (/(?:PuntersEdge[^\n]*|Racing provider) 402/.test(String(error))) {
-    // Monthly credits reset at 00:00 UTC. Retrying every six hours only burns
-    // requests without restoring quota, so pause until the next reset.
-    const now = new Date();
-    const nextReset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 1, 0);
-    return Math.max(60 * 1000, nextReset - Date.now());
+  const message=String(error||"");
+  const retry=message.match(/retry-after=([^\]\s]+)/i);
+  if(retry){
+    const seconds=Number(retry[1]),date=Date.parse(retry[1]);
+    if(Number.isFinite(seconds)&&seconds>=0)return Math.max(1000,seconds*1000);
+    if(Number.isFinite(date))return Math.max(1000,date-Date.now());
   }
-  return /(?:429|rate.?limit)/i.test(String(error)) ? 60 * 60 * 1000 : 60 * 1000;
+  if(/(?:PuntersEdge[^\n]*|Racing provider) 402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message)){
+    const now=new Date();
+    const nextReset=Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1,0,1,0);
+    return Math.max(60*1000,nextReset-Date.now());
+  }
+  if(/(?:429|rate.?limit)/i.test(message))return 60*60*1000;
+  return 60*1000;
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
@@ -1239,6 +1252,22 @@ const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
 const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
 let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null,errors:[]};
 let krokRetryAt = 0;
+let krokFailureCount = 0;
+let krokRetryReason = "";
+function providerRetryTimestamp(error, now=Date.now()) {
+  const message=String(error||"");
+  const retry=message.match(/retry-after=([^\]\s]+)/i);
+  if(retry){
+    const raw=retry[1],seconds=Number(raw),date=Date.parse(raw);
+    if(Number.isFinite(seconds)&&seconds>=0)return now+Math.max(1000,seconds*1000);
+    if(Number.isFinite(date))return Math.max(now+1000,date);
+  }
+  const reset=message.match(/(?:reset|retry)[^0-9]*(\d{10,13})/i);
+  if(reset){const n=Number(reset[1]);return n>1e12?n:n*1000;}
+  if(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message))return nextMonthlyQuotaCheck(now);
+  if(/429|rate.?limit/i.test(message))return now+Math.min(6*60*60*1000,Math.max(60*1000,Math.pow(2,Math.min(krokFailureCount,6))*60*1000));
+  return now+5*60*1000;
+}
 async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
   if (!KROKODDS_API_KEY) throw new Error("KROKODDS_API_KEY is missing in Railway variables.");
   const url = new URL(KROKODDS_BASE + "/odds-feed/racing");
@@ -1251,7 +1280,11 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
   const body = await response.text();
   let payload;
   try { payload=JSON.parse(body); } catch { throw new Error("Krok Odds returned invalid JSON (HTTP "+response.status+")."); }
-  if (!response.ok || payload.success === false) throw new Error("Krok Odds "+response.status+": "+(payload.error||"request failed"));
+  if (!response.ok || payload.success === false) {
+    const retryAfter=response.headers.get("Retry-After")||response.headers.get("X-RateLimit-Reset")||"";
+    const detail=String(payload.error||payload.message||"request failed");
+    throw new Error("Krok Odds "+response.status+": "+detail+(retryAfter?" [retry-after="+retryAfter+"]":""));
+  }
   const grouped = new Map();
   const sourceRows=Array.isArray(payload.data)?payload.data:[];
   console.info("KROK_RACING_SCHEMA",JSON.stringify({
@@ -1359,14 +1392,25 @@ async function getKrokRaces() {
     // prevents a small default response window being filled by other books.
     // The provider's free-tier cap is respected; we do not paginate or bypass it.
     const requests=["sportsbet","bet365"].flatMap(bookmaker=>["T","G","H"].map(code=>({bookmaker,code})));
-    const results=await Promise.all(requests.map(async ({bookmaker,code})=>{
-      try { return {...await fetchKrokRacing(today,code,bookmaker),bookmaker,code}; }
-      catch(error) { return {races:[],meta:null,creditsRemaining:null,bookmaker,code,error:bookmaker+" "+code+": "+error.message}; }
-    }));
+    const results=[];
+    // Sequential requests allow a quota/rate-limit response to stop the remaining
+    // five calls instead of multiplying a provider lockout into a request burst.
+    for(const {bookmaker,code} of requests){
+      try { results.push({...await fetchKrokRacing(today,code,bookmaker),bookmaker,code}); }
+      catch(error) {
+        const message=bookmaker+" "+code+": "+error.message;
+        results.push({races:[],meta:null,creditsRemaining:null,bookmaker,code,error:message});
+        if(/\b(402|429)\b|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)|rate.?limit/i.test(message)){
+          krokFailureCount++;
+          krokRetryAt=providerRetryTimestamp(message,Date.now());
+          krokRetryReason=message;
+          break;
+        }
+      }
+    }
     const races=dedupeRaces(results.flatMap(x=>x.races||[]));
     const errors=results.filter(x=>x.error).map(x=>x.error);
-    const quotaBlocked=errors.some(message=>/429|monthly api limit|credit limit|402|quota/i.test(message));
-    krokRetryAt=quotaBlocked?nextMonthlyQuotaCheck(now):0;
+    if(!krokRetryAt||krokRetryAt<=now){krokFailureCount=0;krokRetryAt=0;krokRetryReason="";}
     krokRacingCache={at:now,races,meta:results.map(x=>x.meta).filter(Boolean),
       creditsRemaining:results.map(x=>x.creditsRemaining).filter(x=>x!=null).join(", ")||null,errors};
     const quoteCount=book=>races.reduce((n,r)=>n+r.runners.reduce((m,x)=>m+x.bookmakers.filter(q=>bookmakerKey(q)===book).length,0),0);
@@ -1375,7 +1419,7 @@ async function getKrokRaces() {
       sportsbetQuotes:quoteCount("sportsbet"),bet365Quotes:quoteCount("bet365"),
       bookmakerCoverage:Object.fromEntries(["sportsbet","bet365"].map(book=>[book,Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code&&r.runners.some(x=>x.bookmakers.some(q=>bookmakerKey(q)===book))).length]))])),
       runners:races.reduce((n,r)=>n+r.runners.length,0),creditsRemaining:krokRacingCache.creditsRemaining,
-      retryAt:krokRetryAt?new Date(krokRetryAt).toISOString():null,errors}));
+      retryAt:krokRetryAt?new Date(krokRetryAt).toISOString():null,retryReason:krokRetryReason,errors}));
   }
   return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
     oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
@@ -1500,7 +1544,17 @@ async function fetchPuntersEdge(pathname, params, cacheName) {
   const body=await response.text();
   let payload;
   try{payload=JSON.parse(body);}catch{throw new Error("PuntersEdge "+pathname+" returned invalid JSON (HTTP "+response.status+").");}
-  if(!response.ok) throw new Error("PuntersEdge "+pathname+" "+response.status+": "+(payload.detail||payload.error||body.slice(0,220)));
+  if(!response.ok) {
+    const detail=String(payload.detail||payload.error||body.slice(0,220));
+    const retryAfter=response.headers.get("Retry-After")||response.headers.get("X-RateLimit-Reset")||response.headers.get("X-Credits-Reset")||"";
+    const message="PuntersEdge "+pathname+" "+response.status+": "+detail+(retryAfter?" [retry-after="+retryAfter+"]":"");
+    if(response.status===402||response.status===429){
+      const retry=retryAfter?providerRetryTimestamp(message):providerRetryDelay(message);
+      providerRetryAt[cacheName]=retry;
+      providerErrors[cacheName]=message;
+    }
+    throw new Error(message);
+  }
   cache.rows=rowsFrom(payload).filter(r=>{
     const country=String(r.country||r.country_code||"").toUpperCase();
     return !country || country==="AU";
