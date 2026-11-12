@@ -1,6 +1,6 @@
 {
   "name": "racing-favourite-finder",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Australian horse and greyhound racing market-favourite dashboard",
   "scripts": {
@@ -45,7 +45,7 @@
       "icon": "desktop/icon.ico"
     },
     "portable": {
-      "artifactName": "Racing-Favourite-Finder-${version}-Windows.${ext}"
+      "artifactName": "CSKAFTY.${ext}"
     }
   },
   "overrides": {
