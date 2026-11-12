@@ -22,3 +22,5 @@ jobs:
         run: npm test
       - name: Check server syntax
         run: node --check server.js
+      - name: Check Betfair adapter syntax
+        run: node --check betfair-au-proxy/server.js
