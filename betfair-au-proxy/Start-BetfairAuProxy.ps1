@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+$RffLauncherVersion = "2026-11-13.1"
 Set-Location $PSScriptRoot
 
 # Credentials are stored only as Windows DPAPI ciphertext, bound to this
@@ -76,7 +77,7 @@ $nodeVersion = (node -p "process.versions.node").Split('.')[0]
 if ([int]$nodeVersion -lt 22) { throw "Node.js 22 or newer is required. Detected $(node --version)." }
 
 Write-Host ""
-Write-Host "BETFAIR AUSTRALIAN READ-ONLY ADAPTER" -ForegroundColor Cyan
+Write-Host "BETFAIR AUSTRALIAN READ-ONLY ADAPTER  |  Launcher $RffLauncherVersion" -ForegroundColor Cyan
 Write-Host "Credentials are stored encrypted with Windows DPAPI, outside the repository."
 Write-Host "Saved file: $CredentialFile" -ForegroundColor DarkGray
 Write-Host "The encrypted file can be decrypted only by this Windows user on this PC."
