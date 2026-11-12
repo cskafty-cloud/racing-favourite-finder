@@ -19,7 +19,7 @@ function addStyles(){
  .rf-fav{margin:12px 0;padding:10px 12px;border-radius:10px;background:rgba(90,140,190,.09);border:1px solid var(--line,#293342)}
  .rf-exchange-fav{border-color:rgba(233,189,101,.55);background:rgba(233,189,101,.07)}
  .rf-exchange-fav{border-color:rgba(233,189,101,.55);background:rgba(233,189,101,.07)}
- .rf-fav strong{display:block;margin-bottom:3px}.rf-fav-unpriced{border-color:rgba(224,92,92,.78);background:rgba(150,34,34,.16);box-shadow:inset 4px 0 0 #df6e6e}.rf-fav-unverified{border-color:rgba(231,173,85,.72);background:rgba(170,112,24,.12);box-shadow:inset 4px 0 0 #e7ad55}.rf-fav-sportsbet{border-color:rgba(66,201,138,.72);background:rgba(25,125,82,.13);box-shadow:inset 4px 0 0 #42c98a}.rf-fav-unpriced strong{color:#ff8585}.rf-fav-unverified strong{color:#f0c06e}.rf-fav-sportsbet strong{color:#62e2a4}.rf-price-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
+ .rf-fav strong{display:block;margin-bottom:3px}.rf-fav-bookmaker{border-color:rgba(66,201,138,.72);background:rgba(25,125,82,.13);box-shadow:inset 4px 0 0 #42c98a}.rf-fav-bookmaker strong{color:#62e2a4}.rf-fav-unpriced{border-color:rgba(224,92,92,.78);background:rgba(150,34,34,.16);box-shadow:inset 4px 0 0 #df6e6e}.rf-fav-unverified{border-color:rgba(231,173,85,.72);background:rgba(170,112,24,.12);box-shadow:inset 4px 0 0 #e7ad55}.rf-fav-sportsbet{border-color:rgba(66,201,138,.72);background:rgba(25,125,82,.13);box-shadow:inset 4px 0 0 #42c98a}.rf-fav-unpriced strong{color:#ff8585}.rf-fav-unverified strong{color:#f0c06e}.rf-fav-sportsbet strong{color:#62e2a4}.rf-price-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
  .rf-price-box{border:1px solid var(--line,#293342);border-radius:10px;padding:10px}
  .rf-price-box h4{margin:0 0 8px;font-size:13px}.rf-price-line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid rgba(130,145,165,.16);font-size:12px}
  .price-status{font-size:10px;font-weight:800;letter-spacing:.04em}.verified{color:#42c98a}.unverified{color:#e7ad55}
@@ -71,9 +71,25 @@ function sourceDetails(q){
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange PLACE · BACK / LAY":"Fixed PLACE")+'</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
   }).join("");
  }
+function bookmakerRaceFavourite(runners,book){
+ const rows=(runners||[]).flatMap(runner=>auditRows(runner).filter(q=>q.bookmaker_key===book&&q.market==="WIN"&&q.exchange!==true&&q.status==="verified"&&q.captured_at&&Number.isFinite(Number(q.age_seconds))&&Number(q.age_seconds)>=0&&Number(q.age_seconds)<180&&Number(q.price)>1).map(q=>({runner,q})));
+ return rows.sort((a,b)=>Number(a.q.price)-Number(b.q.price))[0]||null;
+}
+function renderBookmakerFavourite(label,selection,preview){
+ if(selection){
+  const q=selection.q,runner=selection.runner;
+  return `<div class="rf-fav rf-fav-bookmaker"><strong>${esc(label)} VERIFIED FIXED WIN FAVOURITE</strong>${esc(runner.name||runner.runner_name||"Runner")}${runner.number!=null?" (#"+esc(runner.number)+")":""} · ${Number(q.price).toFixed(2)}<div class="rf-muted">${esc(q.source||label)} · source quote ${esc(fmtTime(q.captured_at))} · ${esc(fmtAge(q.age_seconds))}</div></div>`;
+ }
+ if(preview){
+  return `<div class="rf-fav rf-fav-unverified"><strong>${esc(label)} FAVOURITE · UNVERIFIED PREVIEW</strong>${esc(preview.runner.name||preview.runner.runner_name||"Runner")} · ${Number(preview.q.price).toFixed(2)}<div class="rf-muted">No fresh, individually timestamped fixed WIN quote is available. This preview is excluded from verified favourites and tips.</div></div>`;
+ }
+ return `<div class="rf-fav rf-fav-unpriced"><strong>${esc(label)} FAVOURITE NOT IDENTIFIED · UNPRICED</strong><div class="rf-muted">No named ${esc(label)} favourite supplied by feed. No verified ${esc(label)} fixed WIN quote is available for this race.</div></div>`;
+}
 function renderRace(r){
   const sportsbetFavourite=(r.runners||[]).flatMap(runner=>auditRows(runner).filter(q=>q.bookmaker_key==="sportsbet"&&q.market==="WIN"&&q.status==="verified"&&q.exchange!==true&&q.public_demo!==true&&q.captured_at&&Number.isFinite(Number(q.age_seconds))&&Number(q.age_seconds)>=0&&Number(q.age_seconds)<180).map(q=>({runner,q}))).sort((a,b)=>Number(a.q.price)-Number(b.q.price))[0]||null;
-  const fav=sportsbetFavourite?{name:sportsbetFavourite.runner.name||sportsbetFavourite.runner.runner_name||"Runner",number:sportsbetFavourite.runner.number??sportsbetFavourite.runner.runner_number??null,price:sportsbetFavourite.q.price,status:"verified",label:"SPORTSBET VERIFIED FIXED WIN FAVOURITE",priceSource:"Sportsbet"}:(r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"});
+  const bet365Favourite=bookmakerRaceFavourite(r.runners||[],"bet365");
+  const bet365Preview=(r.runners||[]).flatMap(runner=>auditRows(runner).filter(q=>q.bookmaker_key==="bet365"&&q.market==="WIN"&&q.status==="unverified"&&Number(q.price)>1).map(q=>({runner,q}))).sort((a,b)=>Number(a.q.price)-Number(b.q.price))[0]||null;
+  const fav=r.favourite||{status:"unpriced",label:"OVERALL MARKET FAVOURITE NOT IDENTIFIED · UNPRICED"};
   const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
   const exchangeFav=runners.flatMap(runner=>auditRows(runner).filter(q=>q.exchange===true&&q.market==="WIN"&&
     String(q.price_side||"").toUpperCase()==="BACK"&&Number(q.price)>1&&
@@ -86,7 +102,7 @@ function renderRace(r){
   const favClass=fav.status==="verified"?"verified":fav.status==="unverified"?"unverified":"";
   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(r.venue||r.track||"Race meeting")+' · R'+esc(r.race_number??"?")+'</div><div class="rf-muted">'+esc(String(r.category||r.code||"Racing").toUpperCase())+' · '+esc(fmtTime(r.start_time||r.commence_time))+' · '+esc(r.status||"Scheduled")+'</div></div><span class="rf-muted">'+runners.length+' active runners</span></div>'+
    '<div class="rf-fav '+(fav.status==="unpriced"?"rf-fav-unpriced":fav.status==="unverified"?"rf-fav-unverified":sportsbetFavourite?"rf-fav-sportsbet":"")+'"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
-   (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">'+(fav.name?"No verified fixed WIN quote is available for this favourite.":"No named favourite supplied by feed. No verified fixed WIN quote is available for this favourite.")+'</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+(sportsbetFavourite?"":'<div class="rf-fav rf-fav-unpriced"><strong>SPORTSBET FAVOURITE NOT IDENTIFIED · UNPRICED</strong><div class="rf-muted">No named Sportsbet favourite supplied by feed. No verified Sportsbet fixed WIN quote is available for this favourite.</div></div>')+
+   (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">'+(fav.name?"No verified fixed WIN quote is available for this favourite.":"No named favourite supplied by feed. No verified fixed WIN quote is available for this favourite.")+'</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+renderBookmakerFavourite("SPORTSBET",sportsbetFavourite,sportsbetPreview)+renderBookmakerFavourite("BET365",bet365Favourite,bet365Preview)+
    (exchangeFav?'<div class="rf-fav rf-exchange-fav"><strong>BETFAIR EXCHANGE MARKET FAVOURITE · WIN BACK</strong>'+esc(exchangeFav.runner.name||"Runner")+' · $'+Number(exchangeFav.q.price).toFixed(2)+'<div class="rf-muted">Actual available Exchange BACK price · delayed up to '+esc(exchangeFav.q.source_delay_max_seconds||180)+'s · source publish time '+(exchangeFav.q.captured_at?esc(fmtTime(exchangeFav.q.captured_at)):"not supplied")+' · not a fixed bookmaker price.</div></div>':'')+
    (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
    '<div class="rf-b337-crosscheck"><b>B337 · FREE PUBLIC REFERENCE</b><div class="rf-muted">Use B337 as a separate reference for publicly accessible racing information. Compare Sportsbet and TAB prices manually where B337 displays them. B337 prices are imported only if an authorised public machine-readable source becomes available. No login bypass or protected-data scraping is used.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
