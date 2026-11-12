@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { isEstimatedQuote, quoteAgeSeconds, quoteMarketAge } = require("../market-quality");
+const { raceCategory } = require("../betfair-au-proxy/race-category");
 
 test("ordinary timestamped bookmaker quote is not classified as estimated", () => {
   assert.equal(isEstimatedQuote({
@@ -92,4 +93,16 @@ test("WIN and PLACE timestamps are verified independently", () => {
   assert.equal(quoteMarketAge(q, "win", now), 60);
   assert.equal(quoteMarketAge(q, "place", now), 120);
   assert.equal(quoteMarketAge({ last_update: q.last_update }, "place", now), null);
+});
+
+test("Betfair harness raceType is detected under Horse Racing", () => {
+  assert.equal(raceCategory("Horse Racing", { raceType: "HARNESS" }), "harness");
+  assert.equal(raceCategory("Horse Racing", { race_type: "TROTTING" }), "harness");
+  assert.equal(raceCategory("Horse Racing", {}, { raceType: "PACING" }), "harness");
+  assert.equal(raceCategory("Horse Racing", { raceType: "TROT" }), "harness");
+});
+
+test("Betfair racing codes remain distinct", () => {
+  assert.equal(raceCategory("Greyhound Racing", {}), "greyhound");
+  assert.equal(raceCategory("Horse Racing", { raceType: "FLAT" }), "horse");
 });
