@@ -1311,8 +1311,8 @@ function runnerQuoteAudit(runner){
    rows.push({bookmaker:label,bookmaker_key:book,market:market.toUpperCase(),price,
     market_type:marketType,exchange:q.exchange===true||book==="betfair",price_side:q.price_side||null,available_size:q.available_size??null,source_delay_max_seconds:q.source_delay_max_seconds??null,
     status:reasons.length?"unverified":"verified",age_seconds:age,observed_at:observedAt,observed_age_seconds:observedAge,
-    captured_at:capturedAt,
-    reasons,verification_label:(q.exchange===true||book==="betfair")?"DELAYED EXCHANGE":publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":"VERIFIED"),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
+    captured_at:capturedAt,freshness_basis:market==="place"?(q.place_freshness_basis||q.freshness_basis||null):(q.freshness_basis||null),
+    reasons,verification_label:(q.exchange===true||book==="betfair")?"DELAYED EXCHANGE":publicPreview&&age==null?"UNTIMESTAMPED PREVIEW":publicPreview&&age!=null&&age>=racingQuoteMaxAge()?"STALE PUBLIC REFERENCE":(reasons.length?"UNVERIFIED":(q.freshness_basis==="race_board_updated_at"||q.place_freshness_basis==="race_board_updated_at"?"VERIFIED · RACE CARD REFRESH":"VERIFIED")),public_demo:q.public_demo===true,source:q.source||q.provider||"Connected public feed",source_url:q.source_url||q.url||null});
   }
  }
  return rows;
@@ -2200,7 +2200,7 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   const placeAge=r.place_age_seconds??r.place_quote_age_seconds??
    placeGroups.map(g=>g.age_seconds??g.quote_age_seconds).find(v=>v!=null)??placeMarketRows.map(m=>m.age_seconds??m.quote_age_seconds).find(v=>v!=null)??null;
   const bookmakers=(price||placePrice)? [{key:bookKey,bookmaker:bookName,name:bookName,
-   ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:r.place_stale===true||(placeAge!=null&&Number(placeAge)>=180)}:{}),
+   ...(price?{win_price:price,market_type:"fixed_win"}:{}),...(placePrice?{place_price:placePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_timestamp_status:placeFreshnessBasis,place_freshness_basis:placeFreshnessBasis,place_stale:r.place_stale===true||(placeAge!=null&&Number(placeAge)>=180)}:{}),
    last_update:winUpdated,age_seconds:winAge,feed_observed_at:new Date().toISOString(),
    timestamp_status:winUpdated!=null?"source_quote_timestamp":winAge!=null?"source_quote_age":"missing_source_quote_timestamp",
    stale:r.stale===true||(winAge!=null&&Number(winAge)>=180),public_demo:true,
@@ -2483,10 +2483,14 @@ async function getGlobalRacesUncached() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // price_ts is the MoviOdds runner-level price timestamp; race.updated_at is not.
-        const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||boardUpdatedAt; // MoviOdds documents race.updated_at as the board update time; use it only as a freshness proxy when no runner tick exists.
-        // Fixed-place prices have their own timestamp. Never borrow the WIN
-        // timestamp to make a PLACE quote appear fresher than it is.
-        const placeUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||null;
+        const runnerUpdated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||null;
+        // MoviOdds documents race.updated_at as the race-card refresh time, not
+        // the exact time this runner's price moved. Preserve that distinction.
+        const updated=runnerUpdated||boardUpdatedAt;
+        const freshnessBasis=runnerUpdated?"runner_quote_timestamp":"race_board_updated_at";
+        const placeRunnerUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||null;
+        const placeUpdated=placeRunnerUpdated||boardUpdatedAt;
+        const placeFreshnessBasis=placeRunnerUpdated?"place_quote_timestamp":"race_board_updated_at";
         const rawPlace=x.place_odds??x.fixed_place_odds??x.place_price??null;
         const placeFraction=typeof x.place_frac==="string"&&x.place_frac.includes("/")?x.place_frac.split("/").map(Number):null;
         const placeFractionPrice=placeFraction&&placeFraction.length===2&&placeFraction[1]>0?placeFraction[0]/placeFraction[1]+1:null;
@@ -2509,7 +2513,7 @@ async function getGlobalRacesUncached() {
           bookmakers:((Number.isFinite(price)&&price>1)||validPlacePrice!=null)&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:"Bet365",name:"Bet365",
             ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
             ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:x.place_stale===true||placeAge==null||placeAge>=180}:{}),
-            last_update:updated,updated_at:updated,age_seconds:age,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
+            last_update:updated,updated_at:updated,age_seconds:age,timestamp_status:freshnessBasis,freshness_basis:freshnessBasis,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed WIN/PLACE public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
