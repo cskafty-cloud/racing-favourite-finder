@@ -6,7 +6,7 @@ Set-Location $PSScriptRoot
 # Keep credentials outside the extracted repository so they survive ZIP updates,
 # folder renames and fresh downloads. DPAPI binds the ciphertext to this Windows
 # user on this PC; it is never portable to another Windows profile or computer.
-$CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\\BetfairAdapter"
+$CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\BetfairAdapter"
 $CredentialFile = Join-Path $CredentialDirectory "credentials.dpapi"
 $LegacyCredentialFile = Join-Path $PSScriptRoot ".betfair-credentials.dpapi"
 
