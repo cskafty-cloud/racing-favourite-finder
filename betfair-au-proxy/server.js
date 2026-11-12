@@ -42,6 +42,9 @@ async function rpc(method, params) {
     const item = Array.isArray(data) ? data[0] : data;
     if (!response.ok || item?.error || item?.result == null) {
       const detail = item?.error?.data?.APINGException?.errorCode || item?.error?.message || "request failed";
+      if (String(detail).toUpperCase().includes("INVALID_SESSION_INFORMATION")) {
+        throw new Error("Betfair session token rejected (INVALID_SESSION_INFORMATION). The saved Betfair session has expired or been revoked. Obtain a fresh session token through Betfair's official authorised login/API process, then restart the Windows launcher and choose N to replace the saved credentials. Keep the app key and Railway shared token separate; do not send either secret in chat.");
+      }
       throw new Error("Betfair HTTP " + response.status + ": " + detail);
     }
     lastBetfairApiCheck = { status:"accepted", at:new Date().toISOString(), method, error:null };
@@ -333,7 +336,12 @@ const server=http.createServer(async(req,res)=>{
     return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
       credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),
       betfairApiAuthenticated:lastBetfairApiCheck.status==="accepted",
-      authentication:lastBetfairApiCheck.status,lastBetfairApiCheck,
+      authentication:lastBetfairApiCheck.status,
+      reauthenticationRequired:String(lastBetfairApiCheck.error||"").includes("INVALID_SESSION_INFORMATION"),
+      authenticationMessage:String(lastBetfairApiCheck.error||"").includes("INVALID_SESSION_INFORMATION")
+        ? "Betfair rejected the saved session token. Refresh it through Betfair's official authorised login/API process, then replace it in the Windows launcher."
+        : lastBetfairApiCheck.error,
+      lastBetfairApiCheck,
       racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
       racingCacheLoaded:cache.has("races"),
       racingCacheStatus:!cache.has("races")?"not-loaded":(cache.get("races")?.value?.races?.length?"loaded-with-markets":"loaded-empty"),
