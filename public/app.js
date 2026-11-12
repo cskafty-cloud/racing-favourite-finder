@@ -78,10 +78,10 @@ function bookmakerRaceFavourite(runners,book){
 function renderBookmakerFavourite(label,selection,preview){
  if(selection){
   const q=selection.q,runner=selection.runner;
-  return `<div class="rf-fav rf-fav-bookmaker"><strong>${esc(label)} VERIFIED FIXED WIN FAVOURITE</strong>${esc(runner.name||runner.runner_name||"Runner")}${runner.number!=null?" (#"+esc(runner.number)+")":""} · ${Number(q.price).toFixed(2)}<div class="rf-muted">${esc(q.source||label)} · source quote ${esc(fmtTime(q.captured_at))} · ${esc(fmtAge(q.age_seconds))}</div></div>`;
+  return `<div class="rf-fav rf-fav-bookmaker"><strong>${esc(label)} VERIFIED FIXED WIN FAVOURITE</strong>${esc(runner.name||runner.runner_name||"Runner")}${runner.number!=null?" (#"+esc(runner.number)+")":""} · $${Number(q.price).toFixed(2)}<div class="rf-muted">${esc(q.source||label)} · source quote ${esc(fmtTime(q.captured_at))} · ${esc(fmtAge(q.age_seconds))}</div></div>`;
  }
  if(preview){
-  return `<div class="rf-fav rf-fav-unverified"><strong>${esc(label)} FAVOURITE · UNVERIFIED PREVIEW</strong>${esc(preview.runner.name||preview.runner.runner_name||"Runner")} · ${Number(preview.q.price).toFixed(2)}<div class="rf-muted">No fresh, individually timestamped fixed WIN quote is available. This preview is excluded from verified favourites and tips.</div></div>`;
+  return `<div class="rf-fav rf-fav-unverified"><strong>${esc(label)} FAVOURITE · UNVERIFIED PREVIEW</strong>${esc(preview.runner.name||preview.runner.runner_name||"Runner")} · $${Number(preview.q.price).toFixed(2)}<div class="rf-muted">No fresh, individually timestamped fixed WIN quote is available. This preview is excluded from verified favourites and tips.</div></div>`;
  }
  return `<div class="rf-fav rf-fav-unpriced"><strong>${esc(label)} FAVOURITE NOT IDENTIFIED · UNPRICED</strong><div class="rf-muted">No named ${esc(label)} favourite supplied by feed. No verified ${esc(label)} fixed WIN quote is available for this race.</div></div>`;
 }
