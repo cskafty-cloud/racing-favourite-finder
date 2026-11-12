@@ -335,9 +335,13 @@ const server=http.createServer(async(req,res)=>{
       betfairApiAuthenticated:lastBetfairApiCheck.status==="accepted",
       authentication:lastBetfairApiCheck.status,lastBetfairApiCheck,
       racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
-      racingMarketRows:cache.get("races")?.value?.races?.length||0,
+      racingCacheLoaded:cache.has("races"),
+      racingCacheStatus:!cache.has("races")?"not-loaded":(cache.get("races")?.value?.races?.length?"loaded-with-markets":"loaded-empty"),
+      racingMarketRows:cache.get("races")?.value?.races?.length??null,
       sportsCacheAt:cache.get("sports")?.at?new Date(cache.get("sports").at).toISOString():null,
-      sportsMarketRows:cache.get("sports")?.value?.events?.length||0,
+      sportsCacheLoaded:cache.has("sports"),
+      sportsCacheStatus:!cache.has("sports")?"not-loaded":(cache.get("sports")?.value?.events?.length?"loaded-with-markets":"loaded-empty"),
+      sportsMarketRows:cache.get("sports")?.value?.events?.length??null,
       routes:["/api/races","/api/sports"]}));
   }
   if(!PROXY_ACCESS_TOKEN){res.writeHead(503);return res.end(JSON.stringify({error:"BETFAIR_FEED_TOKEN is not configured."}));}
@@ -353,4 +357,19 @@ const server=http.createServer(async(req,res)=>{
     return res.end(JSON.stringify({error:error.message,feedSource:"Betfair AU proxy",races:[],events:[]}));
   }
 });
-server.listen(PORT,"127.0.0.1",()=>console.info("Betfair AU read-only proxy listening on "+PORT));
+server.listen(PORT,"127.0.0.1",()=>{
+  console.info("Betfair AU read-only proxy listening on "+PORT);
+  // Populate both feed caches after startup. The health probe alone only
+  // authenticates listEventTypes; it does not fetch race or sports markets.
+  // Run sequentially to avoid flooding the Australian API connection.
+  setTimeout(async()=>{
+    try{
+      const races=await cached("races",loadRaces);
+      console.info("BETFAIR_AU_STARTUP_RACING_CACHE",JSON.stringify({markets:races.races.length,errors:races.feedErrors.length}));
+    }catch(error){console.warn("BETFAIR_AU_STARTUP_RACING_CACHE_FAILED",error.message);}
+    try{
+      const sports=await cached("sports",loadSports);
+      console.info("BETFAIR_AU_STARTUP_SPORTS_CACHE",JSON.stringify({markets:sports.events.length,pricedMarkets:sports.pricedMarkets,errors:sports.errors.length}));
+    }catch(error){console.warn("BETFAIR_AU_STARTUP_SPORTS_CACHE_FAILED",error.message);}
+  },3000);
+});
