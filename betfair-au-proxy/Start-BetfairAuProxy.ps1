@@ -128,15 +128,62 @@ if ($railwayPresent.Count -gt 0) {
   Save-EncryptedCredentials $values
   Write-Host "Imported Railway Production Betfair variables and saved them encrypted with Windows DPAPI." -ForegroundColor Green
 } elseif (Test-Path -LiteralPath $CredentialFile) {
-  # Start unattended from the last known-good encrypted credentials.
-  # Railway CLI login is not required when using this local DPAPI file.
+  # Offer a deliberate reauthentication path when Betfair has rejected an expired session.
+  # Default to the saved DPAPI credentials so normal daily starts remain one prompt.
   $values = Load-EncryptedCredentials
-  Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
-  $newFeedToken = Get-ClipboardFeedToken
-  if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
-    $values.BETFAIR_FEED_TOKEN = $newFeedToken
-    Save-EncryptedCredentials $values
-    Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+  $credentialChoice = Read-Host "Use saved encrypted credentials? [Y/n]"
+  if ($credentialChoice -match '^(n|no)
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ($env:BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
+  throw "The shared token is invalid. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $values = Read-NewCredentials
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
   }
 } else {
   Write-Host "No saved credential file found. Enter credentials once to create it."
