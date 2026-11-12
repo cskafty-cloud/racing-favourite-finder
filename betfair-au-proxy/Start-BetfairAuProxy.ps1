@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 $RffLauncherVersion = "2026-11-13.15"
 Set-Location $PSScriptRoot
 
+Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
+
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
 $CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\BetfairAdapter"
 $CredentialFile = Join-Path $CredentialDirectory "credentials.dpapi"
