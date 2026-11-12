@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.12"
+$RffLauncherVersion = "2026-11-13.13"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -216,58 +216,48 @@ if ($env:BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
 }
 Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
 
-$tailscaleExe = $null
-$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
-if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
-if (-not $tailscaleExe) {
-  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
-  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
-}
-if ($tailscaleExe) {
-  Write-Host "Starting Tailscale Funnel..."
-  & $tailscaleExe funnel --bg 8080
-  if ($LASTEXITCODE -eq 0) {
-    & $tailscaleExe funnel status
-  } else {
-    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
-  }
-} else {
-  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
-}
-
-Write-Host ""
-Write-Host "Starting adapter. Keep this PowerShell window open."
-Write-Host "Health: http://127.0.0.1:8080/health"
-Write-Host "Protected endpoints: /api/races and /api/sports"
-Write-Host "Saved credential file is encrypted; never upload or share it."
-Write-Host ""
-node server.js
-) {
-    $values = Read-NewCredentials
-  } else {
-    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
-    $newFeedToken = Get-ClipboardFeedToken
-    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
-      $values.BETFAIR_FEED_TOKEN = $newFeedToken
-      Save-EncryptedCredentials $values
-      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+# Prevent duplicate Node adapters from racing for the same port.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $listenerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $listenerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $listenerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "An adapter is already answering its health endpoint." -ForegroundColor Yellow
+    if ($health.ok -eq $true) {
+      Write-Host "Health: OK. No second adapter will be started." -ForegroundColor Green
+    } else {
+      Write-Host "Health endpoint responded, but did not report ok=true. Review its status before restarting." -ForegroundColor Yellow
     }
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
   }
-} else {
-  Write-Host "No saved credential file found. Enter credentials once to create it."
-  $values = Read-NewCredentials
+  if ($owner) {
+    Write-Host "Process: $($owner.Name) | PID: $listenerPid" -ForegroundColor DarkGray
+    if ($owner.Name -ieq "node.exe" -and $owner.CommandLine -match 'server\.js' -and $owner.CommandLine -match 'betfair-au-proxy') {
+      $stopChoice = Read-Host "This appears to be the existing Betfair adapter. Stop PID $listenerPid so the refreshed credentials can be used? [y/N]"
+      if ($stopChoice -match '^(y|yes)$') {
+        Stop-Process -Id $listenerPid -Force
+        Start-Sleep -Seconds 2
+        $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+        if ($stillListening) {
+          throw "Port 8080 is still occupied. No second adapter was started."
+        }
+      } else {
+        Write-Host "Leaving the existing process untouched. Close its original PowerShell window with Ctrl+C, then rerun this launcher." -ForegroundColor Yellow
+        return
+      }
+    } else {
+      Write-Host "The process does not match the expected adapter command. It was not stopped. Close the owning application or free port 8080, then rerun." -ForegroundColor Yellow
+      return
+    }
+  } else {
+    Write-Host "Could not identify the process owning port 8080. Nothing was stopped. Free the port and rerun." -ForegroundColor Yellow
+    return
+  }
 }
-
-$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
-$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
-$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
-$env:PORT = "8080"
-$values = $null
-
-if ($env:BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
-  throw "The shared token is invalid. Adapter was not started."
-}
-Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
 
 $tailscaleExe = $null
 $tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
