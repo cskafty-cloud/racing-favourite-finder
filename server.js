@@ -2765,6 +2765,29 @@ async function loadMoviOddsFinalResults(){
 app.post("/api/history/sync", async (_req,res) => {
   try {
     const history = await readHistory();
+    // Rebuild missed historical pick records from market snapshots captured BEFORE jump.
+    // This permits settlement of genuine recorded selections without inventing picks
+    // from post-race prices or from the result itself.
+    let backfilled = 0;
+    for (const snapshot of history.marketSnapshots || []) {
+      const fav = snapshot.favourite;
+      const startMs = Date.parse(snapshot.startTime || "");
+      const capturedMs = Date.parse(snapshot.capturedAt || "");
+      if (!fav?.name || Number(fav.quoteCount || 0) < 1 || !Number.isFinite(startMs) ||
+          !Number.isFinite(capturedMs) || capturedMs > startMs || startMs < Date.now() - 8*86400000) continue;
+      const matchKey = raceMatchKey({code:snapshot.category,venue:snapshot.venue,race_number:snapshot.raceNumber,start_time:snapshot.startTime});
+      if (history.picks.some(p => p.raceId === snapshot.raceId || (matchKey && p.raceMatchKey === matchKey))) continue;
+      history.picks.push({
+        raceId:snapshot.raceId,raceMatchKey:matchKey,category:snapshot.category,venue:snapshot.venue,
+        raceNumber:snapshot.raceNumber,startTime:snapshot.startTime,runnerName:fav.name,runnerNumber:fav.number,
+        selectedOdds:fav.price,priceSource:fav.priceSource,quoteCount:fav.quoteCount,
+        confidence:fav.signalLabel,signalScore:fav.signalScore,spreadPct:fav.spreadPct,gapPct:fav.gapPct,
+        selectedAt:snapshot.capturedAt,status:"pending",winnerName:null,favouriteWon:null,
+        backfilledFromPreJumpSnapshot:true
+      });
+      backfilled++;
+    }
+    if (backfilled) await saveHistory(history);
     const pending = history.picks.filter(p => p.status === "pending");
     let settled = 0, unmatched = 0, checked = 0, resultSource="MoviOdds";
     if (pending.length) {
@@ -2790,7 +2813,7 @@ app.post("/api/history/sync", async (_req,res) => {
     }
     if (settled) await saveHistory(history);
     res.set("Cache-Control","no-store");
-    return res.json({ok:true,settled,unmatched,checked,resultSource,pending:history.picks.filter(p=>p.status==="pending").length,
+    return res.json({ok:true,settled,unmatched,checked,backfilled,resultSource,pending:history.picks.filter(p=>p.status==="pending").length,
       resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
       note:"MoviOdds /racing/results supplies the settled placings. Only result_final rows are used; interim, abandoned and unmatched races remain pending."});
   } catch (error) {
