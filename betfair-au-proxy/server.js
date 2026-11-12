@@ -25,12 +25,33 @@ let lastBetfairApiCheck = { status:"not-tested", at:null, method:null, error:nul
 async function rpc(method, params) {
   try {
     if (!APP_KEY || !SESSION_TOKEN) throw new Error("Betfair credentials are not configured on this Australian feed service.");
-    const response = await fetch(RPC_URL, {
-      method: "POST",
-      headers: { "Content-Type":"application/json", "X-Application":APP_KEY, "X-Authentication":SESSION_TOKEN, "Accept":"application/json" },
-      body: JSON.stringify([{ jsonrpc:"2.0", method:"SportsAPING/v1.0/"+method, params, id:1 }]),
-      signal: AbortSignal.timeout(20000)
-    });
+    const requestBody = JSON.stringify([{ jsonrpc:"2.0", method:"SportsAPING/v1.0/"+method, params, id:1 }]);
+    let response = null;
+    let networkFailure = null;
+    // Betfair can occasionally stall a connection from residential Australian
+    // networks. Allow a longer response window and retry transient network /
+    // gateway failures, but never retry an explicit authentication rejection.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await fetch(RPC_URL, {
+          method: "POST",
+          headers: { "Content-Type":"application/json", "X-Application":APP_KEY, "X-Authentication":SESSION_TOKEN, "Accept":"application/json", "Connection":"keep-alive" },
+          body: requestBody,
+          signal: AbortSignal.timeout(45000)
+        });
+        if (![502,503,504].includes(response.status) || attempt === 3) break;
+        await response.arrayBuffer().catch(()=>{});
+        response = null;
+      } catch (fetchError) {
+        networkFailure = fetchError;
+        if (attempt === 3) break;
+      }
+      await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    }
+    if (!response) {
+      const cause = networkFailure?.cause?.code || networkFailure?.cause?.message || networkFailure?.code || networkFailure?.message || "unknown network error";
+      throw new Error("Betfair API connection failed after 3 attempts (45-second timeout each): " + String(cause).slice(0,120));
+    }
     const body = await response.text();
     let data;
     try { data = JSON.parse(body); } catch {
@@ -43,7 +64,7 @@ async function rpc(method, params) {
     if (!response.ok || item?.error || item?.result == null) {
       const detail = item?.error?.data?.APINGException?.errorCode || item?.error?.message || "request failed";
       if (String(detail).toUpperCase().includes("INVALID_SESSION_INFORMATION")) {
-        throw new Error("Betfair session token rejected (INVALID_SESSION_INFORMATION). The saved Betfair session has expired or been revoked. Obtain a fresh session token through Betfair's official authorised login/API process, then restart the Windows launcher and choose N to replace the saved credentials. Keep the app key and Railway shared token separate; do not send either secret in chat.");
+        throw new Error("Betfair session token rejected (INVALID_SESSION_INFORMATION). Betfair explicitly rejected the session token. Obtain a fresh session token through Betfair's official authorised login/API process, then restart the Windows launcher and choose N to replace the saved credentials. A timeout or network error is not proof of an expired session. Keep the app key and Railway shared token separate; do not send either secret in chat.");
       }
       throw new Error("Betfair HTTP " + response.status + ": " + detail);
     }
@@ -339,7 +360,7 @@ const server=http.createServer(async(req,res)=>{
       authentication:lastBetfairApiCheck.status,
       reauthenticationRequired:String(lastBetfairApiCheck.error||"").includes("INVALID_SESSION_INFORMATION"),
       authenticationMessage:String(lastBetfairApiCheck.error||"").includes("INVALID_SESSION_INFORMATION")
-        ? "Betfair rejected the saved session token. Refresh it through Betfair's official authorised login/API process, then replace it in the Windows launcher."
+        ? "Betfair explicitly rejected the saved session token. Refresh it through Betfair's official authorised login/API process, then replace it in the Windows launcher."
         : lastBetfairApiCheck.error,
       lastBetfairApiCheck,
       racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
