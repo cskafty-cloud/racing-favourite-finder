@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.10"
+$RffLauncherVersion = "2026-11-13.11"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -24,6 +24,35 @@ function Read-SecretPlain([string]$Prompt) {
   }
 }
 
+function Get-NewBetfairSessionToken([string]$AppKey) {
+  $username = Read-Host "Betfair username"
+  $securePassword = Read-Host "Betfair password (hidden)" -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+  $password = $null
+  try {
+    $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+  }
+  $twoFactor = Read-Host "Betfair one-time 2FA code (leave blank if not required)"
+  if (-not [string]::IsNullOrWhiteSpace($twoFactor)) { $password += $twoFactor }
+  try {
+    $body = "username=$([System.Uri]::EscapeDataString($username))&password=$([System.Uri]::EscapeDataString($password))"
+    $response = Invoke-RestMethod -Method Post -Uri "https://identitysso.betfair.com.au/api/login" -Headers @{ "X-Application" = $AppKey; "Accept" = "application/json" } -ContentType "application/x-www-form-urlencoded" -Body $body -TimeoutSec 30
+    if ($response.status -notin @("SUCCESS", "LIMITED_ACCESS") -or [string]::IsNullOrWhiteSpace([string]$response.token)) {
+      $reason = if ($response.error) { [string]$response.error } else { [string]$response.status }
+      throw "Betfair login was not successful ($reason). Check the account login, 2FA code and any pending Betfair website terms/security prompts."
+    }
+    return [string]$response.token
+  } catch {
+    if ($_.Exception.Message -like "Betfair login was not successful*") { throw }
+    throw "Could not complete the official Betfair Australia API login. Check network access and account requirements; no password or token was displayed. $($_.Exception.Message)"
+  } finally {
+    $password = $null
+    $twoFactor = $null
+    $body = $null
+  }
+}
 function Get-ClipboardFeedToken {
   try {
     $candidate = ([string](Get-Clipboard -Raw -ErrorAction Stop)).Trim()
@@ -72,10 +101,12 @@ function Load-EncryptedCredentials {
 
 function Read-NewCredentials {
   Write-Host ""
-  Write-Host "Enter your Betfair app key and session token. Values are hidden." -ForegroundColor Cyan
+  Write-Host "Enter your Betfair app key. The session will be generated through Betfair official Australian API login." -ForegroundColor Cyan
+  $appKey = Read-SecretPlain "Betfair app key (BETFAIR_APP_KEY)"
+  if ([string]::IsNullOrWhiteSpace($appKey)) { throw "Missing Betfair app key. No credentials were saved." }
   $values = @{
-    BETFAIR_APP_KEY = Read-SecretPlain "Betfair app key (BETFAIR_APP_KEY)"
-    BETFAIR_SESSION_TOKEN = Read-SecretPlain "Betfair session token (BETFAIR_SESSION_TOKEN)"
+    BETFAIR_APP_KEY = $appKey
+    BETFAIR_SESSION_TOKEN = Get-NewBetfairSessionToken $appKey
     BETFAIR_FEED_TOKEN = ""
   }
   $feedToken = Get-ClipboardFeedToken
@@ -133,10 +164,12 @@ if ($railwayPresent.Count -gt 0) {
   $credentialChoice = Read-Host "Use saved encrypted credentials? [Y/n]"
   if ($credentialChoice -match '^(n|no)$') {
     $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
-    Write-Host "Enter the new Betfair app key and session token. The saved shared feed token will be retained." -ForegroundColor Cyan
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
     $values = @{
-      BETFAIR_APP_KEY = Read-SecretPlain "Betfair app key (BETFAIR_APP_KEY)"
-      BETFAIR_SESSION_TOKEN = Read-SecretPlain "New Betfair session token (BETFAIR_SESSION_TOKEN)"
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
       BETFAIR_FEED_TOKEN = $savedFeedToken
     }
     if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
