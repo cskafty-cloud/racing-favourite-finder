@@ -35,6 +35,10 @@ Do not commit `.env`, API keys, session tokens or shared adapter tokens.
 
 The public MoviOdds sources do not require a browser-side API key. Optional provider credentials must remain server-side.
 
+## Memory protection
+
+The server samples Node and cgroup memory every 30 seconds. It begins rebuildable-cache cleanup at 384 MB Node RSS or 600 MB cgroup usage (about 63% of the approximately 954 MB container limit), with a 30-second cleanup cooldown. Under pressure it clears rebuildable sports caches, reduces retained market-signature maps, trims result history in memory and caps the all-sports fixture cache. The persistent `/data` history file is not deleted by pressure cleanup. Railway's historical maximum is a rolling metric and is not reset by application code.
+
 ## Favourite history and persistent storage
 
 The app records favourite snapshots and settles saved selections against final results. It cannot reconstruct selections from before the app began recording them unless historical data is separately obtained and imported.
