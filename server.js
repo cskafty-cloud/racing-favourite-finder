@@ -2836,17 +2836,29 @@ app.listen(PORT,"0.0.0.0",()=>{
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
   setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
-  // Run one bounded adapter probe at boot so the live deployment reports
-  // whether the Australian all-sports adapter (including Soccer) is reachable.
+  // Run one bounded all-sports probe at boot. Prefer the Australian adapter;
+  // if it is not configured, test the already-authorised Betfair session directly.
   if(process.env.BETFAIR_SPORTS_FEED_URL){
     setTimeout(()=>{
       readBetfairSportsAdapter(process.env.BETFAIR_SPORTS_FEED_URL).then(data=>{
         console.info("BETFAIR_SPORTS_STARTUP_TEST",JSON.stringify({
-          status:data.status,markets:data.marketCount||0,soccerEvents:data.soccerEventCount||0,
-          soccerMarkets:data.soccerMarketCount||0,soccerPricedMarkets:data.soccerPricedMarkets||0,
-          pricedMarkets:data.pricedMarkets||0,errors:Array.isArray(data.errors)?data.errors.length:0
+          source:"Australian adapter",status:data.status,markets:data.marketCount||0,
+          soccerEvents:data.soccerEventCount||0,soccerMarkets:data.soccerMarketCount||0,
+          soccerPricedMarkets:data.soccerPricedMarkets||0,pricedMarkets:data.pricedMarkets||0,
+          errors:Array.isArray(data.errors)?data.errors.length:0
         }));
       }).catch(error=>console.warn("BETFAIR_SPORTS_STARTUP_TEST_FAILED",error.message));
     },5000);
+  }else if(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN){
+    setTimeout(()=>{
+      getBetfairSports().then(data=>console.info("BETFAIR_SPORTS_STARTUP_TEST",JSON.stringify({
+        source:"Direct Betfair API",status:data.status,events:data.events.length,
+        sports:data.eventTypes.length,soccerMarkets:data.soccerMarketCount||0,
+        soccerPricedMarkets:data.soccerPricedMarkets||0,pricedMarkets:data.pricedMarkets||0,
+        errors:(data.errors||[]).length
+      }))).catch(error=>console.warn("BETFAIR_SPORTS_STARTUP_TEST_FAILED",error.message));
+    },5000);
+  }else{
+    console.warn("BETFAIR_SPORTS_STARTUP_TEST_SKIPPED No Australian sports adapter URL or Betfair credentials configured.");
   }
 });
