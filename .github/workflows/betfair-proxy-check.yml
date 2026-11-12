@@ -22,6 +22,15 @@ jobs:
           node-version: 22
       - name: Check main application syntax
         run: node --check server.js
+      - name: Check shared market-quality module
+        run: node --check market-quality.js
+      - name: Run data-quality regression tests
+        run: npm test
+      - name: Check browser and desktop JavaScript syntax
+        run: |
+          node --check public/app.js
+          node --check desktop/main.js
+          node --check desktop/create-icon.cjs
       - name: Check Australian proxy syntax
         run: node --check betfair-au-proxy/server.js
       - name: Validate proxy package metadata
