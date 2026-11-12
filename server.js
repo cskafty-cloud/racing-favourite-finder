@@ -1035,31 +1035,30 @@ function resultContainsPickedRunner(pick, result) {
 function findMatchingPick(picks, result) {
   const id = raceId(result);
   const exact = picks.filter(p => p.raceId === id);
-  if (exact.length === 1) return resultContainsPickedRunner(exact[0],result)?exact[0]:null;
-  if (exact.length > 1) return null;
+  const exactRunnerMatches = exact.filter(p => resultContainsPickedRunner(p,result));
+  if (exactRunnerMatches.length === 1) return exactRunnerMatches[0];
+  if (exactRunnerMatches.length > 1) return null;
 
-  // First use the strict canonical venue/category/race/day identity.
+  // First use the strict canonical venue/category/race/day identity. Recompute
+  // the key for legacy picks whose stored raceMatchKey is missing.
   const key = raceMatchKey(result);
   if (key) {
-    const strictMatches = picks.filter(p => p.raceMatchKey === key ||
-      (!p.raceMatchKey && categoryOf(result) === p.category &&
-        normalizeName(p.venue) === normalizeName(venueOf(result)) &&
-        String(p.raceNumber) === String(raceNumberOf(result)) &&
-        localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
-    if (strictMatches.length === 1) return resultContainsPickedRunner(strictMatches[0],result)?strictMatches[0]:null;
-    if (strictMatches.length > 1) return null;
+    const strictMatches = picks.filter(p => p.raceMatchKey === key || raceMatchKey(p) === key);
+    const strictRunnerMatches = strictMatches.filter(p => resultContainsPickedRunner(p,result));
+    if (strictRunnerMatches.length === 1) return strictRunnerMatches[0];
+    if (strictRunnerMatches.length > 1) return null;
   }
 
-  // Safe fallback for changed IDs or venue spelling: category + race number
-  // + Brisbane-local date AND a runner identity present in the result.
-  // Ambiguous matches remain pending; they are never force-settled.
+  // Safe fallback for changed IDs or venue spelling: canonical category +
+  // race number + Brisbane-local date AND runner name/number present in result.
+  // Never settle a record based on odds or a nearby race alone.
   const day = localRaceDate(startTimeOf(result));
   const number = raceNumberOf(result);
   if (!day || number == null) return null;
   const identityMatches = picks.filter(p =>
-    p.category === categoryOf(result) &&
-    String(p.raceNumber) === String(number) &&
-    localRaceDate(p.startTime) === day &&
+    categoryOf(p) === categoryOf(result) &&
+    String(raceNumberOf(p)) === String(number) &&
+    localRaceDate(startTimeOf(p)) === day &&
     resultContainsPickedRunner(p, result)
   );
   return identityMatches.length === 1 ? identityMatches[0] : null;
@@ -3207,7 +3206,14 @@ app.post("/api/history/sync", async (_req,res) => {
       finalPicks:finalPicks.length,wins,losses,decided:wins+losses,
       strikeRate:wins+losses?+(100*wins/(wins+losses)).toFixed(1):null,
       unknownFinal:finalPicks.length-decidedPicks.length,
-      sampleSettlements:finalPicks.slice(-5).map(p=>({venue:p.venue,raceNumber:p.raceNumber,runner:p.runnerName,winner:p.winnerName,favouriteWon:p.favouriteWon}))
+      sampleSettlements:finalPicks.slice(-5).map(p=>({venue:p.venue,raceNumber:p.raceNumber,runner:p.runnerName,winner:p.winnerName,favouriteWon:p.favouriteWon})),
+      unmatchedSamples:pending.filter(p=>!matched.has(p)).slice(0,12).map(p=>{
+        const day=localRaceDate(startTimeOf(p)),number=raceNumberOf(p);
+        const candidates=results.filter(r=>categoryOf(r)===categoryOf(p)&&String(raceNumberOf(r))===String(number)&&localRaceDate(startTimeOf(r))===day).slice(0,3);
+        return {pick:{raceId:p.raceId,category:p.category,venue:p.venue,raceNumber:p.raceNumber,startTime:p.startTime,runnerName:p.runnerName,runnerNumber:p.runnerNumber},
+          sameDayRaceCandidates:candidates.map(r=>({raceId:raceId(r),code:r.code,venue:venueOf(r),raceNumber:raceNumberOf(r),
+            startTime:startTimeOf(r),runnerPresent:resultContainsPickedRunner(p,r),runnerNames:(r.runners||[]).slice(0,4).map(x=>x.name||x.runner_name||x.horse_name)}))};
+      })
     }));
     res.set("Cache-Control","no-store");
     return res.json({ok:true,settled,unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,pendingOutsideResultsLookback,
