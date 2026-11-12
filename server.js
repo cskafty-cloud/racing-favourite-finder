@@ -892,11 +892,12 @@ async function loadPublicDemoSport(sport) {
         if(!Number.isFinite(price)||price<=1)continue;
         const groupStatus=match.group_status?.[String(q.group_id)]||match.group_status?.[q.group_id]||{};
         if(q.suspended===true||groupStatus.suspended===true)continue;
-        // MoviOdds supplies a timestamp on each quote. Use that rather than the
-        // market's last poll time: polling a market does not prove its price changed.
+        // ts is when the price last MOVED; polled_at is when MoviOdds last
+        // re-confirmed that market. A stable price can have an old ts while
+        // remaining current, so freshness must prefer the market read time.
         const quoteUpdatedAt=moviTimestamp(q.ts??q.timestamp??q.last_update??q.updated_at);
         const polledAt=moviTimestamp(groupStatus.polled_at||match.polled_at);
-        const ageStamp=quoteUpdatedAt||polledAt;
+        const ageStamp=polledAt||quoteUpdatedAt;
         const quoteAge=ageStamp?Math.max(0,Math.floor((Date.now()-Date.parse(ageStamp))/1000)):
           (q.age_seconds??q.quote_age_seconds??null);
         const quoteStale=groupStatus.stale===true||(quoteAge!=null&&Number(quoteAge)>=180);
@@ -906,10 +907,11 @@ async function loadPublicDemoSport(sport) {
           markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds Bet365 feed · quote-level timestamp"});
         const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
         if(book.age_seconds==null||quoteAge!=null&&quoteAge>book.age_seconds)book.age_seconds=quoteAge;
-        // Keep the timestamp and freshness on each individual selection.
+        // Keep both times: last price movement and latest provider confirmation.
         const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-        const outcome={name:String(name),price,last_update:quoteUpdatedAt,
-          age_seconds:quoteAge,observed_at:new Date().toISOString(),stale:quoteStale};
+        const outcome={name:String(name),price,last_update:polledAt||quoteUpdatedAt,
+          price_changed_at:quoteUpdatedAt,polled_at:polledAt,
+          age_seconds:quoteAge,observed_at:polledAt||null,stale:quoteStale};
         if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
       }
       const eventStart=match.kickoff_utc||match.start_time||match.commence_time||null;
