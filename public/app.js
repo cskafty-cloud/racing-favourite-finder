@@ -158,7 +158,7 @@ function renderBestTips(list){
   .filter(x=>x.fav?.status==="verified"&&Number(x.fav.signalScore||0)>=40)
   .sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)).slice(0,10);
  const raceHtml=verified.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · score '+esc(x.fav.signalScore)+'</span></div>').join("");
- if($("bestTipsList"))$("bestTipsList").innerHTML=raceHtml||'<div class="rf-empty">No verified bookmaker favourites currently meet the ranking threshold. Estimates and Exchange prices are excluded.</div>';
+ if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">VERIFIED RANKING FILTER · Estimated, indicative, projected, modelled, consensus, synthetic and Exchange prices are excluded from bookmaker top tips.</div>'+(raceHtml||'<div class="rf-empty">No verified bookmaker favourites currently meet the ranking threshold. No estimated prices are substituted.</div>');
 }
 
 async function loadRaces(){
