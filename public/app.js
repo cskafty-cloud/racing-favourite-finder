@@ -72,16 +72,16 @@ function sourceDetails(q){
   }).join("");
  }
 function bookmakerRaceFavourite(runners,book){
- const rows=(runners||[]).flatMap(runner=>auditRows(runner).filter(q=>q.bookmaker_key===book&&q.market==="WIN"&&q.exchange!==true&&q.status==="verified"&&q.captured_at&&Number.isFinite(Number(q.age_seconds))&&Number(q.age_seconds)>=0&&Number(q.age_seconds)<180&&Number(q.price)>1).map(q=>({runner,q})));
+ const rows=(runners||[]).filter(runner=>!runner.scratched&&!runner.suspended&&!/scratched|removed|suspended/i.test(String(runner.status||""))).flatMap(runner=>auditRows(runner).filter(q=>q.bookmaker_key===book&&q.market==="WIN"&&q.exchange!==true&&q.status==="verified"&&q.captured_at&&Number.isFinite(Number(q.age_seconds))&&Number(q.age_seconds)>=0&&Number(q.age_seconds)<180&&Number(q.price)>1).map(q=>({runner,q})));
  return rows.sort((a,b)=>Number(a.q.price)-Number(b.q.price))[0]||null;
 }
 function renderBookmakerFavourite(label,selection,preview){
  if(selection){
   const q=selection.q,runner=selection.runner;
-  return `<div class="rf-fav rf-fav-bookmaker"><strong>${esc(label)} VERIFIED FIXED WIN FAVOURITE</strong>${esc(runner.name||runner.runner_name||"Runner")}${runner.number!=null?" (#"+esc(runner.number)+")":""} · ${Number(q.price).toFixed(2)}<div class="rf-muted">${esc(q.source||label)} · source quote ${esc(fmtTime(q.captured_at))} · ${esc(fmtAge(q.age_seconds))}</div></div>`;
+  return `<div class="rf-fav rf-fav-bookmaker"><strong>${esc(label)} VERIFIED FIXED WIN FAVOURITE</strong>${esc(runner.name||runner.runner_name||"Runner")}${runner.number!=null?" (#"+esc(runner.number)+")":""} · ${$Number(q.price).toFixed(2)}<div class="rf-muted">${esc(q.source||label)} · source quote ${esc(fmtTime(q.captured_at))} · ${esc(fmtAge(q.age_seconds))}</div></div>`;
  }
  if(preview){
-  return `<div class="rf-fav rf-fav-unverified"><strong>${esc(label)} FAVOURITE · UNVERIFIED PREVIEW</strong>${esc(preview.runner.name||preview.runner.runner_name||"Runner")} · ${Number(preview.q.price).toFixed(2)}<div class="rf-muted">No fresh, individually timestamped fixed WIN quote is available. This preview is excluded from verified favourites and tips.</div></div>`;
+  return `<div class="rf-fav rf-fav-unverified"><strong>${esc(label)} FAVOURITE · UNVERIFIED PREVIEW</strong>${esc(preview.runner.name||preview.runner.runner_name||"Runner")} · ${$Number(preview.q.price).toFixed(2)}<div class="rf-muted">No fresh, individually timestamped fixed WIN quote is available. This preview is excluded from verified favourites and tips.</div></div>`;
  }
  return `<div class="rf-fav rf-fav-unpriced"><strong>${esc(label)} FAVOURITE NOT IDENTIFIED · UNPRICED</strong><div class="rf-muted">No named ${esc(label)} favourite supplied by feed. No verified ${esc(label)} fixed WIN quote is available for this race.</div></div>`;
 }
@@ -101,7 +101,7 @@ function renderRace(r){
   const favName=fav.name?esc(fav.name)+(fav.number!=null?" (#"+esc(fav.number)+")":""):"No named favourite supplied by feed";
   const favClass=fav.status==="verified"?"verified":fav.status==="unverified"?"unverified":"";
   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(r.venue||r.track||"Race meeting")+' · R'+esc(r.race_number??"?")+'</div><div class="rf-muted">'+esc(String(r.category||r.code||"Racing").toUpperCase())+' · '+esc(fmtTime(r.start_time||r.commence_time))+' · '+esc(r.status||"Scheduled")+'</div></div><span class="rf-muted">'+runners.length+' active runners</span></div>'+
-   '<div class="rf-fav '+(fav.status==="unpriced"?"rf-fav-unpriced":fav.status==="unverified"?"rf-fav-unverified":sportsbetFavourite?"rf-fav-sportsbet":"")+'"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
+   '<div class="rf-fav '+(fav.status==="unpriced"?"rf-fav-unpriced":fav.status==="unverified"?"rf-fav-unverified":"")+'"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
    (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">'+(fav.name?"No verified fixed WIN quote is available for this favourite.":"No named favourite supplied by feed. No verified fixed WIN quote is available for this favourite.")+'</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+renderBookmakerFavourite("SPORTSBET",sportsbetFavourite,sportsbetPreview)+renderBookmakerFavourite("BET365",bet365Favourite,bet365Preview)+
    (exchangeFav?'<div class="rf-fav rf-exchange-fav"><strong>BETFAIR EXCHANGE MARKET FAVOURITE · WIN BACK</strong>'+esc(exchangeFav.runner.name||"Runner")+' · $'+Number(exchangeFav.q.price).toFixed(2)+'<div class="rf-muted">Actual available Exchange BACK price · delayed up to '+esc(exchangeFav.q.source_delay_max_seconds||180)+'s · source publish time '+(exchangeFav.q.captured_at?esc(fmtTime(exchangeFav.q.captured_at)):"not supplied")+' · not a fixed bookmaker price.</div></div>':'')+
    (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
