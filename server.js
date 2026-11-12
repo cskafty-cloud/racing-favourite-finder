@@ -1916,7 +1916,7 @@ async function getGlobalRacesUncached() {
     try {
       const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
-      try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair adapter returned invalid JSON (HTTP "+response.status+").");}
+      try{data=JSON.parse(body);}catch{const contentType=response.headers.get("content-type")||"unknown content type";const excerpt=String(body||"").replace(/\s+/g," ").slice(0,180);throw new Error("Australian Betfair adapter returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:"."));}
       if(!response.ok)throw new Error(data.error||"Australian Betfair adapter HTTP "+response.status);
       betfairSupplementalRows=normalizeBetfairAdapterRaces(data);
       betfairFeedRetryAt=0;
