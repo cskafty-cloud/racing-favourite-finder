@@ -37,12 +37,12 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: desktop-v1.0.2
-          name: Racing Favourite Finder Desktop v1.0.2
+          tag_name: desktop-v1.0.${{ github.run_number }}
+          name: Racing Favourite Finder Desktop v1.0.${{ github.run_number }}
           body: |
             Windows portable desktop build for Racing Favourite Finder.
-            Includes the patched Electron, Electron Builder and Sharp dependency versions.
-            Download CSKAFTY.exe and run it on Windows.
+            Built from the triggering main-branch commit after the regression and syntax checks.
+            Download CSKAFTY.exe and run it on Windows. This release tag is unique to this workflow run.
           files: release/CSKAFTY.exe
           draft: false
           prerelease: false
