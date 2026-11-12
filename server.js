@@ -500,7 +500,7 @@ async function demoRacingFeed() {
 }
 
 const publicDemoCache = new Map();
-const moviOddsStreamState={status:"starting",connectedAt:null,lastMessageAt:null,lastError:null,reconnects:0};
+const moviOddsStreamState={status:"starting",connectedAt:null,lastMessageAt:null,lastError:null,reconnects:0,messages:0,snapshots:0,deltas:0,quotesReceived:0,fixtureCount:0,cachedQuotes:0,lastMessageType:null};
 let moviOddsStreamSocket=null,moviOddsStreamRetryTimer=null,moviOddsStreamStableTimer=null,moviOddsStreamRetryMs=15000;
 function moviWsQuoteKey(q){
  return [q?.group_id??"",q?.market_id??"",q?.sel_id??""].map(String).join("|");
@@ -512,6 +512,10 @@ function applyMoviOddsStreamMessage(message){
  if(!message||typeof message!=="object")return;
  const type=String(message.type||"");
  const items=moviOddsAllSportsCache.items;
+ moviOddsStreamState.messages++;
+ moviOddsStreamState.lastMessageType=type;
+ if(type==="snapshot"){moviOddsStreamState.snapshots++;moviOddsStreamState.quotesReceived+=(Array.isArray(message.quotes)?message.quotes.length:0);}
+ else if(type==="delta"){moviOddsStreamState.deltas++;moviOddsStreamState.quotesReceived+=(Array.isArray(message.quotes)?message.quotes.length:0);}
  const fixture=String(message.fixture||"");
  if(type==="snapshot"||type==="delta"||type==="remove"||type==="status"){
   if(!fixture)return;
@@ -571,6 +575,8 @@ function applyMoviOddsStreamMessage(message){
   // Keep the short-lived rendered cache warm during quote bursts; entries expire after 85 seconds.
  }
  moviOddsStreamState.lastMessageAt=new Date().toISOString();
+ moviOddsStreamState.fixtureCount=items.length;
+ moviOddsStreamState.cachedQuotes=items.reduce((total,item)=>total+(Array.isArray(item.quotes)?item.quotes.length:0),0);
 }
 function startMoviOddsStream(){
  if(typeof WebSocket!=="function"){
@@ -3509,6 +3515,20 @@ function monitorAndTrimMemory() {
       resultsSports: bet365ResultsCache.size,
       liveFixtures: moviOddsAllSportsCache.items.length,
       settledRows: moviOddsResultsCache.rows.length
+    },
+    sportsStream: {
+      status: moviOddsStreamState.status,
+      connectedAt: moviOddsStreamState.connectedAt,
+      lastMessageAt: moviOddsStreamState.lastMessageAt,
+      lastMessageType: moviOddsStreamState.lastMessageType,
+      messages: moviOddsStreamState.messages,
+      snapshots: moviOddsStreamState.snapshots,
+      deltas: moviOddsStreamState.deltas,
+      quotesReceived: moviOddsStreamState.quotesReceived,
+      fixtureCount: moviOddsStreamState.fixtureCount,
+      cachedQuotes: moviOddsStreamState.cachedQuotes,
+      reconnects: moviOddsStreamState.reconnects,
+      lastError: moviOddsStreamState.lastError
     },
     pressureCleanup: cleanup
   }));
