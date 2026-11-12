@@ -1818,18 +1818,10 @@ async function loadRapidRacing() {
   return rapidRacingCache;
 }
 async function loadSupplementalAustralianRaces() {
-  // Try the already-configured RapidOddsAPI key against its licensed Australian racing endpoints.
-  // If this key lacks Racing/Pro/Elite entitlement, surface the provider HTTP error and retain
-  // MoviOdds Bet365 separately. Never relabel Bet365 or a public preview as Sportsbet.
+  // Never republish personal-use preview data or scrape protected bookmaker pages.
+  // Only use the separately configured Krok licensed feed when its quota is active.
   const jobs=[
-    ["PuntersEdge public racing demo",()=>demoRacingFeed()],
-    // The public bookmaker preview is a separate Sportsbet-labelled source.
-    // Merge it into the main race list so its horse/greyhound runner quotes
-    // are actually available to the dashboard, not just background diagnostics.
-    // Use the no-key public bookmaker preview only. Sportsbet's HTML pages
-    // return HTTP 403 from Railway; do not repeatedly request blocked pages.
-    ["Sportsbet public bookmaker preview",()=>loadSportsbetPublicRaceDemos()],
-    ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY&&!KROK_RACING_QUOTA_PAUSED?getKrokRaces():Promise.resolve({races:[],feedErrors:[],feedWarnings:KROK_RACING_QUOTA_PAUSED?[{status:"monthly-quota-paused",message:"Paused until 1 December 2026."}]:[]})]
+    ["Krok Odds licensed racing feed",()=>KROKODDS_API_KEY&&!KROK_RACING_QUOTA_PAUSED?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
   const races=[],errors=[];
@@ -2334,12 +2326,9 @@ async function getGlobalRacesUncached() {
       failures.push({feed:"Krok Odds",message:error.message});
     }
   }
-  // Combine the public multi-bookmaker teaser with an independent Bet365-only racing board.
-  let publicRaceRows=[];
-  try {
-    publicRaceRows=await demoRacingFeed();
-    if(!publicRaceRows.length) failures.push({feed:"PuntersEdge public demo",message:"No races returned at this refresh."});
-  } catch(error) { failures.push({feed:"PuntersEdge public demo",message:error.message}); }
+  // Public racing previews are not republished without explicit redistribution
+  // permission. The public racing board uses MoviOdds, plus authorised feeds only.
+  const publicRaceRows=[];
   try {
     // Request each Australian code separately: the combined public board's
     // Keep a larger per-code window so busy thoroughbred cards do not crowd out later meetings.
@@ -2486,7 +2475,7 @@ async function getGlobalRacesUncached() {
       return {races:combined,
         scheduleFetchedAt:payload.server_time||new Date(demoRacingCache.at||Date.now()).toISOString(),
         oddsFetchedAt:new Date().toISOString(),
-        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"Bet365 fixed-win MoviOdds racing board + public multi-bookmaker previews",scope:"Australia",
+        horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"MoviOdds Bet365 fixed WIN/PLACE racing board + Betfair Exchange delayed markets",scope:"Australia",
         note:"Australian horse, greyhound and harness cards are merged across available public and configured feeds. Public bookmaker prices keep their original source labels. Coverage depends on each provider's returned meetings and is not a guarantee of every national race; missing prices are not estimated."};
     }
     failures.push({feed:"MoviOdds public Bet365 preview",message:"No priced Australian races returned."});
@@ -2497,7 +2486,7 @@ async function getGlobalRacesUncached() {
     const supplemental=await loadSupplementalAustralianRaces();
     const combined=dedupeRaces([...publicRaceRows,...supplemental.races,...betfairSupplementalRows]);
     return {races:combined,scheduleFetchedAt:new Date(demoRacingCache.at).toISOString(),oddsFetchedAt:new Date(demoRacingCache.at).toISOString(),
-      horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"PuntersEdge public racing teaser + MoviOdds + Krok (where configured)",scope:"Australia",
+      horizonHours:24,feedErrors:failures.concat(supplemental.errors),feedSource:"MoviOdds Bet365 racing board + authorised Krok feed (when available)",scope:"Australia",
       note:"Australian horse, greyhound and harness races are combined from available public and configured sources. Coverage varies by feed and is not guaranteed to include every national race; missing prices are not estimated."};
   }
   if(betfairSupplementalRows.length) {
