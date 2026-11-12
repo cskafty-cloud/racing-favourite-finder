@@ -1230,20 +1230,9 @@ let providerErrors = { schedule: null, odds: null };
 // HTTP 402 means the provider account has exhausted its plan credits; never auto-upgrade.
 const providerRetryAt = { schedule: 0, odds: 0 };
 function providerRetryDelay(error) {
-  const message=String(error||"");
-  const retry=message.match(/retry-after=([^\]\s]+)/i);
-  if(retry){
-    const seconds=Number(retry[1]),date=Date.parse(retry[1]);
-    if(Number.isFinite(seconds)&&seconds>=0)return Math.max(1000,seconds*1000);
-    if(Number.isFinite(date))return Math.max(1000,date-Date.now());
-  }
-  if(/(?:PuntersEdge[^\n]*|Racing provider) 402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message)){
-    const now=new Date();
-    const nextReset=Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1,0,1,0);
-    return Math.max(60*1000,nextReset-Date.now());
-  }
-  if(/(?:429|rate.?limit)/i.test(message))return 60*60*1000;
-  return 60*1000;
+  // Share one reset parser with Krok Odds so Retry-After and provider reset
+  // headers are honoured consistently; 429s use bounded exponential backoff.
+  return Math.max(1000, providerRetryTimestamp(error, Date.now()) - Date.now());
 }
 // RapidOddsAPI is the single source of truth for Australian and NZ racing.
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
@@ -2244,7 +2233,18 @@ app.get("/api/feed-status",(_req,res)=>{
     byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,{...(racingFeedHealth.byCode?.[code]||{races:0,live:0}),status:feedHealthStatus(racingFeedHealth.fetchedAt,racingFeedHealth.errors||[],racingFeedHealth.ok),ageSeconds:racingAge}]))};
   const sports=Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,{...value,status:value.status||feedHealthStatus(value.fetchedAt,value.errors||[],value.ok),qualityStatus:(value.errors||[]).length?"partial":"good",ageSeconds:value.fetchedAt?Math.round((Date.now()-Date.parse(value.fetchedAt))/1000):null}]));
   const liveSports={...liveSportsFeedHealth,status:feedHealthStatus(liveSportsFeedHealth.fetchedAt,liveSportsFeedHealth.errors||[],liveSportsFeedHealth.ok),qualityStatus:(liveSportsFeedHealth.errors||[]).length?"partial":"good",ageSeconds:liveSportsFeedHealth.fetchedAt?Math.round((Date.now()-Date.parse(liveSportsFeedHealth.fetchedAt))/1000):null};
-  res.set("Cache-Control","no-store").json({racing,sports,liveSports,checkedAt:new Date().toISOString()});
+  const now=Date.now();
+  const retryInfo=(at,error)=>({status:at&&now<at?(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(String(error||""))?"monthly-quota-exhausted":"rate-limited"):"available-or-retry-due",
+    retryAt:at&&now<at?new Date(at).toISOString():null,error:error||null});
+  const providerRecovery={
+    puntersEdge:{schedule:retryInfo(providerRetryAt.schedule,providerErrors.schedule),odds:retryInfo(providerRetryAt.odds,providerErrors.odds)},
+    krokOdds:retryInfo(krokRetryAt,krokRetryReason),
+    betfairRacing:{status:betfairRetryAt&&now<betfairRetryAt?"circuit-open":"probe-eligible",
+      retryAt:betfairRetryAt&&now<betfairRetryAt?new Date(betfairRetryAt).toISOString():null,error:betfairRacingCache.error||null},
+    betfairSportsAdapter:{status:betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?"backoff":"probe-eligible",
+      retryAt:betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?new Date(betfairSportsAdapterRetryAt).toISOString():null,error:betfairSportsAdapterLastError||null}
+  };
+  res.set("Cache-Control","no-store").json({racing,sports,liveSports,providerRecovery,checkedAt:new Date().toISOString()});
 });
 app.get("/api/races", async (_req, res) => {
   try {
