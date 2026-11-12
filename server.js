@@ -600,17 +600,21 @@ function startMoviOddsStream(){
    if(moviOddsStreamSocket===socket)moviOddsStreamSocket=null;
    moviOddsStreamState.status="disconnected";moviOddsStreamState.reconnects++;
    moviOddsStreamState.lastError="WebSocket closed ("+event.code+")";
-   const delay=moviOddsStreamRetryMs;
-   moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
-   if(moviOddsStreamRetryTimer)clearTimeout(moviOddsStreamRetryTimer);
-   moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
-   console.warn("MOVIODDS_WEBSOCKET_RECONNECT",JSON.stringify({closeCode:event.code,retryInMs:delay}));
+   if(!gracefulShutdownStarted){
+    const delay=moviOddsStreamRetryMs;
+    moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
+    if(moviOddsStreamRetryTimer)clearTimeout(moviOddsStreamRetryTimer);
+    moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+    console.warn("MOVIODDS_WEBSOCKET_RECONNECT",JSON.stringify({closeCode:event.code,retryInMs:delay}));
+   }
   });
  }catch(error){
   moviOddsStreamState.status="disconnected";
   moviOddsStreamState.lastError=String(error.message||error).slice(0,180);
-  const delay=moviOddsStreamRetryMs;moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
-  moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+  if(!gracefulShutdownStarted){
+   const delay=moviOddsStreamRetryMs;moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
+   moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+  }
  }
 }
 
@@ -3447,13 +3451,14 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
  */
 // Sample actual Node memory (RSS includes native buffers, TLS and WebSocket allocations).
 // If RSS approaches the 1 GB container ceiling, discard rebuildable caches before Railway OOM-kills the process.
-const MEMORY_SOFT_LIMIT_BYTES = 700 * 1024 * 1024;
+const MEMORY_SOFT_LIMIT_BYTES = 512 * 1024 * 1024;
 let lastMemoryPressureCleanupAt = 0;
+let peakRssMB = 0;
 function monitorAndTrimMemory() {
   const before = process.memoryUsage();
   const pressure = before.rss >= MEMORY_SOFT_LIMIT_BYTES;
   let cleanup = null;
-  if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 180000) {
+  if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 60000) {
     lastMemoryPressureCleanupAt = Date.now();
     const cacheCounts = {
       publicSports: publicDemoCache.size,
@@ -3473,8 +3478,11 @@ function monitorAndTrimMemory() {
     cleanup = { cacheCounts, liveFixturesAfter: moviOddsAllSportsCache.items.length };
   }
   const after = process.memoryUsage();
+  const rssMB = Math.round(after.rss / 1048576);
+  peakRssMB = Math.max(peakRssMB, rssMB);
   console.info("RACING_MEMORY_SAMPLE", JSON.stringify({
-    rssMB: Math.round(after.rss / 1048576),
+    rssMB,
+    peakRssMB,
     heapUsedMB: Math.round(after.heapUsed / 1048576),
     heapTotalMB: Math.round(after.heapTotal / 1048576),
     externalMB: Math.round(after.external / 1048576),
@@ -3502,6 +3510,11 @@ function beginGracefulShutdown(signal) {
   clearTimeout(moviResultsStartupTimer);
   clearTimeout(moviStreamStartupTimer);
   clearInterval(backgroundRacingRefreshTimer);
+  if(moviOddsStreamRetryTimer){clearTimeout(moviOddsStreamRetryTimer);moviOddsStreamRetryTimer=null;}
+  if(moviOddsStreamSocket){
+    try{moviOddsStreamSocket.close(1001,"Server shutting down");}catch{}
+    moviOddsStreamSocket=null;
+  }
   const forceTimer = setTimeout(() => {
     console.error("RACING_GRACEFUL_SHUTDOWN_TIMEOUT", JSON.stringify({ signal }));
     if (typeof httpServer.closeAllConnections === "function") httpServer.closeAllConnections();
