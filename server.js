@@ -3471,67 +3471,124 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
  * before exiting. The attached /data volume still prevents overlapping deploys;
  * this handler protects in-flight requests and history writes, not zero downtime.
  */
-// Sample actual Node memory (RSS includes native buffers, TLS and WebSocket allocations).
-// If RSS approaches the 1 GB container ceiling, discard rebuildable caches before Railway OOM-kills the process.
+// Sample both Node RSS and the Linux cgroup that Railway actually limits.
+// Railway's historical service metric can include older deployment samples; cgroup
+// current/peak values let us distinguish a real container spike from a dashboard
+// aggregate. Trim rebuildable caches before approaching the 1 GB container limit.
 const MEMORY_SOFT_LIMIT_BYTES = 512 * 1024 * 1024;
+const CGROUP_MEMORY_SOFT_LIMIT_BYTES = 700 * 1024 * 1024;
 let lastMemoryPressureCleanupAt = 0;
 let peakRssMB = 0;
-function monitorAndTrimMemory() {
-  const before = process.memoryUsage();
-  const pressure = before.rss >= MEMORY_SOFT_LIMIT_BYTES;
-  let cleanup = null;
-  if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 60000) {
-    lastMemoryPressureCleanupAt = Date.now();
-    const cacheCounts = {
-      publicSports: publicDemoCache.size,
-      oddsSports: oddsDataSportCache.size,
-      resultsSports: bet365ResultsCache.size,
-      liveFixtures: moviOddsAllSportsCache.items.length,
-      settledRows: moviOddsResultsCache.rows.length
-    };
-    publicDemoCache.clear();
-    oddsDataSportCache.clear();
-    bet365ResultsCache.clear();
-    if (moviOddsResultsCache.rows.length > 350) {
-      moviOddsResultsCache = { ...moviOddsResultsCache, rows: moviOddsResultsCache.rows.slice(-350) };
-    }
-    trimMoviOddsFixtures(moviOddsAllSportsCache.items, { limit: 450, staleMs: 3 * 60 * 60 * 1000 });
-    if (typeof global.gc === "function") global.gc();
-    cleanup = { cacheCounts, liveFixturesAfter: moviOddsAllSportsCache.items.length };
+let memorySampleInFlight = false;
+
+async function readCgroupMemorySnapshot() {
+  async function read(file) {
+    try { return String(await fs.readFile(file, "utf8")).trim(); }
+    catch { return null; }
   }
-  const after = process.memoryUsage();
-  const rssMB = Math.round(after.rss / 1048576);
-  peakRssMB = Math.max(peakRssMB, rssMB);
-  console.info("RACING_MEMORY_SAMPLE", JSON.stringify({
-    rssMB,
-    peakRssMB,
-    heapUsedMB: Math.round(after.heapUsed / 1048576),
-    heapTotalMB: Math.round(after.heapTotal / 1048576),
-    externalMB: Math.round(after.external / 1048576),
-    arrayBuffersMB: Math.round(after.arrayBuffers / 1048576),
-    cacheSizes: {
-      publicSports: publicDemoCache.size,
-      oddsSports: oddsDataSportCache.size,
-      resultsSports: bet365ResultsCache.size,
-      liveFixtures: moviOddsAllSportsCache.items.length,
-      settledRows: moviOddsResultsCache.rows.length
-    },
-    sportsStream: {
-      status: moviOddsStreamState.status,
-      connectedAt: moviOddsStreamState.connectedAt,
-      lastMessageAt: moviOddsStreamState.lastMessageAt,
-      lastMessageType: moviOddsStreamState.lastMessageType,
-      messages: moviOddsStreamState.messages,
-      snapshots: moviOddsStreamState.snapshots,
-      deltas: moviOddsStreamState.deltas,
-      quotesReceived: moviOddsStreamState.quotesReceived,
-      fixtureCount: moviOddsStreamState.fixtureCount,
-      cachedQuotes: moviOddsStreamState.cachedQuotes,
-      reconnects: moviOddsStreamState.reconnects,
-      lastError: moviOddsStreamState.lastError
-    },
-    pressureCleanup: cleanup
-  }));
+  const [v2Current,v2Max,v2Peak,v2Stat,v1Current,v1Limit,v1Peak] = await Promise.all([
+    read("/sys/fs/cgroup/memory.current"),
+    read("/sys/fs/cgroup/memory.max"),
+    read("/sys/fs/cgroup/memory.peak"),
+    read("/sys/fs/cgroup/memory.stat"),
+    read("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    read("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+    read("/sys/fs/cgroup/memory/memory.max_usage_in_bytes")
+  ]);
+  const number = value => {
+    if (value == null || value === "max") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 && parsed < 1e18 ? parsed : null;
+  };
+  const v2 = number(v2Current) != null;
+  const stat = {};
+  for (const line of String(v2Stat || "").split("\n")) {
+    const match = line.trim().match(/^([a-z_]+)\\s+(\\d+)$/i);
+    if (match) stat[match[1]] = Number(match[2]);
+  }
+  const currentBytes = number(v2 ? v2Current : v1Current);
+  const limitBytes = number(v2 ? v2Max : v1Limit);
+  const peakBytes = number(v2 ? v2Peak : v1Peak);
+  const mb = value => value == null ? null : Math.round(value / 1048576);
+  return {
+    version: v2 ? 2 : (currentBytes != null ? 1 : null),
+    currentMB: mb(currentBytes),
+    limitMB: mb(limitBytes),
+    peakMB: mb(peakBytes),
+    anonMB: mb(stat.anon),
+    fileMB: mb(stat.file),
+    slabMB: mb(stat.slab),
+    available: currentBytes != null
+  };
+}
+
+async function monitorAndTrimMemory() {
+  if (memorySampleInFlight) return;
+  memorySampleInFlight = true;
+  try {
+    const cgroup = await readCgroupMemorySnapshot();
+    const before = process.memoryUsage();
+    const pressure = before.rss >= MEMORY_SOFT_LIMIT_BYTES ||
+      (cgroup.currentMB != null && cgroup.currentMB * 1048576 >= CGROUP_MEMORY_SOFT_LIMIT_BYTES);
+    let cleanup = null;
+    if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 60000) {
+      lastMemoryPressureCleanupAt = Date.now();
+      const cacheCounts = {
+        publicSports: publicDemoCache.size,
+        oddsSports: oddsDataSportCache.size,
+        resultsSports: bet365ResultsCache.size,
+        liveFixtures: moviOddsAllSportsCache.items.length,
+        settledRows: moviOddsResultsCache.rows.length
+      };
+      publicDemoCache.clear();
+      oddsDataSportCache.clear();
+      bet365ResultsCache.clear();
+      if (moviOddsResultsCache.rows.length > 350) {
+        moviOddsResultsCache = { ...moviOddsResultsCache, rows: moviOddsResultsCache.rows.slice(-350) };
+      }
+      trimMoviOddsFixtures(moviOddsAllSportsCache.items, { limit: 450, staleMs: 3 * 60 * 60 * 1000 });
+      if (typeof global.gc === "function") global.gc();
+      cleanup = { cacheCounts, liveFixturesAfter: moviOddsAllSportsCache.items.length };
+    }
+    const after = process.memoryUsage();
+    const rssMB = Math.round(after.rss / 1048576);
+    peakRssMB = Math.max(peakRssMB, rssMB);
+    console.info("RACING_MEMORY_SAMPLE", JSON.stringify({
+      rssMB,
+      peakRssMB,
+      heapUsedMB: Math.round(after.heapUsed / 1048576),
+      heapTotalMB: Math.round(after.heapTotal / 1048576),
+      externalMB: Math.round(after.external / 1048576),
+      arrayBuffersMB: Math.round(after.arrayBuffers / 1048576),
+      cgroupMemory: cgroup,
+      cacheSizes: {
+        publicSports: publicDemoCache.size,
+        oddsSports: oddsDataSportCache.size,
+        resultsSports: bet365ResultsCache.size,
+        liveFixtures: moviOddsAllSportsCache.items.length,
+        settledRows: moviOddsResultsCache.rows.length
+      },
+      sportsStream: {
+        status: moviOddsStreamState.status,
+        connectedAt: moviOddsStreamState.connectedAt,
+        lastMessageAt: moviOddsStreamState.lastMessageAt,
+        lastMessageType: moviOddsStreamState.lastMessageType,
+        messages: moviOddsStreamState.messages,
+        snapshots: moviOddsStreamState.snapshots,
+        deltas: moviOddsStreamState.deltas,
+        quotesReceived: moviOddsStreamState.quotesReceived,
+        fixtureCount: moviOddsStreamState.fixtureCount,
+        cachedQuotes: moviOddsStreamState.cachedQuotes,
+        reconnects: moviOddsStreamState.reconnects,
+        lastError: moviOddsStreamState.lastError
+      },
+      pressureCleanup: cleanup
+    }));
+  } catch (error) {
+    console.warn("RACING_MEMORY_SAMPLE_FAILED", String(error.message || error).slice(0, 180));
+  } finally {
+    memorySampleInFlight = false;
+  }
 }
 const memoryMonitorTimer = setInterval(monitorAndTrimMemory, 60000);
 if (typeof memoryMonitorTimer.unref === "function") memoryMonitorTimer.unref();
