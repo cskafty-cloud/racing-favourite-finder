@@ -5,31 +5,47 @@ Set-Location $PSScriptRoot
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
 
 # Keep the local read-only adapter in sync with the tested GitHub source.
+# Download both the entry point and its race-type helper before replacing either.
 # The encrypted DPAPI credential file is separate and is never downloaded or overwritten.
 $AdapterServerPath = Join-Path $PSScriptRoot "server.js"
-$AdapterUpdateUri = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy/server.js"
-$AdapterUpdateTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
+$AdapterCategoryPath = Join-Path $PSScriptRoot "race-category.js"
+$AdapterUpdateBase = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy"
+$AdapterServerTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
+$AdapterCategoryTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-category-" + $PID + ".tmp")
 try {
-  Invoke-WebRequest -Uri $AdapterUpdateUri -OutFile $AdapterUpdateTemp -TimeoutSec 20
-  $AdapterCandidate = Get-Content -LiteralPath $AdapterUpdateTemp -Raw
+  Invoke-WebRequest -Uri ($AdapterUpdateBase + "/server.js") -OutFile $AdapterServerTemp -TimeoutSec 20
+  Invoke-WebRequest -Uri ($AdapterUpdateBase + "/race-category.js") -OutFile $AdapterCategoryTemp -TimeoutSec 20
+  $AdapterCandidate = Get-Content -LiteralPath $AdapterServerTemp -Raw
+  $CategoryCandidate = Get-Content -LiteralPath $AdapterCategoryTemp -Raw
   if ($AdapterCandidate.Length -lt 5000 -or
       -not $AdapterCandidate.Contains("accessTokenMatches") -or
+      -not $AdapterCandidate.Contains('require("./race-category")') -or
       -not $AdapterCandidate.Contains("BETFAIR_AU_RACING_EVENT_TYPES")) {
-    throw "Downloaded adapter did not pass the expected source checks."
+    throw "Downloaded adapter entry point did not pass the expected source checks."
+  }
+  if ($CategoryCandidate.Length -lt 300 -or
+      -not $CategoryCandidate.Contains("function raceCategory") -or
+      -not $CategoryCandidate.Contains("module.exports")) {
+    throw "Downloaded race-category helper did not pass the expected source checks."
   }
   if (Test-Path -LiteralPath $AdapterServerPath) {
     Copy-Item -LiteralPath $AdapterServerPath -Destination ($AdapterServerPath + ".previous") -Force
   }
-  Move-Item -LiteralPath $AdapterUpdateTemp -Destination $AdapterServerPath -Force
-  Write-Host "Updated the local adapter from the tested GitHub source." -ForegroundColor Green
+  if (Test-Path -LiteralPath $AdapterCategoryPath) {
+    Copy-Item -LiteralPath $AdapterCategoryPath -Destination ($AdapterCategoryPath + ".previous") -Force
+  }
+  Move-Item -LiteralPath $AdapterCategoryTemp -Destination $AdapterCategoryPath -Force
+  Move-Item -LiteralPath $AdapterServerTemp -Destination $AdapterServerPath -Force
+  Write-Host "Updated the local adapter entry point and race-type helper from the tested GitHub source." -ForegroundColor Green
 } catch {
-  Write-Warning ("Could not update adapter source; keeping the existing local copy. " + $_.Exception.Message)
+  Write-Warning ("Could not fully update adapter source; keeping existing local copies where possible. " + $_.Exception.Message)
 } finally {
-  if (Test-Path -LiteralPath $AdapterUpdateTemp) {
-    Remove-Item -LiteralPath $AdapterUpdateTemp -Force -ErrorAction SilentlyContinue
+  foreach ($temporaryPath in @($AdapterServerTemp, $AdapterCategoryTemp)) {
+    if (Test-Path -LiteralPath $temporaryPath) {
+      Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+    }
   }
 }
-
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
 $CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\BetfairAdapter"
 $CredentialFile = Join-Path $CredentialDirectory "credentials.dpapi"
