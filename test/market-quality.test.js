@@ -52,3 +52,24 @@ test("invalid and materially future-dated quote timestamps are rejected", () => 
   assert.equal(quoteAgeSeconds(now + 120000, now), null);
   assert.equal(quoteAgeSeconds("2026-11-13T04:00:30.000Z", now), 0);
 });
+
+test("a board refresh timestamp is not a runner quote timestamp", () => {
+  const now = Date.parse("2026-11-13T04:00:00.000Z");
+  const q = { updated_at: "2026-11-13T03:59:00.000Z", feed_observed_at: new Date(now).toISOString() };
+  // The server's racingMarketAge requires a quote-specific timestamp field.
+  assert.equal(q.last_update ?? q.captured_at ?? q.timestamp ?? null, null);
+  assert.equal(quoteAgeSeconds(q.updated_at, now), 60);
+});
+
+test("missing and invalid runner quote timestamps cannot become fresh prices", () => {
+  const now = Date.parse("2026-11-13T04:00:00.000Z");
+  for (const q of [
+    { feed_observed_at: new Date(now).toISOString() },
+    { age_seconds: 2 },
+    { last_update: "not-a-date" },
+    { last_update: "2026-11-13T04:02:00.000Z" }
+  ]) {
+    const stamp = q.last_update || q.updated_at || q.captured_at || q.timestamp;
+    assert.equal(stamp ? quoteAgeSeconds(stamp, now) : null, null);
+  }
+});
