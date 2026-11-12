@@ -921,19 +921,53 @@ function raceMatchKey(r) {
   const day = localRaceDate(startTimeOf(r));
   return venue && number != null && day ? `${categoryOf(r)}|${venue}|r${number}|${day}` : null;
 }
+function resultContainsPickedRunner(pick, result) {
+  // Cross-provider race IDs and venue labels can differ. Require the selected
+  // runner to appear in the result's own runner list before using a fallback.
+  const resultObject = result?.result && typeof result.result === "object" ? result.result : {};
+  const lists = [result?.runners, result?.placings, result?.finishers,
+    resultObject.runners, resultObject.placings, resultObject.results].filter(Array.isArray);
+  const wantedName = normalizeName(pick.runnerName);
+  const wantedNumber = pick.runnerNumber == null ? "" : String(pick.runnerNumber);
+  return lists.flat().some(row => {
+    if (!row || typeof row !== "object") return false;
+    const name = normalizeName(valueOf(row, ["name","runner_name","horse_name","greyhound_name","selection_name"]));
+    const number = valueOf(row, ["number","runner_number","box","saddlecloth"]);
+    return (!!wantedName && !!name && wantedName === name) ||
+      (!!wantedNumber && number != null && String(number) === wantedNumber);
+  });
+}
 function findMatchingPick(picks, result) {
   const id = raceId(result);
   const exact = picks.filter(p => p.raceId === id);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) return null;
+
+  // First use the strict canonical venue/category/race/day identity.
   const key = raceMatchKey(result);
-  if (!key) return null;
-  const matches = picks.filter(p => p.raceMatchKey === key ||
-    (!p.raceMatchKey && categoryOf(result) === p.category &&
-      normalizeName(p.venue) === normalizeName(venueOf(result)) &&
-      String(p.raceNumber) === String(raceNumberOf(result)) &&
-      localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
-  return matches.length === 1 ? matches[0] : null;
+  if (key) {
+    const strictMatches = picks.filter(p => p.raceMatchKey === key ||
+      (!p.raceMatchKey && categoryOf(result) === p.category &&
+        normalizeName(p.venue) === normalizeName(venueOf(result)) &&
+        String(p.raceNumber) === String(raceNumberOf(result)) &&
+        localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
+    if (strictMatches.length === 1) return strictMatches[0];
+    if (strictMatches.length > 1) return null;
+  }
+
+  // Safe fallback for changed IDs or venue spelling: category + race number
+  // + Brisbane-local date AND a runner identity present in the result.
+  // Ambiguous matches remain pending; they are never force-settled.
+  const day = localRaceDate(startTimeOf(result));
+  const number = raceNumberOf(result);
+  if (!day || number == null) return null;
+  const identityMatches = picks.filter(p =>
+    p.category === categoryOf(result) &&
+    String(p.raceNumber) === String(number) &&
+    localRaceDate(p.startTime) === day &&
+    resultContainsPickedRunner(p, result)
+  );
+  return identityMatches.length === 1 ? identityMatches[0] : null;
 }
 async function recordMarketSnapshots(races, capturedAt) {
   const history = await readHistory();
