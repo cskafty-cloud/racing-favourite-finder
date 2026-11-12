@@ -103,8 +103,12 @@ function cached(key, loader) {
   }).finally(()=>inflight.delete(key)));
   return inflight.get(key);
 }
-function raceCategory(name) {
-  const s=String(name).toLowerCase();
+function raceCategory(name,description={}) {
+  // Betfair exposes Harness as a raceType inside the Horse Racing event type.
+  // Classify from MARKET_DESCRIPTION.raceType, not only eventType.name.
+  const raceType=typeof description==="string"?description:
+    (description?.raceType||description?.race_type||description?.type||"");
+  const s=(String(name)+" "+String(raceType)).toLowerCase();
   return /greyhound/.test(s)?"greyhound":/harness|trotting|pacing/.test(s)?"harness":"horse";
 }
 async function fetchRaceCatalogue(type,from,to){
@@ -139,7 +143,9 @@ async function loadRaces() {
     discovered:(eventTypes||[]).map(x=>String(x.eventType?.name||"")).filter(Boolean),
     selected:types.map(x=>x.name),
     catalogueMarkets:all.length,
-    marketsByType:Object.fromEntries(groups.map(g=>[g.type.name,g.markets.length]))
+    marketsByType:Object.fromEntries(groups.map(g=>[g.type.name,g.markets.length])),
+    marketsByRaceType:Object.fromEntries([...new Set(all.map(m=>String(m.description?.raceType||"not-supplied")))]
+      .map(raceType=>[raceType,all.filter(m=>String(m.description?.raceType||"not-supplied")===raceType).length]))
   }));
   // Betfair can return HTTP 200 with TOO_MUCH_DATA for a batch of
   // market books. Split oversized batches recursively so one dense race
@@ -190,7 +196,7 @@ async function loadRaces() {
     const raceNumberMatch=eventName.match(/(?:^|\\b)R(?:ace)?\\s*(\\d+)\\b/i);
     const key=market.event?.id+"|"+market.marketStartTime+"|"+eventName;
     if(!grouped.has(key)) grouped.set(key,{race_id:"betfair-au-"+key,id:"betfair-au-"+key,
-      category:raceCategory(market._type),code:raceCategory(market._type),venue:eventName,
+      category:raceCategory(market._type,market.description),code:raceCategory(market._type,market.description),raceType:market.description?.raceType||null,venue:eventName,
       track:eventName,race_number:raceNumberMatch?Number(raceNumberMatch[1]):null,start_time:market.marketStartTime,
       country:"Australia",status:book.inplay?"in_play":"scheduled",in_play:!!book.inplay,
       closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:capturedAt,
