@@ -325,13 +325,44 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 let writeQueue = Promise.resolve();
 const lastMarketSignatures = new Map();
+const lastSnapshotAt = new Map();
+// Bound in-memory indexes and live sports fixtures as well as the persisted archive.
+// The all-sports feed is broad; unbounded websocket fixture/quote growth can exceed
+// Railway's 1 GB RSS limit even when the V8 old-space heap is capped.
+const MARKET_TRACKING_MAP_LIMIT = 5000;
+const MARKET_TRACKING_MAP_TARGET = 4000;
+const MOVI_WS_FIXTURE_LIMIT = 1200;
+const MOVI_WS_QUOTES_PER_FIXTURE_LIMIT = 300;
+function trimInsertionOrderedMap(map, limit=MARKET_TRACKING_MAP_LIMIT, target=MARKET_TRACKING_MAP_TARGET) {
+  if(map.size<=limit)return;
+  for(const key of map.keys()){
+    map.delete(key);
+    if(map.size<=target)break;
+  }
+}
+function trimMoviOddsFixtures(items) {
+  const now=Date.now();
+  const retained=items.filter(item=>{
+    if(item?.in_play===true||item?.inPlay===true)return true;
+    const start=Date.parse(item?.kickoff_utc||item?.commence_time||item?.start_time||item?.startTime||"");
+    return !Number.isFinite(start)||start>=now-6*60*60*1000;
+  });
+  retained.sort((a,b)=>{
+    const liveA=a?.in_play===true||a?.inPlay===true?0:1;
+    const liveB=b?.in_play===true||b?.inPlay===true?0:1;
+    if(liveA!==liveB)return liveA-liveB;
+    const timeA=Date.parse(a?.kickoff_utc||a?.commence_time||a?.start_time||a?.startTime||"")||Number.MAX_SAFE_INTEGER;
+    const timeB=Date.parse(b?.kickoff_utc||b?.commence_time||b?.start_time||b?.startTime||"")||Number.MAX_SAFE_INTEGER;
+    return timeA-timeB;
+  });
+  items.splice(0,items.length,...retained.slice(0,MOVI_WS_FIXTURE_LIMIT));
+}
 // Snapshots were growing past 20k entries (every race, every ~20s), which pushed the
 // Node heap over its limit and crash-looped the service. Keep the archive small.
 const MARKET_HISTORY_LIMIT = 3000;
 const MARKET_HISTORY_DAYS = 3;
 const SNAPSHOT_MIN_INTERVAL_MS = 60000;
 const SNAPSHOT_WINDOW_MS = 90 * 60000;
-const lastSnapshotAt = new Map();
 let historyCache = null;
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -513,7 +544,7 @@ function applyMoviOddsStreamMessage(message){
   }
   const item=items[index];
   if(type==="snapshot"){
-   item.quotes=Array.isArray(message.quotes)?message.quotes.map(q=>({...q,suspended:q.suspended===true})): [];
+   item.quotes=Array.isArray(message.quotes)?message.quotes.slice(-MOVI_WS_QUOTES_PER_FIXTURE_LIMIT).map(q=>({...q,suspended:q.suspended===true})): [];
    item.home=message.home||item.home;item.away=message.away||item.away;
    item.league=message.league||item.league;item.kickoff_utc=item.kickoff_utc||(
     message.kickoff_ts?new Date(Number(message.kickoff_ts)*1000).toISOString():null);
@@ -527,6 +558,8 @@ function applyMoviOddsStreamMessage(message){
     const next={...quote,suspended:quote.suspended===true};
     if(old>=0)item.quotes[old]=next;else item.quotes.push(next);
    }
+   if(item.quotes.length>MOVI_WS_QUOTES_PER_FIXTURE_LIMIT)
+    item.quotes=item.quotes.slice(-MOVI_WS_QUOTES_PER_FIXTURE_LIMIT);
    item._moviServerTime=message.server_time||new Date().toISOString();
   }else if(type==="remove"){
    const removeKeys=new Set((message.quotes||[]).map(moviWsQuoteKey));
@@ -534,6 +567,7 @@ function applyMoviOddsStreamMessage(message){
   }else if(type==="status"){
    item.group_status={...(item.group_status||{}),...(message.group_status||{})};
   }
+  trimMoviOddsFixtures(items);
   publicDemoCache.clear();
  }else if(type==="polled"){
   for(const [id,stamp] of Object.entries(message.fixtures||{})){
@@ -605,6 +639,7 @@ async function loadMoviOddsAllSports(){
   try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds all-sports feed returned invalid JSON (HTTP "+response.status+").");}
   if(!response.ok)throw new Error("MoviOdds all-sports feed HTTP "+response.status+": "+(payload.error||"request failed"));
   const items=publicDemoItems(payload).map(item=>({...item,_moviServerTime:payload.server_time||payload.serverTime||null}));
+  trimMoviOddsFixtures(items);
   moviOddsAllSportsCache={at:Date.now(),items,error:null};
   console.info("MOVIODDS_ALL_SPORTS",JSON.stringify({items:items.length,keys:Object.keys(payload||{}).slice(0,20)}));
   return items;
@@ -1124,8 +1159,12 @@ async function recordMarketSnapshots(races, capturedAt) {
     if (Number.isFinite(startMs) && (startMs - Date.now() > SNAPSHOT_WINDOW_MS || startMs < Date.now() - 600000)) continue;
     if (lastMarketSignatures.get(id) === signature) continue;
     if (Date.now() - (lastSnapshotAt.get(id) || 0) < SNAPSHOT_MIN_INTERVAL_MS) continue;
+    lastMarketSignatures.delete(id);
     lastMarketSignatures.set(id, signature);
+    lastSnapshotAt.delete(id);
     lastSnapshotAt.set(id, Date.now());
+    trimInsertionOrderedMap(lastMarketSignatures);
+    trimInsertionOrderedMap(lastSnapshotAt);
     history.marketSnapshots.push({
       raceId:id, category:categoryOf(race), venue:venueOf(race),
       raceNumber:raceNumberOf(race), startTime:startTimeOf(race),
@@ -2375,7 +2414,7 @@ async function getGlobalRacesUncached() {
     // schedule coverage and never turns its Bet365 prices into Sportsbet prices.
     const boardResults=await Promise.all(["horse","greyhound","harness"].map(async code=>{
       const response=await fetch("https://moviodds.com/racing?code="+code+"&near=1000",{
-        headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
+        headers:{Accept:"application/json"},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error(code+" board invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error(code+" board HTTP "+response.status+": "+(data.error||"request failed"));
