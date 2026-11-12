@@ -2115,14 +2115,26 @@ function normalizeBetfairAdapterRaces(data) {
         const level=runner.exchange?.[market]?.[side];
         const price=Number(level?.price);
         if(!Number.isFinite(price)||price<=1)continue;
+        // Betfair listMarketBook has no general quote-publication timestamp.
+        // Preserve adapter retrieval time/freshness separately; never promote
+        // observedAt to last_update or claim it is the exchange source timestamp.
+        const observedAt=level.observedAt||null;
+        const ageSeconds=level.ageSeconds==null?null:Number(level.ageSeconds);
         bookmakers.push({
           key:"betfair",bookmaker:"Betfair Exchange",name:"Betfair Exchange",exchange:true,
           ...(market==="win"?{win_price:price,market_type:"exchange_win"}:
             {place_price:price,place_market_type:"exchange_place"}),
-          ...(level.publishedAt?{last_update:level.publishedAt,captured_at:level.publishedAt}:{}),
-          feed_observed_at:race.captured_at||capturedAt,
+          last_update:level.sourceTimestampAvailable===true?level.publishedAt||null:null,
+          captured_at:level.sourceTimestampAvailable===true?level.publishedAt||null:null,
+          observed_at:observedAt,age_seconds:Number.isFinite(ageSeconds)?ageSeconds:null,
+          source_timestamp_available:level.sourceTimestampAvailable===true,
+          freshness_basis:level.freshnessBasis||"adapter_retrieval_time",
+          fresh:level.fresh===true,
+          is_market_data_delayed:typeof level.isMarketDataDelayed==="boolean"?level.isMarketDataDelayed:null,
+          feed_observed_at:observedAt||race.captured_at||capturedAt,
           price_side:side.toUpperCase(),available_size:Number(level.size)||0,
-          source_delay_max_seconds:180,source:"Betfair Exchange Delayed API · Australian adapter"
+          source_delay_max_seconds:Number(level.delayMaximumSeconds)||180,
+          source:"Betfair Exchange Delayed API · Australian adapter"
         });
       }
       return {...runner,bookmakers};
