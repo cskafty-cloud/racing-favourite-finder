@@ -37,7 +37,7 @@ The public MoviOdds sources do not require a browser-side API key. Optional prov
 
 ## Memory protection
 
-The server samples Node and cgroup memory every 30 seconds. It begins rebuildable-cache cleanup at 384 MB Node RSS or 600 MB cgroup usage (about 63% of the approximately 954 MB container limit), with a 30-second cleanup cooldown. Under pressure it clears rebuildable sports caches, reduces retained market-signature maps, trims result history in memory and caps the all-sports fixture cache. The persistent `/data` history file is not deleted by pressure cleanup. Railway's historical maximum is a rolling metric and is not reset by application code.
+The server samples Node and cgroup memory every 30 seconds. It begins rebuildable-cache cleanup at 384 MB Node RSS or 62.5% of the detected cgroup memory limit, capped at 600 MB (596 MB on the current approximately 954 MB container), with a 30-second cleanup cooldown. The threshold follows the actual cgroup limit instead of assuming every deployment has the same memory allocation. Under pressure it clears rebuildable sports caches, reduces retained market-signature maps, trims result history in memory and caps the all-sports fixture cache. The persistent `/data` history file is not deleted by pressure cleanup. Railway's historical maximum is a rolling metric and is not reset by application code.
 
 ## Favourite history and persistent storage
 
