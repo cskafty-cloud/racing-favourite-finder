@@ -539,7 +539,8 @@ function applyMoviOddsStreamMessage(message){
    for(const quote of message.quotes||[]){
     const key=moviWsQuoteKey(quote),old=item.quotes.findIndex(q=>moviWsQuoteKey(q)===key);
     const next={...quote,suspended:quote.suspended===true};
-    if(old>=0)item.quotes[old]=next;else item.quotes.push(next);
+    if(old>=0)item.quotes.splice(old,1);
+    item.quotes.push(next);
    }
    item.quotes=trimQuoteList(item.quotes,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT);
    item._moviServerTime=message.server_time||new Date().toISOString();
