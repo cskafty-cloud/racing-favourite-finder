@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
+const { isEstimatedQuote } = require("./market-quality");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -964,14 +965,6 @@ function racingMarketAge(q,market){
   const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
   return direct==null?stamped:Math.max(stamped,direct);
 }
-function isEstimatedQuote(q){
-  if(!q||typeof q!=="object")return false;
-  const flags=["estimated","estimate","is_estimate","isEstimate","indicative","is_indicative","isIndicative","projected","is_projected","isProjected","synthetic","is_synthetic","isSynthetic","simulated","predicted"];
-  if(flags.some(k=>q[k]===true||q[k]===1||String(q[k]||"").toLowerCase()==="true"))return true;
-  const descriptors=[q.market_type,q.place_market_type,q.price_type,q.bookmaker_type,q.quote_type,q.type,q.method,q.source,q.provider,q.feed,q.price_source,q.provenance,q.bookmaker,q.bookmaker_name,q.name,q.key]
-    .filter(v=>v!=null).join(" ").toLowerCase();
-  return /\\b(estimate|estimated|indicative|projection|projected|modelled|modeled|consensus|synthetic|simulated|predicted)\\b|fair[ _-]?(odds|price)/i.test(descriptors);
-}
 function runnerMarketQuotes(runner,market="win"){
   const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
   if(!normalizeName(runnerName)||normalizeName(runnerName)==="runner"||
@@ -1057,7 +1050,7 @@ function selectFavourite(race) {
     const seen=new Set();
     const quotes=runnerQuotes(r).filter(q=>{
       const key=bookmakerKey(q),age=Number(q.age_seconds);
-      if(!key||seen.has(key)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
+      if(!key||seen.has(key)||isEstimatedQuote(q)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(racingWinPrice).filter(p=>p!=null);
