@@ -2472,7 +2472,7 @@ async function readBetfairSportsAdapter(url){
     const pricedMarkets=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
     const result={...data,events,marketCount:events.filter(hasMarket).length,soccerEventCount:soccerRows.length,
       soccerMarketCount,soccerPricedMarkets:soccerRows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length,
-      pricedMarkets,backOffers,layOffers,status:pricedMarkets>0?"connected-delayed":"configured-no-quotes",
+      pricedMarkets,backOffers,layOffers,status:Array.isArray(data.errors)&&data.errors.length?"partial":pricedMarkets>0?"connected-delayed":"configured-no-quotes",
       provider:"Betfair Exchange Delayed API · Australian adapter",
       note:"Australian adapter Exchange BACK/LAY offers only. Soccer market counts are separated from fixtures; these are not Sportsbet or Bet365 fixed odds."};
     betfairSportsAdapterCache={at:Date.now(),data:result};
@@ -2480,7 +2480,7 @@ async function readBetfairSportsAdapter(url){
     console.info("BETFAIR_SPORTS_ADAPTER_TEST",JSON.stringify({events:events.length,markets:result.marketCount,
       soccerEvents:result.soccerEventCount,soccerMarkets:result.soccerMarketCount,
       soccerPricedMarkets:result.soccerPricedMarkets,pricedMarkets,backOffers,layOffers,
-      errors:Array.isArray(data.errors)?data.errors.length:0}));
+      errors:Array.isArray(data.errors)?data.errors.length:0,errorDetails:Array.isArray(data.errors)?data.errors.slice(0,10):[]}));
     return result;
   })().catch(error=>{
     betfairSportsAdapterLastError=error.message;
@@ -2876,7 +2876,8 @@ app.listen(PORT,"0.0.0.0",()=>{
           source:"Australian adapter",status:data.status,markets:data.marketCount||0,
           soccerEvents:data.soccerEventCount||0,soccerMarkets:data.soccerMarketCount||0,
           soccerPricedMarkets:data.soccerPricedMarkets||0,pricedMarkets:data.pricedMarkets||0,
-          errors:Array.isArray(data.errors)?data.errors.length:0
+          errors:Array.isArray(data.errors)?data.errors.length:0,
+          errorDetails:Array.isArray(data.errors)?data.errors.slice(0,10):[]
         }));
       }).catch(error=>console.warn("BETFAIR_SPORTS_STARTUP_TEST_FAILED",error.message));
     },5000);
