@@ -21,28 +21,34 @@ function fixtureStart(item) {
   return Number.isFinite(parsed)?parsed:null;
 }
 
+function compareFixturePriority(a,b) {
+  const liveA=a?.in_play===true||a?.inPlay===true?0:1;
+  const liveB=b?.in_play===true||b?.inPlay===true?0:1;
+  if(liveA!==liveB)return liveA-liveB;
+  return (fixtureStart(a)??Number.MAX_SAFE_INTEGER)-(fixtureStart(b)??Number.MAX_SAFE_INTEGER);
+}
+
 function trimMoviOddsFixtures(items, options={}) {
   if(!Array.isArray(items))throw new TypeError("Expected a fixture array.");
   const now=Number.isFinite(options.now)?options.now:Date.now();
   const limit=Number.isInteger(options.limit)&&options.limit>0?options.limit:MOVI_WS_FIXTURE_LIMIT;
   const staleMs=Number.isFinite(options.staleMs)&&options.staleMs>=0?options.staleMs:6*60*60*1000;
-  // Prune in place instead of allocating/filtering/sorting a second full list
-  // for every WebSocket message. Sort only when a hard-limit trim is required.
+  // Remove expired entries in place to avoid allocating a second fixture list
+  // on every WebSocket message.
   for(let i=items.length-1;i>=0;i--){
     const item=items[i];
     if(item?.in_play===true||item?.inPlay===true)continue;
     const start=fixtureStart(item);
     if(start!=null&&start<now-staleMs)items.splice(i,1);
   }
-  if(items.length>limit){
-    items.sort((a,b)=>{
-      const liveA=a?.in_play===true||a?.inPlay===true?0:1;
-      const liveB=b?.in_play===true||b?.inPlay===true?0:1;
-      if(liveA!==liveB)return liveA-liveB;
-      return (fixtureStart(a)??Number.MAX_SAFE_INTEGER)-(fixtureStart(b)??Number.MAX_SAFE_INTEGER);
-    });
-    items.length=limit;
+  // Preserve live-first / soonest-first ordering, but sort only when an
+  // incoming fixture actually makes the existing list out of order.
+  let ordered=true;
+  for(let i=1;i<items.length;i++){
+    if(compareFixturePriority(items[i-1],items[i])>0){ordered=false;break;}
   }
+  if(!ordered)items.sort(compareFixturePriority);
+  if(items.length>limit)items.length=limit;
   return items;
 }
 
