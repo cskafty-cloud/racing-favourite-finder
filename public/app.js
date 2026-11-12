@@ -369,6 +369,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  if($("search"))$("search").addEventListener("input",event=>{
   const q=event.target.value.toLowerCase();document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
  });
- if(document.body.classList.contains("site-entered"))start();
+ // Start the server heartbeat immediately, including while the entry screen is visible.
+ start();
 });
 })();
