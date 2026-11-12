@@ -378,6 +378,7 @@ async function readHistory() {
       const chunks = [];
       for await (const chunk of response.Body) chunks.push(Buffer.from(chunk));
       const remote = normalizeHistory(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      remote.updatedAt = remote.updatedAt || new Date().toISOString();
       const local = await readLocalHistory();
       const remoteUpdated = Date.parse(remote.updatedAt || "");
       const localUpdated = Date.parse(local.updatedAt || "");
@@ -402,6 +403,8 @@ async function readHistory() {
       const missing = error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404;
       const local = await readLocalHistory();
       if (missing) {
+        local.updatedAt = local.updatedAt || new Date().toISOString();
+        await writeLocalHistory(local);
         try {
           await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
           console.info("R2_HISTORY_INITIAL_MIGRATION_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
@@ -410,11 +413,14 @@ async function readHistory() {
         }
         return (historyCache = local);
       }
-      if (Number.isFinite(Date.parse(local.updatedAt || ""))) {
-        console.warn("R2_HISTORY_READ_FALLBACK_LOCAL", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length, reason:String(error.message||error).slice(0,160) }));
+      const localStat = await fs.stat(HISTORY_FILE).catch(()=>null);
+      const localBackupRecent = !!localStat && Date.now()-localStat.mtimeMs < 24*60*60*1000;
+      if (Number.isFinite(Date.parse(local.updatedAt || "")) || localBackupRecent) {
+        local.updatedAt = local.updatedAt || new Date(localStat.mtimeMs).toISOString();
+        console.warn("R2_HISTORY_READ_FALLBACK_LOCAL", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length, backupRecent:localBackupRecent, reason:String(error.message||error).slice(0,160) }));
         return (historyCache = local);
       }
-      throw new Error("Cloudflare R2 history read failed and no timestamped local backup is available: " + error.message);
+      throw new Error("Cloudflare R2 history read failed and no recent local backup is available: " + error.message);
     }
   }
   return (historyCache = await readLocalHistory());
