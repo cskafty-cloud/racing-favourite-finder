@@ -498,15 +498,15 @@ async function loadMarketHistory(){
 async function loadLiveSports(){
  const notice=$("liveSportsNotice"),list=$("liveSportsEvents");
  try{
-  if(notice)notice.textContent="Checking free public live-sports snapshots…";
+  if(notice)notice.textContent="Checking the free Bet365 live-sports feed…";
   const response=await apiFetch("/api/live-sports",{cache:"no-store",signal:AbortSignal.timeout(40000)});
   const data=await response.json();if(!response.ok)throw new Error(data.error||"Live sports HTTP "+response.status);
   const events=Array.isArray(data.events)?data.events:[];
-  if(notice)notice.textContent=events.length?events.length+" fixtures explicitly marked in-play · "+esc(data.provider||"Public snapshot")+" · snapshot age "+Number(data.ageSeconds||0)+"s. Scores and prices appear only when supplied.":"No fixtures are currently marked in-play by the connected free public snapshots.";
+  if(notice)notice.textContent=events.length?events.length+" fixtures explicitly marked in-play · "+esc(data.provider||"Public snapshot")+" · snapshot age "+Number(data.ageSeconds||0)+"s. Scores and prices appear only when supplied.":"No fixtures are currently marked in-play by the free Bet365 feed. Sportsbet prices are not supplied by this endpoint.";
   if(list)list.innerHTML=events.length?events.map(e=>{
    const books=(e.bookmakers||[]).map(b=>renderSportsBookmaker(e,b)).filter(Boolean).join("");
    return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(e.home||e.home_team||e.name||"Live event")+(e.away||e.away_team?" v "+esc(e.away||e.away_team):"")+'</div><div class="rf-muted">'+esc(e.sport||"Sport")+' · LIVE'+(e.score?" · SCORE "+esc(e.score):"")+' · '+esc(fmtTime(e.commenceTime||e.commence_time))+'</div></div></div>'+(books?'<div class="rf-price-groups">'+books+'</div>':'<div class="rf-empty">Live fixture confirmed; no prices supplied in this snapshot.</div>')+'</article>';
-  }).join(""):'<div class="empty">No confirmed in-play events in the latest free public snapshot.</div>';
+  }).join(""):'<div class="empty">No confirmed in-play Bet365 events in the latest free snapshot.</div>';
  }catch(error){if(notice)notice.textContent="Live sports snapshot unavailable: "+error.message;if(list)list.innerHTML='<div class="empty">'+esc(error.message)+'</div>';}
 }
 function renderSportsResultsNotice(){
