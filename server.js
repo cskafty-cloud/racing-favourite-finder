@@ -190,6 +190,34 @@ let betfairSportsCache={at:0,events:[],eventTypes:[],error:null};
 let betfairSportsRefresh=null;
 let betfairSportsRetryAt=0;
 async function loadBetfairSports(){
+  // Prefer the separately hosted Australian adapter. Railway's own egress
+  // must not be used to work around Betfair's location restrictions.
+  const sportsAdapterUrl=String(process.env.BETFAIR_SPORTS_FEED_URL||"").trim();
+  if(sportsAdapterUrl && process.env.PUBLIC_ONLY_FEEDS !== "true"){
+    const response=await fetch(sportsAdapterUrl,{
+      headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},
+      signal:AbortSignal.timeout(25000)
+    });
+    const body=await response.text();
+    let data;
+    try{data=JSON.parse(body);}catch{
+      const contentType=response.headers.get("content-type")||"unknown content type";
+      const excerpt=String(body||"").replace(/\\s+/g," ").slice(0,180);
+      throw new Error("Australian Betfair sports adapter returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:"."));
+    }
+    if(!response.ok)throw new Error(data.error||"Australian Betfair sports adapter HTTP "+response.status);
+    if(!Array.isArray(data.events))throw new Error("Australian Betfair sports adapter response is missing its events array.");
+    const events=data.events.filter(event=>event&&Array.isArray(event.runners));
+    const pricedMarkets=events.filter(event=>event.runners.some(r=>r.back||r.lay)).length;
+    const eventTypes=Array.isArray(data.eventTypes)?data.eventTypes:[];
+    console.info("BETFAIR_AU_ADAPTER_SPORTS",JSON.stringify({
+      events:events.length,sports:eventTypes.length,priced:pricedMarkets,
+      soccerPricedMarkets:Number(data.soccerPricedMarkets)||events.filter(e=>/soccer|football/i.test(e.sport||"")&&e.runners.some(r=>r.back||r.lay)).length
+    }));
+    return {...data,events,eventTypes,capturedAt:data.capturedAt||data.fetchedAt||new Date().toISOString(),
+      errors:Array.isArray(data.errors)?data.errors:[],provider:"Betfair Exchange Australian adapter",
+      delayMaximumSeconds:180,adapter:true};
+  }
   await ensureBetfairSession();
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
   const eventTypes=await betfairRpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
