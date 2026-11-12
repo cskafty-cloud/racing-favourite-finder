@@ -93,7 +93,7 @@ If no Australian cloud host is available, the proxy can run on an Australian Win
 5. Download the repository ZIP from GitHub and extract it. Open PowerShell in `betfair-au-proxy`, then run:
    `Set-ExecutionPolicy -Scope Process Bypass`
    `./Start-BetfairAuProxy.ps1`
-6. Enter the Betfair delayed app key, session token and shared token when prompted. These values stay in the local process environment and are not saved by the launcher.
+6. The Windows launcher securely prompts for the Betfair delayed app key, session token and shared token. It saves them encrypted with Windows DPAPI in `.betfair-credentials.dpapi`, bound to the same Windows user on that PC; the secrets are not committed to GitHub or written in plaintext. On later starts, answer `Y` to **Use the saved encrypted credentials?** to reuse them. Answer `N` only when deliberately replacing the saved values. Keep the adapter PowerShell window open while the feed is in use.
 7. In a second PowerShell window, run `tailscale funnel --bg 8080`, approve Funnel in the Tailscale admin flow if prompted, and run `tailscale funnel status`. Copy the HTTPS hostname into the two Railway URL variables above.
 8. Restart/redeploy the Railway service after setting its variables. Test `/health`, then the protected `/api/races` and `/api/sports` routes. The latter two require the bearer token and should return real timestamped quotes before the feed is considered connected.
 
