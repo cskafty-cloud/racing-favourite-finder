@@ -8,6 +8,10 @@ on:
       - 'public/app.js'
       - 'package.json'
       - 'package-lock.json'
+      - 'server.js'
+      - 'memory-guards.js'
+      - 'test/**'
+      - '.github/workflows/windows-app.yml'
   workflow_dispatch:
 
 permissions:
@@ -24,8 +28,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
       - name: Run data-quality regression tests
         run: npm test
       - name: Check application and adapter syntax
@@ -36,12 +40,18 @@ jobs:
           node --check public/app.js
       - name: Build portable Windows executable
         run: npm run desktop:dist
+      - name: Verify portable executable
+        shell: pwsh
+        run: |
+          $target = Join-Path 'release' 'CSKAFTY.exe'
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'CSKAFTY.exe was not produced.' }
+          if ((Get-Item -LiteralPath $target).Length -lt 10000000) { throw 'Executable is unexpectedly small.' }
       - name: Publish public GitHub release
         uses: ncipollo/release-action@v1.21.0
         with:
           tag: desktop-v1.0.${{ github.run_number }}
           name: Racing Favourite Finder for Windows v1.0.${{ github.run_number }}
-          artifacts: release/*.exe
+          artifacts: release/CSKAFTY.exe
           artifactErrorsFailBuild: true
           generateReleaseNotes: true
           makeLatest: true
