@@ -122,7 +122,7 @@ function Read-NewCredentials {
   }
   $feedToken = Get-ClipboardFeedToken
   if (-not $feedToken) {
-    throw "Clipboard must contain only the 64-character hexadecimal Railway shared token. Copy the token itself, not a command or output. No credentials were saved."
+    throw "Clipboard must contain only the Railway shared feed token (16–512 characters, no whitespace). Copy the token itself, not a command or output. No credentials were saved."
   }
   $values.BETFAIR_FEED_TOKEN = $feedToken
   foreach ($name in @("BETFAIR_APP_KEY", "BETFAIR_SESSION_TOKEN")) {
@@ -166,7 +166,7 @@ if ($railwayPresent.Count -gt 0) {
   if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
       [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN) -or
       ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_FEED_TOKEN) -or [string]$values.BETFAIR_FEED_TOKEN -match '\s')) {
-    throw "Railway Betfair variables are incomplete or the shared token is not 64 hexadecimal characters. No credentials were saved."
+    throw "Railway Betfair variables are incomplete or the shared token is empty/contains whitespace. No credentials were saved."
   }
   Save-EncryptedCredentials $values
   Write-Host "Imported Railway Production Betfair variables and saved them encrypted with Windows DPAPI." -ForegroundColor Green
@@ -235,7 +235,7 @@ if ($listener) {
     Write-Warning "The process on port 8080 did not return a usable adapter health response."
   }
   if ($owner) {
-    Write-Host "Process: $($owner.Name) | PID: $listenerPid" -ForegroundColor DarkGray
+    Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
     if ($owner.Name -ieq "node.exe" -and $owner.CommandLine -match 'server\.js' -and $owner.CommandLine -match 'betfair-au-proxy') {
       $stopChoice = Read-Host "This appears to be the existing Betfair adapter. Stop PID $portOwnerPid so the refreshed credentials can be used? [y/N]"
       if ($stopChoice -match '^(y|yes)$') {
