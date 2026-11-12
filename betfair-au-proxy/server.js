@@ -52,7 +52,11 @@ async function rpc(method, params) {
   }
 }
 function quote(level,publishedAt=null) {
-  return level && Number(level.price) > 1 ? {price:Number(level.price),size:Number(level.size)||0,publishedAt:publishedAt||null} : null;
+  if(!level||!(Number(level.price)>1))return null;
+  const publishedMs=publishedAt?Date.parse(publishedAt):NaN;
+  const ageSeconds=Number.isFinite(publishedMs)?Math.max(0,(Date.now()-publishedMs)/1000):null;
+  return {price:Number(level.price),size:Number(level.size)||0,publishedAt:publishedAt||null,
+    ageSeconds,fresh:ageSeconds!=null&&ageSeconds<=180};
 }
 function cached(key, loader) {
   const old=cache.get(key);
@@ -155,9 +159,9 @@ async function loadRaces() {
     }
   }
   const races=[...grouped.values()].map(race=>{
-    const winFavourite=race.runners.filter(r=>Number(r.exchange?.win?.back?.price)>1)
+    const winFavourite=race.runners.filter(r=>r.exchange?.win?.back?.fresh===true&&Number(r.exchange.win.back.price)>1)
       .sort((a,b)=>a.exchange.win.back.price-b.exchange.win.back.price)[0]||null;
-    const placeFavourite=race.runners.filter(r=>Number(r.exchange?.place?.back?.price)>1)
+    const placeFavourite=race.runners.filter(r=>r.exchange?.place?.back?.fresh===true&&Number(r.exchange.place.back.price)>1)
       .sort((a,b)=>a.exchange.place.back.price-b.exchange.place.back.price)[0]||null;
     return {...race,
       exchangeFavourite:winFavourite?{name:winFavourite.name,selectionId:winFavourite.selectionId,
@@ -286,7 +290,7 @@ async function loadSports() {
       return {name:r.runnerName,selectionId:r.selectionId,
         back:quote(p.ex?.availableToBack?.[0],book.publishTime),lay:quote(p.ex?.availableToLay?.[0],book.publishTime)};
     }).filter(Boolean);
-    const favourite=runners.filter(r=>r.back).sort((a,b)=>a.back.price-b.back.price)[0]||null;
+    const favourite=runners.filter(r=>r.back?.fresh===true).sort((a,b)=>a.back.price-b.back.price)[0]||null;
     return {id:"betfair-sport-"+m.marketId,marketId:m.marketId,eventId:m.event?.id||null,
       sport:m._sport,event:m.event?.name||"Event",competition:m.event?.venue||null,
       startTime:m.marketStartTime,marketName:m.marketName||"Match odds",status:book.inplay?"in_play":"upcoming",
