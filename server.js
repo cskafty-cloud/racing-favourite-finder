@@ -2860,15 +2860,28 @@ app.post("/api/history/sync", async (_req,res) => {
         pick.status = "final";
         pick.winnerName = winner.name;
         pick.favouriteWon = isSameRunner(pick,winner);
-        pick.resultedAt = result.resulted_at || result.updated_at || new Date().toISOString();
+        pick.resultedAt = result.result?.resulted_at || result.resulted_at || result.updated_at || new Date().toISOString();
         matched.add(pick);
         settled++;
       }
       unmatched = pending.filter(p=>!matched.has(p)).length;
     }
     if (settled) await saveHistory(history);
+    const finalPicks=history.picks.filter(p=>p.status==="final");
+    const decidedPicks=finalPicks.filter(p=>typeof p.favouriteWon==="boolean");
+    const wins=decidedPicks.filter(p=>p.favouriteWon===true).length;
+    const losses=decidedPicks.filter(p=>p.favouriteWon===false).length;
+    const pendingCount=history.picks.filter(p=>p.status==="pending").length;
+    console.info("RACING_HISTORY_SETTLEMENT",JSON.stringify({
+      picks:history.picks.length,backfilled,checked,finalResultRows:results.length,
+      settledThisRun:settled,unmatchedPending:unmatched,pending:pendingCount,
+      finalPicks:finalPicks.length,wins,losses,decided:wins+losses,
+      strikeRate:wins+losses?+(100*wins/(wins+losses)).toFixed(1):null,
+      unknownFinal:finalPicks.length-decidedPicks.length,
+      sampleSettlements:finalPicks.slice(-5).map(p=>({venue:p.venue,raceNumber:p.raceNumber,runner:p.runnerName,winner:p.winnerName,favouriteWon:p.favouriteWon}))
+    }));
     res.set("Cache-Control","no-store");
-    return res.json({ok:true,settled,unmatched,checked,backfilled,resultSource,pending:history.picks.filter(p=>p.status==="pending").length,
+    return res.json({ok:true,settled,unmatched,checked,backfilled,resultSource,pending:pendingCount,
       resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
       resultResponse:{rawRows:moviOddsResultsCache.rawRows??null,finalRows:moviOddsResultsCache.rows?.length??0,
         sampleRaceKeys:moviOddsResultsCache.sampleRaceKeys||[],sampleStatus:moviOddsResultsCache.sampleStatus||null},
@@ -3004,6 +3017,19 @@ app.listen(PORT,"0.0.0.0",()=>{
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
   setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
+  // Run the dashboard history-sync route at boot and log actual production outcomes.
+  setTimeout(async()=>{
+    try{
+      const response=await fetch("http://127.0.0.1:"+PORT+"/api/history/sync",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(30000)
+      });
+      const payload=await response.json();
+      console.info("RACING_HISTORY_STARTUP_TEST",JSON.stringify({httpStatus:response.status,...payload}));
+      const historyResponse=await fetch("http://127.0.0.1:"+PORT+"/api/history",{signal:AbortSignal.timeout(10000)});
+      const historyPayload=await historyResponse.json();
+      console.info("RACING_HISTORY_STARTUP_SUMMARY",JSON.stringify(historyPayload.summary||{error:historyPayload.error||"No summary returned"}));
+    }catch(error){console.warn("RACING_HISTORY_STARTUP_TEST_FAILED",error.message);}
+  },8000);
   // Run one bounded all-sports probe at boot. Prefer the Australian adapter;
   // if it is not configured, test the already-authorised Betfair session directly.
   if(process.env.BETFAIR_SPORTS_FEED_URL){
