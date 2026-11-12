@@ -315,6 +315,14 @@ async function getBetfairSports(){
 }
 
 const PROVIDER_PLAN = String(process.env.PUNTERSEDGE_PLAN || "free").toLowerCase();
+// Provider API access and permission to display its data publicly are separate.
+// Free/Hobby/Standard PuntersEdge keys are personal-use only. Krok requires an
+// explicit written/public-display licence for a public odds-comparison service.
+const PUNTERS_EDGE_PUBLIC_DISPLAY_ALLOWED =
+  ["plus","business","platform","scale"].includes(PROVIDER_PLAN) &&
+  process.env.PUNTERS_EDGE_PUBLIC_DISPLAY_LICENSED === "true";
+const KROK_PUBLIC_DISPLAY_ALLOWED =
+  process.env.KROKODDS_PUBLIC_DISPLAY_LICENSED === "true";
 const SCHEDULE_HORIZON_HOURS = PROVIDER_PLAN === "standard" ? 48 : (["plus","premium","pro","enterprise"].includes(PROVIDER_PLAN) ? 168 : 24);
 // Protect the free monthly credit allowance. The full AU card is a bulk request;
 // keep it on a conservative cadence and retain source timestamps for every quote.
@@ -2202,6 +2210,10 @@ function normalizeSportsbetDemoRace(item,category,sourceUrl,updatedAt,bookmaker=
   runners,bookmaker_source_url:sourceUrl,sportsbet_url:bookKey==="sportsbet"?sourceUrl:null,bet365_url:bookKey==="bet365"?sourceUrl:null,public_bookmaker:bookKey,updated_at:item.updated_at||updatedAt||null};
 }
 async function loadSportsbetPublicRaceDemos(){
+ if(!PUNTERS_EDGE_PUBLIC_DISPLAY_ALLOWED){
+  if(!sportsbetRacingDemoCache.at)sportsbetRacingDemoCache={at:Date.now(),races:[],errors:["Skipped: current PuntersEdge plan/licence does not authorise public display."]};
+  return [];
+ }
  if(sportsbetRacingDemoCache.at&&Date.now()-sportsbetRacingDemoCache.at<110000)return sportsbetRacingDemoCache.races;
  // The no-key bookmaker preview currently documents horse and greyhound only.
  // Harness is still covered by the separate all-code race-card feed; do not call
@@ -2329,6 +2341,9 @@ async function getGlobalRacesUncached() {
   // keep entering the provider loader on every browser/background refresh while
   // both racing endpoints are inside their cooldown; use the free feeds below.
   const puntersEdgeQuotaPaused = API_KEY && (PUNTERS_EDGE_RACING_QUOTA_PAUSED || Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
+  if(API_KEY && !PUNTERS_EDGE_PUBLIC_DISPLAY_ALLOWED){
+    failures.push({feed:"PuntersEdge",message:"Not queried for the public board: this key/plan is not authorised for public display. Free, Hobby and Standard are personal-use only; public display requires the applicable licence and attribution."});
+  }
   if (puntersEdgeQuotaPaused) {
     // Quota pause is exposed through provider status; avoid repeating it in runtime logs.
   }
@@ -2361,9 +2376,13 @@ async function getGlobalRacesUncached() {
       failures.push({feed:"PuntersEdge",message:error.message});
     }
   }
-  // Krok Odds is a separately configured racing provider. It is queried only
-  // after the primary feed fails and is cached for 60 seconds by getKrokRaces().
-  if (KROKODDS_API_KEY && !KROK_RACING_QUOTA_PAUSED) {
+  // Krok Odds is used on this public comparison board only when an explicit
+  // public-display licence is configured. Its free API key alone is not enough.
+  if(KROKODDS_API_KEY && !KROK_PUBLIC_DISPLAY_ALLOWED){
+    failures.push({feed:"Krok Odds",message:"Not queried for the public comparison board: explicit public-display licensing is not configured."});
+  }
+  // When licensed, Krok is queried only after the primary feed fails and is cached.
+  if (KROKODDS_API_KEY && KROK_PUBLIC_DISPLAY_ALLOWED && !KROK_RACING_QUOTA_PAUSED) {
     try {
       const alternate=await getKrokRaces();
       if (alternate.races?.length) {
