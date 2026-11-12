@@ -1618,7 +1618,7 @@ function isAustralianRace(race) {
   if (/^(au|aus|australia|australian)(\b|$)/.test(country)) return true;
   if (country && !/^(unknown|n\/?a|not supplied|country not supplied|unspecified)$/.test(country)) return false;
   const venue=String(race.venue||race.track||race.course||"").toLowerCase();
-  return !/\b(zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\b/.test(venue);
+   return !/\b(kawasaki|nagoya|funabashi|oi racecourse|tokyo city keiba|sonoda|kasamatsu|morioka|mizusawa|saga|kochi|kanazawa|urawa|monbetsu|happy valley|sha tin|kranji|zia park|horseshoe indiana|star pelaw|pelaw|wolverhampton|kempton|newcastle uk|chelmsford|santa anita|del mar|gulfstream|churchill downs|aqueduct|belmont park|saratoga|woodbine|monmouth park|turf paradise|tampa bay downs|fair grounds|laurel park|prairie meadows|remington park|sam houston|lone star park|keeneland|pimlico|finger lakes|mountaineer|charles town|evangeline downs|thistledown|presque isle|hawthorne|horseshoe indianapolis)\b/.test(venue);
 }
 
 
@@ -2140,7 +2140,7 @@ async function getGlobalRacesUncached() {
         category,code:category==="horse"?"thoroughbred":category,venue,track:venue,race_name:r.full_name||r.name||null,
         race_number:r.race_number??r.number??null,distance_m:Number(String(r.distance||"").match(/[0-9]+/)?.[0])||null,
         each_way:r.each_way||null,updated_at:r.updated_at||null,
-        start_time:start,country:r.country||"Australia",status,in_play:live,
+        start_time:start,country:r.country||r.country_code||r.region||"Unknown",status,in_play:live,
         closed:/abandon|result|closed/.test(status),runners:uniqueRunners};
     }).filter(r=>r.start_time&&!r.closed);
     console.info("MOVIODDS_RACING_BOOKMAKER_VALIDATION",JSON.stringify({races:races.length,verifiedBet365Quotes,verifiedBet365PlaceQuotes,verifiedSportsbetQuotes,unverifiedPriceRows,
