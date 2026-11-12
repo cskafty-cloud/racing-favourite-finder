@@ -128,7 +128,7 @@ function renderRaces(data){
  if($("raceCount"))$("raceCount").textContent=String(active.length);
  count("horseCount");count("dogCount");count("harnessCount");
  if($("updatedAt"))$("updatedAt").textContent=fmtTime(data.fetchedAt);
- if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits."+(limited?" Some upstream sources are unavailable or quota-limited; connected fallback feeds continue to supply the cards shown.":"")+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
+ if($("feedFreshness"))$("feedFreshness").textContent=(data.note||"Race and quote availability depends on free provider coverage.")+" Dashboard polls every 2 minutes; actual quote freshness depends on each provider's timestamp and free-feed limits. Combined-feed totals count returned/deduplicated cards only; they do not guarantee that every Australian meeting is included."+(limited?" Some upstream sources are unavailable or quota-limited; connected fallback feeds continue to supply the cards shown.":"")+(data.quotaRecheckAt?" Free quota recheck scheduled: "+fmtTime(data.quotaRecheckAt):"");
  if($("dashboardFeedStatuses")){
   const audits=active.flatMap(r=>(r.runners||[]).flatMap(x=>x.bookmakerPriceAudit||[]));
   const count=(book,market,status)=>audits.filter(q=>q.bookmaker_key===book&&q.market===market&&(!status||q.status===status)).length;
