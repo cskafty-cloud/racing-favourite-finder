@@ -3044,14 +3044,15 @@ app.post("/api/history/sync", async (_req,res) => {
     if (backfilled) await saveHistory(history);
     const pending = history.picks.filter(p => p.status === "pending");
     let settled = 0, unmatched = 0, checked = 0, resultSource="MoviOdds";
+    let unmatchedOverdue = 0, upcomingPending = 0, pendingUnknownStart = 0;
     // Always fetch/confirm the provider response, even when there are no pending
     // picks; otherwise the app can claim "no settled races" without ever reading
     // the results endpoint.
     const resultFeed = await loadMoviOddsFinalResults();
     const results = resultFeed.rows;
     checked = results.length;
+    const matched = new Set();
     if (pending.length) {
-      const matched = new Set();
       for (const result of results) {
         const pick = findMatchingPick(pending,result);
         if (!pick) continue;
@@ -3066,6 +3067,15 @@ app.post("/api/history/sync", async (_req,res) => {
       }
       unmatched = pending.filter(p=>!matched.has(p)).length;
     }
+    // Do not call every pending pick a settlement failure: many are future races.
+    // Flag only races that have been over for at least 30 minutes as overdue.
+    const settlementCutoff = Date.now() - 30*60*1000;
+    for (const pick of pending) {
+      const start = Date.parse(pick.startTime||"");
+      if (!Number.isFinite(start)) pendingUnknownStart++;
+      else if (start > settlementCutoff) upcomingPending++;
+      else if (!matched.has(pick)) unmatchedOverdue++;
+    }
     if (settled) await saveHistory(history);
     const finalPicks=history.picks.filter(p=>p.status==="final");
     const decidedPicks=finalPicks.filter(p=>typeof p.favouriteWon==="boolean");
@@ -3074,14 +3084,14 @@ app.post("/api/history/sync", async (_req,res) => {
     const pendingCount=history.picks.filter(p=>p.status==="pending").length;
     console.info("RACING_HISTORY_SETTLEMENT",JSON.stringify({
       picks:history.picks.length,backfilled,checked,finalResultRows:results.length,
-      settledThisRun:settled,unmatchedPending:unmatched,pending:pendingCount,
+      settledThisRun:settled,unmatchedPending:unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,pending:pendingCount,
       finalPicks:finalPicks.length,wins,losses,decided:wins+losses,
       strikeRate:wins+losses?+(100*wins/(wins+losses)).toFixed(1):null,
       unknownFinal:finalPicks.length-decidedPicks.length,
       sampleSettlements:finalPicks.slice(-5).map(p=>({venue:p.venue,raceNumber:p.raceNumber,runner:p.runnerName,winner:p.winnerName,favouriteWon:p.favouriteWon}))
     }));
     res.set("Cache-Control","no-store");
-    return res.json({ok:true,settled,unmatched,checked,backfilled,resultSource,pending:pendingCount,
+    return res.json({ok:true,settled,unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,checked,backfilled,resultSource,pending:pendingCount,
       resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
       resultResponse:{rawRows:moviOddsResultsCache.rawRows??null,finalRows:moviOddsResultsCache.rows?.length??0,
         sampleRaceKeys:moviOddsResultsCache.sampleRaceKeys||[],sampleStatus:moviOddsResultsCache.sampleStatus||null},
