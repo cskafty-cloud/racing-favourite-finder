@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs/promises");
 const { isEstimatedQuote } = require("./market-quality");
 const { trimInsertionOrderedMap, trimMoviOddsFixtures, trimQuoteList,
-  isMemoryPressure, MEMORY_SOFT_LIMIT_BYTES, CGROUP_MEMORY_SOFT_LIMIT_MB, getCgroupMemorySoftLimitMB,
+  isMemoryPressure, getNodeRssSoftLimitMB, getCgroupMemorySoftLimitMB,
   MEMORY_CLEANUP_INTERVAL_MS, MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
 
 const app = express();
@@ -3563,7 +3563,7 @@ async function monitorAndTrimMemory() {
       externalMB: Math.round(after.external / 1048576),
       arrayBuffersMB: Math.round(after.arrayBuffers / 1048576),
       cgroupMemory: cgroup,
-      memoryThresholds: { nodeRssMB: Math.round(MEMORY_SOFT_LIMIT_BYTES / 1048576), cgroupMB: getCgroupMemorySoftLimitMB(cgroup.limitMB) },
+      memoryThresholds: { nodeRssMB: getNodeRssSoftLimitMB(cgroup.limitMB), cgroupMB: getCgroupMemorySoftLimitMB(cgroup.limitMB) },
       cacheSizes: {
         publicSports: publicDemoCache.size,
         oddsSports: oddsDataSportCache.size,
