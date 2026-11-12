@@ -103,7 +103,7 @@ function setHeaderConnection(state){
  const label=$("feedStatus"),dot=document.querySelector(".top-right .live-dot");
  if(label)label.textContent=state;
  const connected=String(state).startsWith("CONNECTED");
- const limited=/LIMITED|PARTIAL|CHECKING/i.test(String(state));
+ const limited=/LIMITED|PARTIAL|CHECKING|DELAYED|LOADING/i.test(String(state));
  if(dot)dot.className="live-dot "+(connected?(limited?"checking":"connected"):state==="CHECKING"?"checking":"offline");
 }
 function updateBrisbaneClock(){
@@ -161,14 +161,26 @@ function renderBestTips(list){
  if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">VERIFIED RANKING FILTER · Estimated, indicative, projected, modelled, consensus, synthetic and Exchange prices are excluded from bookmaker top tips.</div>'+(raceHtml||'<div class="rf-empty">No verified bookmaker favourites currently meet the ranking threshold. No estimated prices are substituted.</div>');
 }
 
+async function checkDashboardConnection(){
+ try{
+  const response=await fetch("/api/health",{cache:"no-store",signal:AbortSignal.timeout(5000)});
+  if(!response.ok)throw new Error("Health check HTTP "+response.status);
+  const health=await response.json();
+  if(health?.ok!==true)throw new Error("Dashboard health check did not confirm online status");
+  return true;
+ }catch{return false;}
+}
 async function loadRaces(){
+ const appConnected=await checkDashboardConnection();
+ if(appConnected)setHeaderConnection("CONNECTED · FEEDS LOADING");
  try{
   const response=await fetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
   if(!response.ok)throw new Error("Race feed HTTP "+response.status);
   const data=await response.json();renderRaces(data);
  }catch(error){
-  setHeaderConnection("OFFLINE");
-  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">Race feed temporarily unavailable: '+esc(error.message)+'</div>';
+  // A slow upstream racing refresh must not make a healthy website look offline.
+  setHeaderConnection(appConnected?"CONNECTED · FEED DELAYED":"OFFLINE");
+  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">'+(appConnected?'Dashboard is online, but the racing feed response is delayed: ':'Dashboard connection unavailable: ')+esc(error.message)+'</div>';
  }
 }
 async function loadLucasFox(){
