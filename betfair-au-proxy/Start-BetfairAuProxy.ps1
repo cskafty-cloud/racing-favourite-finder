@@ -3,7 +3,21 @@ Set-Location $PSScriptRoot
 
 # Credentials are stored only as Windows DPAPI ciphertext, bound to this
 # Windows user account on this PC. They are never written in plaintext.
-$CredentialFile = Join-Path $PSScriptRoot ".betfair-credentials.dpapi"
+# Keep credentials outside the extracted repository so they survive ZIP updates,
+# folder renames and fresh downloads. DPAPI binds the ciphertext to this Windows
+# user on this PC; it is never portable to another Windows profile or computer.
+$CredentialDirectory = Join-Path $env:LOCALAPPDATA "RacingFavouriteFinder\\BetfairAdapter"
+$CredentialFile = Join-Path $CredentialDirectory "credentials.dpapi"
+$LegacyCredentialFile = Join-Path $PSScriptRoot ".betfair-credentials.dpapi"
+
+if (-not (Test-Path -LiteralPath $CredentialDirectory)) {
+  New-Item -ItemType Directory -Path $CredentialDirectory -Force | Out-Null
+}
+# One-time migration of the existing encrypted file from the old repo-local
+# location. Move only the encrypted DPAPI payload; never decrypt/rewrite it here.
+if (-not (Test-Path -LiteralPath $CredentialFile) -and (Test-Path -LiteralPath $LegacyCredentialFile)) {
+  Move-Item -LiteralPath $LegacyCredentialFile -Destination $CredentialFile
+}
 
 function Read-SecretSecure([string]$Prompt) {
   return (Read-Host $Prompt -AsSecureString)
@@ -63,7 +77,8 @@ if ([int]$nodeVersion -lt 22) { throw "Node.js 22 or newer is required. Detected
 
 Write-Host ""
 Write-Host "BETFAIR AUSTRALIAN READ-ONLY ADAPTER" -ForegroundColor Cyan
-Write-Host "Credentials are stored encrypted with Windows DPAPI, not in plaintext."
+Write-Host "Credentials are stored encrypted with Windows DPAPI, outside the repository."
+Write-Host "Saved file: $CredentialFile" -ForegroundColor DarkGray
 Write-Host "The encrypted file can be decrypted only by this Windows user on this PC."
 Write-Host "Your Betfair session token may expire; replace it through this launcher if Betfair rejects it."
 Write-Host ""
