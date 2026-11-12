@@ -135,10 +135,12 @@ async function loadRaces() {
   for(const market of all){
     const book=byId.get(market.marketId);
     if(!book||book.status!=="OPEN")continue;
-    const key=market.event?.id+"|"+market.marketStartTime+"|"+market.event?.name;
+    const eventName=String(market.event?.name||"Unknown track");
+    const raceNumberMatch=eventName.match(/(?:^|\\b)R(?:ace)?\\s*(\\d+)\\b/i);
+    const key=market.event?.id+"|"+market.marketStartTime+"|"+eventName;
     if(!grouped.has(key)) grouped.set(key,{race_id:"betfair-au-"+key,id:"betfair-au-"+key,
-      category:raceCategory(market._type),code:raceCategory(market._type),venue:market.event?.name||"Unknown track",
-      track:market.event?.name||"Unknown track",race_number:null,start_time:market.marketStartTime,
+      category:raceCategory(market._type),code:raceCategory(market._type),venue:eventName,
+      track:eventName,race_number:raceNumberMatch?Number(raceNumberMatch[1]):null,start_time:market.marketStartTime,
       country:"Australia",status:book.inplay?"in_play":"scheduled",in_play:!!book.inplay,
       closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:capturedAt,runners:[]});
     const race=grouped.get(key);
@@ -282,7 +284,7 @@ async function loadSports() {
       const p=(book.runners||[]).find(x=>x.selectionId===r.selectionId);
       if(!p||p.status==="REMOVED")return null;
       return {name:r.runnerName,selectionId:r.selectionId,
-        back:quote(p.ex?.availableToBack?.[0]),lay:quote(p.ex?.availableToLay?.[0])};
+        back:quote(p.ex?.availableToBack?.[0],book.publishTime),lay:quote(p.ex?.availableToLay?.[0],book.publishTime)};
     }).filter(Boolean);
     const favourite=runners.filter(r=>r.back).sort((a,b)=>a.back.price-b.back.price)[0]||null;
     return {id:"betfair-sport-"+m.marketId,marketId:m.marketId,eventId:m.event?.id||null,
