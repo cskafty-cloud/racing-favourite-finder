@@ -1,5 +1,6 @@
 const http = require("node:http");
 const crypto = require("node:crypto");
+const { raceCategory } = require("./race-category");
 
 const PORT = Number(process.env.PORT || 8080);
 const APP_KEY = process.env.BETFAIR_APP_KEY || "";
@@ -103,19 +104,7 @@ function cached(key, loader) {
   }).finally(()=>inflight.delete(key)));
   return inflight.get(key);
 }
-function raceCategory(name,description={},event={}) {
-  // Harness races are commonly nested under Betfair's Horse Racing event type.
-  // Prefer the market's explicit raceType, while also accepting event-level
-  // race metadata returned by some Betfair catalogue variants.
-  const values=[
-    typeof description==="string"?description:"",
-    description?.raceType,description?.race_type,description?.type,
-    event?.raceType,event?.race_type,event?.type,event?.eventType?.name,
-    event?.eventTypeName
-  ].filter(value=>value!=null&&value!=="");
-  const s=(String(name)+" "+values.join(" ")).toLowerCase();
-  return /greyhound/.test(s)?"greyhound":/harness|trotting|pacing|\btrot\b/.test(s)?"harness":"horse";
-}
+
 async function fetchRaceCatalogue(type,from,to){
  const filter={eventTypeIds:[type.id],marketCountries:['AU'],marketTypeCodes:['WIN','PLACE'],marketStartTime:{from:from.toISOString(),to:to.toISOString()}};
  try{
