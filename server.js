@@ -683,22 +683,19 @@ async function loadPublicDemoSport(sport) {
   if(cached&&Date.now()-cached.at<85000)return cached;
   const bookSlug=PUNTERS_EDGE_BOOK_SPORTS[sport.key]||null;
   const bestSlug=PUNTERS_EDGE_BEST_SPORTS[sport.key]||null;
+  // Public website display uses the MoviOdds feed, whose published terms
+  // permit use in your own apps, tools and sites. PuntersEdge's personal-use
+  // preview and LucasFox's no-redistribution API are not republished here.
   const jobs=[
-    bookSlug?publicDemoRequest("/v1/demo/book-sport",{book:"sportsbet",sport:bookSlug}):Promise.resolve(null),
-    // Bet365 is already supplied by MoviOdds' documented no-key all-sports feed.
-    // Avoid spending the public demo's small shared request allowance on a duplicate book.
     Promise.resolve(null),
-    bestSlug?publicDemoRequest("/v1/demo/best-odds",{sport:bestSlug}):Promise.resolve(null),
+    Promise.resolve(null),
+    Promise.resolve(null),
     (async()=>{
       const all=await loadMoviOddsAllSports();
       const matches=all.filter(item=>moviSportMatches(item,sport));
       return {matches,source:"MoviOdds /odds?sport=all",has_data:matches.length>0};
     })(),
-    (async()=>{
-      const ids=RAPID_SPORT_IDS[sport.key]||[];
-      // RapidOddsAPI removed: no external requests are made here.
-      return [];
-    })()
+    Promise.resolve([])
   ];
   const [sportsbetResult,bet365Result,bestOddsResult,moviResult,rapidResult]=await Promise.allSettled(jobs);
   const rowsByKey=new Map(),errors=[];
@@ -2916,7 +2913,7 @@ app.get("/api/public-sports/:sportKey",async(req,res)=>{
       provider:data.provider+(ODDS_API_TOKEN?" · Bet365 fallback when public coverage is thin":""),providerErrors:errors,publicDemo:true,
       eventCount:rows.length,liveCount:rows.filter(e=>e.in_play===true).length,
       pricedCount,verifiedQuoteCount,feedStatus,
-      note:"Upcoming and live fixtures stay visible when prices are missing. Sportsbet and Bet365 remain separate. LucasFox quotes require explicit Sportsbet AU identity, valid event and selection match, decimal price above 1.00, capture timestamp and age no greater than 15 minutes. Stale and unsupported markets are excluded. LucasFox does not provide racing WIN/PLACE."});
+      note:"Upcoming and live fixtures stay visible when prices are missing. Public bookmaker prices are sourced from MoviOdds and labelled Bet365 only when the quote provenance supports it. Betfair Exchange BACK/LAY prices are displayed separately as delayed exchange data. Stale and unsupported markets are excluded; no bookmaker is substituted."});
   }catch(error){sportsFeedHealth[sport.key]={ok:false,status:"offline",fetchedAt:new Date().toISOString(),title:sport.title,eventCount:0,liveCount:0,pricedCount:0,errors:[error.message]};return res.status(502).json({error:error.message,publicDemo:true});}
 });
 app.get("/api/sports/:sportKey", async (req,res) => {
@@ -3203,9 +3200,9 @@ async function loadLucasFoxSportsFeed(){
  })().catch(error=>{lucasFoxSportsCache.error=error.message;throw error;}).finally(()=>{lucasFoxSportsRefresh=null;});
  return lucasFoxSportsRefresh;
 }
-app.get("/api/lucasfox/sports",async(_req,res)=>{
- try{const data=await loadLucasFoxSportsFeed();res.set("Cache-Control","no-store");return res.json(data);}
- catch(error){return res.status(503).json({error:error.message,provider:"LucasFox free Sportsbet main-market feed",tier:"free"});}
+app.get("/api/lucasfox/sports",(_req,res)=>{
+ res.set("Cache-Control","no-store");
+ return res.status(410).json({error:"Disabled for public display: the provider's published terms prohibit passing its odds data on to other people. The public sports board uses MoviOdds and the separately labelled Betfair Exchange feed instead.",provider:"LucasFox",status:"redistribution-not-authorised"});
 });
 
 app.get("*",(_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
