@@ -12,8 +12,8 @@ jobs:
     if: contains(github.event.head_commit.message, '[publish-desktop]')
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -35,7 +35,7 @@ jobs:
           }
           Write-Host "Verified $target ($((Get-Item -LiteralPath $target).Length) bytes)."
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: desktop-v1.0.2
           name: Racing Favourite Finder Desktop v1.0.2
