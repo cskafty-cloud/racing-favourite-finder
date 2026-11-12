@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtTime=value=>{const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}):"Time unavailable";};
 const fmtAge=value=>Number.isFinite(Number(value))?Math.max(0,Math.round(Number(value)))+"s old":"age unknown";
-let races=[],filter="all",sort="time",started=false,lastSportsAt=0,betfairSportsEvents=[];
+let races=[],filter="all",sort="time",started=false,lastSportsAt=0,betfairSportsEvents=[],lastServerCheckAt=0,healthCheckInFlight=null;
 const statusBadge=(status,label)=>status==="verified"?'<span class="price-status verified">VERIFIED</span>':'<span class="price-status unverified">'+esc(label||"UNVERIFIED")+'</span>';
 function addStyles(){
  if(document.getElementById("rf-extra-styles"))return;
@@ -116,7 +116,7 @@ function renderRaces(data){
  // Keep website/API connectivity separate from provider coverage. The dashboard
  // may be online while some upstream feeds are unavailable or quota-limited.
  const limited=errors.length>0||data.coverageState==="limited";
- setHeaderConnection(races.length?(limited?"CONNECTED · LIMITED FEEDS":"CONNECTED"):"CONNECTED · NO RACES");
+ // Connection status is driven only by a successful, timestamped server health response.
  const active=races.filter(r=>!r.abandoned&&!/abandon|cancel/i.test(String(r.status||"")));
  let shown=active.filter(r=>filter==="all"||String(r.category||r.code||"").toLowerCase().includes(filter));
  shown.sort((a,b)=>{
@@ -162,25 +162,38 @@ function renderBestTips(list){
 }
 
 async function checkDashboardConnection(){
- try{
-  const response=await fetch("/api/health",{cache:"no-store",signal:AbortSignal.timeout(5000)});
-  if(!response.ok)throw new Error("Health check HTTP "+response.status);
-  const health=await response.json();
-  if(health?.ok!==true)throw new Error("Dashboard health check did not confirm online status");
-  return true;
- }catch{return false;}
+ if(healthCheckInFlight)return healthCheckInFlight;
+ healthCheckInFlight=(async()=>{
+  try{
+   const response=await fetch("/api/health",{cache:"no-store",headers:{"Cache-Control":"no-cache"},signal:AbortSignal.timeout(5000)});
+   if(!response.ok)throw new Error("Health check HTTP "+response.status);
+   const health=await response.json();
+   const serverMs=Date.parse(health?.serverTime||"");
+   const ageMs=Date.now()-serverMs;
+   if(health?.ok!==true||!Number.isFinite(serverMs)||ageMs < -60000||ageMs>120000)
+    throw new Error("Server did not return a recent, timestamped health response");
+   lastServerCheckAt=Date.now();
+   const serverClock=new Date(serverMs).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false});
+   setHeaderConnection("CONNECTED · SERVER "+serverClock);
+   if($("feedStatus"))$("feedStatus").title="Server health confirmed at "+new Date(serverMs).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+" · uptime "+Number(health.uptimeSeconds||0)+" seconds";
+   return true;
+  }catch(error){
+   if(!lastServerCheckAt)setHeaderConnection("OFFLINE · SERVER NOT REACHABLE");
+   else if(Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");
+   return false;
+  }finally{healthCheckInFlight=null;}
+ })();
+ return healthCheckInFlight;
 }
 async function loadRaces(){
- const appConnected=await checkDashboardConnection();
- if(appConnected)setHeaderConnection("CONNECTED · FEEDS LOADING");
+ // The health heartbeat is independent of the slower upstream race-feed request.
+ void checkDashboardConnection();
  try{
   const response=await fetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
   if(!response.ok)throw new Error("Race feed HTTP "+response.status);
   const data=await response.json();renderRaces(data);
  }catch(error){
-  // A slow upstream racing refresh must not make a healthy website look offline.
-  setHeaderConnection(appConnected?"CONNECTED · FEED DELAYED":"OFFLINE");
-  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">'+(appConnected?'Dashboard is online, but the racing feed response is delayed: ':'Dashboard connection unavailable: ')+esc(error.message)+'</div>';
+  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">The server connection is monitored separately. Racing feed response delayed or unavailable: '+esc(error.message)+'</div>';
  }
 }
 async function loadLucasFox(){
@@ -331,7 +344,12 @@ async function loadSportsFixtures(){
 }
 
 function start(){
- if(started)return;started=true;addStyles();loadRaces();loadLucasFox();loadSportsFixtures();
+ if(started)return;started=true;addStyles();
+ setHeaderConnection("CHECKING · VERIFYING SERVER");
+ void checkDashboardConnection();
+ setInterval(checkDashboardConnection,30000);
+ setInterval(()=>{if(lastServerCheckAt&&Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");},10000);
+ loadRaces();loadLucasFox();loadSportsFixtures();
  setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);loadBetfairSports();setInterval(loadBetfairSports,60*1000);
 }
 window.startFullDashboardFeeds=start;
