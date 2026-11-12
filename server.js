@@ -1537,7 +1537,7 @@ async function probeBetfairAdapterFeed(url, kind) {
         Accept:"application/json",
         ...(process.env.BETFAIR_FEED_TOKEN ? {Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN} : {})
       },
-      signal:AbortSignal.timeout(8000)
+      signal:AbortSignal.timeout(2500)
     });
     const body = await response.text();
     let data;
@@ -1563,7 +1563,7 @@ async function probeBetfairAdapterFeed(url, kind) {
 }
 let betfairHealthCache={at:0,data:null};
 app.get("/api/health", async (_req,res) => {
-  if (betfairHealthCache.data && Date.now()-betfairHealthCache.at<15000) {
+  if (betfairHealthCache.data && Date.now()-betfairHealthCache.at<60000) {
     return res.set("Cache-Control","no-store").json({...betfairHealthCache.data,
       serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime())});
   }
@@ -1574,7 +1574,7 @@ app.get("/api/health", async (_req,res) => {
       const healthUrl=BETFAIR_FEED_URL.endsWith("/api/races")
         ? BETFAIR_FEED_URL.slice(0,-10)+"/health"
         : BETFAIR_FEED_URL.replace("/api/races","/health");
-      const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(6000)});
+      const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(1500)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error("Adapter health returned invalid JSON (HTTP "+response.status+").");}
       if(!response.ok)throw new Error("Adapter health HTTP "+response.status);
