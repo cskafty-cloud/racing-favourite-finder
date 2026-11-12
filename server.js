@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
-const { isEstimatedQuote } = require("./market-quality");
+const { isEstimatedQuote, quoteAgeSeconds } = require("./market-quality");
 const { trimInsertionOrderedMap, trimMoviOddsFixtures, trimQuoteList,
   isMemoryPressure, getNodeRssSoftLimitMB, getCgroupMemorySoftLimitMB,
   MEMORY_CLEANUP_INTERVAL_MS, MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
