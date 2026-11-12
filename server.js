@@ -1088,23 +1088,33 @@ function selectFavourite(race) {
 function winnerFromResult(r) {
   const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
   if (direct) return { name: direct, number: valueOf(r, ["winner_number","winning_runner_number"]) };
-  const directWinner = r.winner || r.winning_runner || r.first;
+  const resultValue=r.result;
+  const directWinner = r.winner || r.winning_runner || r.first ||
+    (resultValue&&typeof resultValue==="object"&&!Array.isArray(resultValue)?
+      (resultValue.winner||resultValue.winning_runner||resultValue.first||resultValue.first_place||resultValue["1"]):null);
   if (typeof directWinner === "string") return { name: directWinner, number: null };
   if (directWinner && typeof directWinner === "object") {
-    const name = directWinner.name || directWinner.runner_name || directWinner.horse_name || directWinner.greyhound_name;
-    if (name) return { name, number: directWinner.number ?? directWinner.runner_number ?? directWinner.box ?? null };
+    const name = directWinner.name || directWinner.runner_name || directWinner.horse_name || directWinner.greyhound_name || directWinner.selection_name;
+    if (name) return { name, number: directWinner.number ?? directWinner.runner_number ?? directWinner.box ?? directWinner.saddlecloth ?? null };
   }
-  // MoviOdds result rows expose ordered placings. Accept its documented
-  // placings array and common nested runner/result array variants.
-  const candidates = [r.placings,r.runners,r.results,r.finishers,r.runners_result,r.finishing_order];
+  if(typeof resultValue==="string"&&resultValue.trim())return {name:resultValue.trim(),number:null};
+  // MoviOdds result rows expose runner records and a separate result field.
+  // Accept explicit placing fields first; never assume array order is finishing order.
+  const resultArrays=[Array.isArray(resultValue)?resultValue:null,
+    resultValue&&Array.isArray(resultValue.placings)?resultValue.placings:null,
+    resultValue&&Array.isArray(resultValue.runners)?resultValue.runners:null,
+    resultValue&&Array.isArray(resultValue.results)?resultValue.results:null].filter(Boolean);
+  const candidates = [...resultArrays,r.placings,r.runners,r.results,r.finishers,r.runners_result,r.finishing_order];
   const runners = candidates.find(Array.isArray) || [];
   const winner = runners.find(x => Number(x.position ?? x.placing ?? x.place ?? x.finish_position ?? x.position_number ?? x.rank) === 1);
   if (winner) return {
     name: winner.name || winner.runner_name || winner.horse_name || winner.greyhound_name || winner.selection_name,
     number: winner.number ?? winner.runner_number ?? winner.box ?? winner.saddlecloth ?? null
   };
-  if (r.placings && !Array.isArray(r.placings) && typeof r.placings === "object") {
-    const first = r.placings["1"] ?? r.placings.first ?? r.placings.first_place;
+  const placingObject=(r.placings&&!Array.isArray(r.placings)&&typeof r.placings==="object")?r.placings:
+    (resultValue&&!Array.isArray(resultValue)&&typeof resultValue==="object"?resultValue:null);
+  if (placingObject) {
+    const first = placingObject["1"] ?? placingObject.first ?? placingObject.first_place ?? placingObject.firstPlace;
     if (typeof first === "string") return {name:first,number:null};
     if (first && typeof first === "object") {
       const name=first.name||first.runner_name||first.horse_name||first.greyhound_name;
@@ -2763,14 +2773,20 @@ async function loadMoviOddsFinalResults(){
    if(!rows.length&&Array.isArray(payload.meetings))rows=payload.meetings.flatMap(meeting=>(meeting.races||[]).map(row=>({...row,
     course:row.course||meeting.course||meeting.track||meeting.name,
     code:row.code||meeting.code||payload.code||"all"})));
-   const sample=rows[0]||null;
+   const sample=rows.find(x=>/^(result_final|final|settled)$/i.test(String(x.status||x.result_status||"")))||rows[0]||null;
    const placingList=sample?(sample.placings||sample.runners||sample.results||sample.finishers||[]):[];
+   const resultValue=sample?.result??null;
    console.info("MOVIODDS_RESULTS_RESPONSE_CONFIRMED",JSON.stringify({
     date,httpStatus:response.status,topLevelKeys:Object.keys(payload||{}),
-    raceCount:rows.length,sampleRaceKeys:sample?Object.keys(sample):[],
-    sampleStatus:sample?.status||null,placingsType:Array.isArray(placingList)?"array":typeof placingList,
+    raceCount:rows.length,finalRaceCount:rows.filter(x=>/^(result_final|final|settled)$/i.test(String(x.status||x.result_status||""))).length,
+    sampleRaceKeys:sample?Object.keys(sample):[],sampleStatus:sample?.status||null,
+    resultType:Array.isArray(resultValue)?"array":typeof resultValue,
+    resultKeys:resultValue&&typeof resultValue==="object"&&!Array.isArray(resultValue)?Object.keys(resultValue):[],
+    resultPreview:resultValue==null?null:JSON.stringify(resultValue).slice(0,700),
+    placingsType:Array.isArray(placingList)?"array":typeof placingList,
     samplePlacingKeys:Array.isArray(placingList)&&placingList[0]?Object.keys(placingList[0]):[],
-    samplePlacingCount:Array.isArray(placingList)?placingList.length:null
+    samplePlacingCount:Array.isArray(placingList)?placingList.length:null,
+    firstRunnerPreview:Array.isArray(placingList)&&placingList[0]?JSON.stringify(placingList[0]).slice(0,450):null
    }));
    return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results",_result_date:date}));
   }));
