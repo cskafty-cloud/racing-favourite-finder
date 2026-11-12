@@ -1537,7 +1537,7 @@ app.get("/api/health", async (_req,res) => {
     betfairMode:tokenAuthorized&&betfairAdapter.betfairApiAuthenticated?"authenticated-delayed-exchange":
       configuredFeeds.some(feed=>feed.status==="token-rejected")?"adapter-token-mismatch":
       betfairAdapter.reachable?"adapter-reachable-auth-unconfirmed":BETFAIR_FEED_URL?"adapter-unreachable":"credentials-missing",
-    betfairAdapter,betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR};
+    betfairAdapter,moviOddsStream:{...moviOddsStreamState},betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR};
   betfairHealthCache={at:Date.now(),data:result};
   res.set("Cache-Control","no-store");
   res.json(result);
