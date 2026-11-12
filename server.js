@@ -3503,7 +3503,7 @@ async function readCgroupMemorySnapshot() {
   const v2 = number(v2Current) != null;
   const stat = {};
   for (const line of String(v2Stat || "").split("\n")) {
-    const match = line.trim().match(/^([a-z_]+)\\s+(\\d+)$/i);
+    const match = line.trim().match(/^([a-z_]+)\s+(\d+)$/i);
     if (match) stat[match[1]] = Number(match[2]);
   }
   const currentBytes = number(v2 ? v2Current : v1Current);
