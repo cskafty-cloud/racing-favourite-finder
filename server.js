@@ -4,7 +4,8 @@ const path = require("path");
 const fs = require("fs/promises");
 const { isEstimatedQuote } = require("./market-quality");
 const { trimInsertionOrderedMap, trimMoviOddsFixtures, trimQuoteList,
-  MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
+  isMemoryPressure, MEMORY_SOFT_LIMIT_BYTES, CGROUP_MEMORY_SOFT_LIMIT_MB,
+  MEMORY_CLEANUP_INTERVAL_MS, MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -3474,9 +3475,7 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
 // Sample both Node RSS and the Linux cgroup that Railway actually limits.
 // Railway's historical service metric can include older deployment samples; cgroup
 // current/peak values let us distinguish a real container spike from a dashboard
-// aggregate. Trim rebuildable caches before approaching the 1 GB container limit.
-const MEMORY_SOFT_LIMIT_BYTES = 512 * 1024 * 1024;
-const CGROUP_MEMORY_SOFT_LIMIT_BYTES = 700 * 1024 * 1024;
+// aggregate. Begin trimming early to preserve headroom under the 954 MB cgroup limit.
 let lastMemoryPressureCleanupAt = 0;
 let peakRssMB = 0;
 let memorySampleInFlight = false;
@@ -3528,10 +3527,9 @@ async function monitorAndTrimMemory() {
   try {
     const cgroup = await readCgroupMemorySnapshot();
     const before = process.memoryUsage();
-    const pressure = before.rss >= MEMORY_SOFT_LIMIT_BYTES ||
-      (cgroup.currentMB != null && cgroup.currentMB * 1048576 >= CGROUP_MEMORY_SOFT_LIMIT_BYTES);
+    const pressure = isMemoryPressure({ rssBytes: before.rss, cgroupCurrentMB: cgroup.currentMB });
     let cleanup = null;
-    if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 60000) {
+    if (pressure && Date.now() - lastMemoryPressureCleanupAt >= MEMORY_CLEANUP_INTERVAL_MS) {
       lastMemoryPressureCleanupAt = Date.now();
       const cacheCounts = {
         publicSports: publicDemoCache.size,
@@ -3543,10 +3541,14 @@ async function monitorAndTrimMemory() {
       publicDemoCache.clear();
       oddsDataSportCache.clear();
       bet365ResultsCache.clear();
-      if (moviOddsResultsCache.rows.length > 350) {
-        moviOddsResultsCache = { ...moviOddsResultsCache, rows: moviOddsResultsCache.rows.slice(-350) };
+      sportsOddsCache.clear();
+      rapidSportsOddsCache.clear();
+      trimInsertionOrderedMap(lastMarketSignatures, 1000, 800);
+      trimInsertionOrderedMap(lastSnapshotAt, 1000, 800);
+      if (moviOddsResultsCache.rows.length > 250) {
+        moviOddsResultsCache = { ...moviOddsResultsCache, rows: moviOddsResultsCache.rows.slice(-250) };
       }
-      trimMoviOddsFixtures(moviOddsAllSportsCache.items, { limit: 450, staleMs: 3 * 60 * 60 * 1000 });
+      trimMoviOddsFixtures(moviOddsAllSportsCache.items, { limit: 500, staleMs: 2 * 60 * 60 * 1000 });
       if (typeof global.gc === "function") global.gc();
       cleanup = { cacheCounts, liveFixturesAfter: moviOddsAllSportsCache.items.length };
     }
@@ -3590,7 +3592,7 @@ async function monitorAndTrimMemory() {
     memorySampleInFlight = false;
   }
 }
-const memoryMonitorTimer = setInterval(monitorAndTrimMemory, 60000);
+const memoryMonitorTimer = setInterval(monitorAndTrimMemory, 30000);
 if (typeof memoryMonitorTimer.unref === "function") memoryMonitorTimer.unref();
 
 let gracefulShutdownStarted = false;
