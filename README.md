@@ -1,41 +1,78 @@
-# Racing Favourite Finder — live + results history
+# Racing Favourite Finder
 
-Australian horse and greyhound racing dashboard. Informational only; it does not log into Bet365 or place bets.
+Australian horse, greyhound and harness racing, plus sports markets and settled results. This is a **read-only information dashboard**: it does not log in to betting accounts, place bets or automate wagering.
 
-## Live feed
+## Current production data sources
 
-Uses PuntersEdge's authenticated `GET /v1/racing/next-to-go` endpoint, requesting Australian horse and greyhound races. Bet365 price is used to rank the favourite when that quote is available; otherwise the app uses the median of available, non-stale bookmaker quotes and labels the source.
+The live production board currently uses:
 
-1. Create a free API key at https://puntersedge.online/api/integrate (or https://puntersedge.online).
-2. Set `PUNTERSEDGE_API_KEY` in your server environment. Never put the key in browser JavaScript or commit `.env`.
-3. Run `npm install` then `npm start`; visit http://localhost:3000.
+- **MoviOdds** for Australian racing fixtures and Bet365 fixed WIN/PLACE runner quotes where the provider returns them.
+- **MoviOdds sports stream** for Bet365 sports-market updates.
+- **Betfair Exchange** through the separately hosted Australian adapter for delayed Exchange BACK/LAY markets. Exchange prices are not bookmaker fixed odds.
+- **MoviOdds results** for final horse, greyhound and harness results, used to settle saved favourite history.
 
-The provider's free tier has limited monthly credits. Check its current endpoint access, bookmaker coverage, usage limits, and licence before deployment or use. Prices can be stale, incomplete, suspended, or unavailable.
+The provider is the data source; the bookmaker is the quote origin. The dashboard must keep those identities separate. A quote is eligible for a verified bookmaker ranking only when it is genuinely attributed to that bookmaker, belongs to the correct market, has a usable source timestamp and is fresh (under 180 seconds). Estimates, consensus prices, untimestamped previews, suspended markets and stale quotes are not verified bookmaker prices.
 
-## Favourite history
+### Sportsbet availability
 
-Whenever the live endpoint is polled, the app saves the first favourite it sees for each race. It then calls `/v1/racing/results` to settle saved picks against final results. The history page shows settled selections, wins/losses and strike rates for horse, greyhound and combined races. It also shows pending selections.
+The current public production feed has **no verified Sportsbet racing WIN or PLACE quotes**. Do not label Bet365, Betfair Exchange, market consensus or preview prices as Sportsbet. PuntersEdge Free/Hobby/Standard credentials are personal-use only and are not enabled for the public board. Krok Odds is also excluded unless the required public-display permission is configured. A provider must explicitly permit public display before its quotes can be used on this site.
 
-The history is a record of favourites captured while this app was running. It cannot reconstruct favourites from before deployment unless historical odds are separately obtained and imported. The app uses a JSON file at `DATA_DIR/history.json`; set a persistent disk/volume at `/data` and `DATA_DIR=/data` on Railway so records survive redeploys. Without persistent storage, the file can be lost when the host replaces the container.
+### Optional provider credentials
 
-## Deploy on Railway (recommended for this Express server)
+- `PUNTERSEDGE_API_KEY` and `PUNTERSEDGE_PLAN`: legacy/optional PuntersEdge integration only. A free personal-use key must not be used to power this public dashboard. The public-display licence flag is intentionally not enabled by default.
+- `KROKODDS_API_KEY`: optional Krok integration. Public use is blocked unless the applicable written public-display permission is configured. Do not set the permission flag merely to make the feed appear.
+- `ODDS_DATA_API_TOKEN`: optional sports fallback credential. The paid fallback is disabled unless `ENABLE_PAID_ODDS_FALLBACK=true` is deliberately set; it is not part of the free-only production setup.
+- Betfair credentials belong on the Australian adapter, not in browser code. See the adapter instructions below.
 
-1. Push this project to a GitHub repository (do not upload `.env`).
-2. In Railway, create a project and choose **Deploy from GitHub repo**.
-3. Add environment variable `PUNTERSEDGE_API_KEY` in the Railway service Variables tab.
-4. Add a Railway Volume mounted at `/data`; set `DATA_DIR=/data`.
-5. Generate a public domain under service Settings / Networking.
-6. Confirm `/api/health` returns `ok: true` and `liveFeedConfigured: true`.
+Do not commit `.env`, API keys, session tokens or shared adapter tokens.
 
-Railway supports Node services and server-side environment variables. This app is not a static-only Netlify site; Netlify would require a serverless conversion and a separate persistent database. Railway is the simpler fit for this Express server and its history file.
+## Run locally
 
-## Important
+1. Install Node.js 22 or newer.
+2. Copy `.env.example` to `.env` only if you need optional integrations.
+3. Run `npm install`, then `npm start`.
+4. Open `http://localhost:3000` (or the configured `PORT`).
 
-- The data provider key and commercial-use terms are separate matters. Confirm the provider's current licence allows your intended use.
-- A market favourite is not a prediction or a guarantee.
-- This dashboard is not betting advice and never places bets.
-- 18+ only. Gambling Help Online (Australia): 1800 858 858.
+The public MoviOdds sources do not require a browser-side API key. Optional provider credentials must remain server-side.
 
+## Favourite history and persistent storage
+
+The app records favourite snapshots and settles saved selections against final results. It cannot reconstruct selections from before the app began recording them unless historical data is separately obtained and imported.
+
+The history file is stored at `DATA_DIR/history.json`. For Railway, attach the existing persistent volume at `/data` and set `DATA_DIR=/data`. Keep that volume attached when deploying; it protects existing history. The application flushes queued history writes during graceful shutdown.
+
+## Railway production
+
+Production service: [Racing Favourite Finder](https://racing-favourite-finder-production.up.railway.app/)
+
+- Service listens on Railway's `PORT` (production target port 8080).
+- Health endpoint: `/api/health`.
+- Persistent history volume: `/data` (500 MB).
+- Node is started with a bounded heap to reduce memory pressure.
+- The application logs cgroup memory, Node RSS/heap, cache sizes and sports-stream telemetry.
+- Railway deployments that share an attached volume may briefly interrupt requests; the browser retries transient same-origin 502/503/504 and network failures. This does not promise zero downtime.
+
+Useful local checks:
+
+```sh
+npm test
+node --check server.js
+node --check betfair-au-proxy/server.js
+node --check betfair-feed.js
+node --check public/app.js
+```
+
+## Data-quality and safety rules
+
+- Show genuine Bet365 fixed WIN/PLACE only when the actual quote and its market timestamp are present and fresh.
+- Show Sportsbet only when a genuine Sportsbet quote is returned by a provider whose licence permits public display.
+- Keep Betfair Exchange BACK and LAY separate from fixed bookmaker prices.
+- Never promote estimated, indicative, projected, modelled, consensus, synthetic or predicted prices into verified rankings or top tips.
+- Do not treat feed receipt time or a race-card refresh time as the bookmaker's quote timestamp.
+- Do not substitute one bookmaker's price for another bookmaker's missing price.
+- Do not claim a fixture count means every race has live prices.
+- No paid subscription fallback, login bypass, scraping of protected pages or bet-placement actions are enabled by default.
+- This dashboard is informational, not betting advice. 18+ only. Gambling Help Online (Australia): 1800 858 858.
 
 ## Free racing-source policy
 
@@ -127,7 +164,7 @@ The deployment resilience changes in this release:
 
 A true zero-downtime migration requires moving `history.json` to shared external persistent storage, verifying a complete backup, switching the application to that store, and only then detaching the Railway Volume. Railway Buckets are not zero-cost: current pricing is $0.015 per GB-month, and uploads from the service also incur normal service egress. No bucket or paid storage has been provisioned for this project. The volume is intentionally retained to protect the existing history.
 
-### Production feed verification snapshot
+### Historical production feed snapshot — 12 November 2026\n\nThe following figures are a historical startup diagnostic, not current live totals. Use the live dashboard and current health/telemetry endpoints for present availability.
 
 The latest production log sample checked on 12 November 2026 at 10:47 UTC reported:
 - Betfair Australian racing adapter: 160 races, 1,653 runners, 4,835 Exchange quotes.
