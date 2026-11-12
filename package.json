@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "desktop:dev": "electron .",
-    "desktop:dist": "node desktop/create-icon.cjs && electron-builder --win portable"
+    "desktop:dist": "node desktop/create-icon.cjs && electron-builder --win portable",
+    "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
