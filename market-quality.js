@@ -41,4 +41,18 @@ function quoteAgeSeconds(timestamp, now = Date.now(), futureSkewSeconds = 60) {
   return Math.max(0, delta / 1000);
 }
 
-module.exports = { isEstimatedQuote, quoteAgeSeconds };
+function quoteMarketAge(q, market = "win", now = Date.now()) {
+  const fields = market === "place"
+    ? ["place_last_update", "place_updated_at", "place_captured_at"]
+    : ["last_update", "updated_at", "captured_at", "timestamp"];
+  const ageField = market === "place" ? "place_age_seconds" : "age_seconds";
+  const stamp = fields.map(key => q?.[key]).find(value => value != null && value !== "");
+  if (stamp == null) return null;
+  const stamped = quoteAgeSeconds(stamp, now);
+  if (stamped == null) return null;
+  const direct = q?.[ageField] != null && Number.isFinite(Number(q[ageField]))
+    ? Math.max(0, Number(q[ageField])) : null;
+  return direct == null ? stamped : Math.max(stamped, direct);
+}
+
+module.exports = { isEstimatedQuote, quoteAgeSeconds, quoteMarketAge };
