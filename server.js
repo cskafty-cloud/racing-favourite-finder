@@ -1249,6 +1249,10 @@ function providerRetryDelay(error) {
 // Its racing endpoints return bookmaker-specific runner prices (win/place), not sports markets.
 const RAPID_RACING_CODES = ["thoroughbred","harness","greyhound"];
 const KROKODDS_API_KEY = process.env.KROKODDS_API_KEY || "";
+// Pause known exhausted monthly racing quotas; retry after the stated reset.
+const RACING_PROVIDER_QUOTA_RECHECK_AT = Date.parse("2026-12-01T00:00:00Z");
+const KROK_RACING_QUOTA_PAUSED = Date.now() < RACING_PROVIDER_QUOTA_RECHECK_AT;
+const PUNTERS_EDGE_RACING_QUOTA_PAUSED = Date.now() < RACING_PROVIDER_QUOTA_RECHECK_AT;
 const KROKODDS_BASE = "https://krokodds.com.au/api/v1";
 let krokRacingCache = {at:0,races:[],meta:null,creditsRemaining:null,errors:[]};
 let krokRetryAt = 0;
@@ -1383,10 +1387,11 @@ async function fetchKrokRacing(date, raceType, bookmaker="sportsbet") {
 async function getKrokRaces() {
   const now=Date.now();
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Melbourne",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-  if(krokRetryAt && now<krokRetryAt) {
+  if(KROK_RACING_QUOTA_PAUSED || (krokRetryAt && now<krokRetryAt)) {
     return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
       oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
-      feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+      feedErrors:KROK_RACING_QUOTA_PAUSED?[]:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+      feedWarnings:KROK_RACING_QUOTA_PAUSED?[{feed:"Krok Odds",status:"monthly-quota-paused",message:"Authenticated racing requests paused until the monthly quota recheck on 1 December 2026."}]:[],
       feedSource:"Krok Odds direct Sportsbet + Bet365 racing feeds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
   }
   if(!krokRacingCache.at || now-krokRacingCache.at>=60000) {
@@ -1425,7 +1430,8 @@ async function getKrokRaces() {
   }
   return {races:krokRacingCache.races,scheduleFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,
     oddsFetchedAt:krokRacingCache.at?new Date(krokRacingCache.at).toISOString():null,horizonHours:24,
-    feedErrors:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+    feedErrors:KROK_RACING_QUOTA_PAUSED?[]:krokRacingCache.errors.map(message=>({feed:"Krok Odds",message})),
+      feedWarnings:KROK_RACING_QUOTA_PAUSED?[{feed:"Krok Odds",status:"monthly-quota-paused",message:"Authenticated racing requests paused until the monthly quota recheck on 1 December 2026."}]:[],
     feedSource:"Krok Odds direct Sportsbet + Bet365 racing feeds",creditsRemaining:krokRacingCache.creditsRemaining,meta:krokRacingCache.meta};
 }
 const RAPID_RACING_BOOKMAKERS = ["Sportsbet","Bet365","TAB","PointsBet","Ladbrokes","Unibet","TABtouch","Betr","BetRight","PalmerBet","NextBet","Picklebet","Dabble","Amused"];
@@ -1510,7 +1516,7 @@ async function loadSupplementalAustralianRaces() {
     // Use the no-key public bookmaker preview only. Sportsbet's HTML pages
     // return HTTP 403 from Railway; do not repeatedly request blocked pages.
     ["Sportsbet public bookmaker preview",()=>loadSportsbetPublicRaceDemos()],
-    ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY?getKrokRaces():Promise.resolve({races:[],feedErrors:[]})]
+    ["Krok Odds Sportsbet licensed feed",()=>KROKODDS_API_KEY&&!KROK_RACING_QUOTA_PAUSED?getKrokRaces():Promise.resolve({races:[],feedErrors:[],feedWarnings:KROK_RACING_QUOTA_PAUSED?[{status:"monthly-quota-paused",message:"Paused until 1 December 2026."}]:[]})]
   ];
   const settled=await Promise.allSettled(jobs.map(([,run])=>run()));
   const races=[],errors=[];
@@ -1952,9 +1958,9 @@ async function getGlobalRacesUncached() {
   // A 402 is a hard monthly quota exhaustion, not a transient error. Do not
   // keep entering the provider loader on every browser/background refresh while
   // both racing endpoints are inside their cooldown; use the free feeds below.
-  const puntersEdgeQuotaPaused = API_KEY && (Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
+  const puntersEdgeQuotaPaused = API_KEY && (PUNTERS_EDGE_RACING_QUOTA_PAUSED || Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
   if (puntersEdgeQuotaPaused) {
-    failures.push({feed:"PuntersEdge",message:"Monthly credits exhausted (HTTP 402); authenticated racing requests are paused until the provider cooldown expires. Continuing with available public feeds."});
+    console.info("PUNTERS_EDGE_RACING_QUOTA_PAUSED",JSON.stringify({retryAt:new Date(RACING_PROVIDER_QUOTA_RECHECK_AT).toISOString(),action:"skip exhausted authenticated racing endpoints and use independent feeds"}));
   }
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
   // through to the already-configured alternate providers rather than stopping.
@@ -1987,7 +1993,7 @@ async function getGlobalRacesUncached() {
   }
   // Krok Odds is a separately configured racing provider. It is queried only
   // after the primary feed fails and is cached for 60 seconds by getKrokRaces().
-  if (KROKODDS_API_KEY) {
+  if (KROKODDS_API_KEY && !KROK_RACING_QUOTA_PAUSED) {
     try {
       const alternate=await getKrokRaces();
       if (alternate.races?.length) {
