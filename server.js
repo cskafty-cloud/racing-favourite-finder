@@ -378,33 +378,66 @@ async function readHistory() {
       const chunks = [];
       for await (const chunk of response.Body) chunks.push(Buffer.from(chunk));
       const remote = normalizeHistory(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      const local = await readLocalHistory();
+      const remoteUpdated = Date.parse(remote.updatedAt || "");
+      const localUpdated = Date.parse(local.updatedAt || "");
+      // A successful local-first save may be newer than R2 after a temporary
+      // network failure. Prefer that newer backup and repair R2 opportunistically.
+      if (Number.isFinite(localUpdated) && (!Number.isFinite(remoteUpdated) || localUpdated > remoteUpdated)) {
+        historyCache = local;
+        try {
+          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
+          console.info("R2_HISTORY_REPAIR_WRITE_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
+        } catch (repairError) {
+          console.warn("R2_HISTORY_REPAIR_WRITE_FAILED", String(repairError.message || repairError).slice(0,240));
+        }
+        console.info("R2_HISTORY_LOCAL_BACKUP_NEWER", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
+        return historyCache;
+      }
       historyCache = remote;
-      // Keep the mounted volume as a recoverable local backup while R2 is being validated.
       await writeLocalHistory(remote);
       console.info("R2_HISTORY_READ_OK", JSON.stringify({ picks: remote.picks.length, marketSnapshots: remote.marketSnapshots.length }));
       return historyCache;
     } catch (error) {
       const missing = error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404;
-      if (!missing) throw new Error("Cloudflare R2 history read failed; local history was not substituted: " + error.message);
       const local = await readLocalHistory();
-      await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
-      console.info("R2_HISTORY_INITIAL_MIGRATION_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
-      return (historyCache = local);
+      if (missing) {
+        try {
+          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
+          console.info("R2_HISTORY_INITIAL_MIGRATION_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
+        } catch (migrationError) {
+          console.warn("R2_HISTORY_INITIAL_MIGRATION_FAILED", String(migrationError.message || migrationError).slice(0,240));
+        }
+        return (historyCache = local);
+      }
+      if (Number.isFinite(Date.parse(local.updatedAt || ""))) {
+        console.warn("R2_HISTORY_READ_FALLBACK_LOCAL", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length, reason:String(error.message||error).slice(0,160) }));
+        return (historyCache = local);
+      }
+      throw new Error("Cloudflare R2 history read failed and no timestamped local backup is available: " + error.message);
     }
   }
   return (historyCache = await readLocalHistory());
 }
 async function saveHistory(history) {
-  writeQueue = writeQueue.then(async () => {
+  writeQueue = writeQueue.catch(()=>{}).then(async () => {
     const normalized = normalizeHistory(history);
-    if (R2_CONFIGURED) {
-      const { PutObjectCommand } = require("@aws-sdk/client-s3");
-      const client = await getR2Client();
-      await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(normalized, null, 2), ContentType: "application/json" }));
-      console.info("R2_HISTORY_WRITE_OK", JSON.stringify({ picks: normalized.picks.length, marketSnapshots: normalized.marketSnapshots.length }));
-    }
+    normalized.updatedAt = new Date().toISOString();
+    // Always persist to the mounted /data volume first. R2 is the remote copy,
+    // not a reason to discard a successful settlement when its network is down.
     await writeLocalHistory(normalized);
     historyCache = normalized;
+    console.info("HISTORY_LOCAL_WRITE_OK", JSON.stringify({ picks: normalized.picks.length, marketSnapshots: normalized.marketSnapshots.length }));
+    if (R2_CONFIGURED) {
+      try {
+        const { PutObjectCommand } = require("@aws-sdk/client-s3");
+        const client = await getR2Client();
+        await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(normalized, null, 2), ContentType: "application/json" }));
+        console.info("R2_HISTORY_WRITE_OK", JSON.stringify({ picks: normalized.picks.length, marketSnapshots: normalized.marketSnapshots.length }));
+      } catch (error) {
+        console.warn("R2_HISTORY_WRITE_FAILED", JSON.stringify({ localBackupSaved:true, message:String(error.message||error).slice(0,240) }));
+      }
+    }
   });
   return writeQueue;
 }
