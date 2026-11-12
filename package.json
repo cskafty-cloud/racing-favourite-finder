@@ -1,6 +1,6 @@
 {
   "name": "racing-favourite-finder",
-  "version": "1.0.181",
+  "version": "1.0.183",
   "private": true,
   "description": "Australian horse and greyhound racing market-favourite dashboard",
   "scripts": {
