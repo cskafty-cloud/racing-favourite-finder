@@ -3,6 +3,8 @@
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id);
+// Keep the dashboard functional if the optional retry helper is blocked by a stale browser cache.
+const apiFetch=window.apiFetch||window.fetch.bind(window);
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtTime=value=>{const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}):"Time unavailable";};
 const fmtAge=value=>Number.isFinite(Number(value))?Math.max(0,Math.round(Number(value)))+"s old":"age unknown";
@@ -499,9 +501,6 @@ function start(){
  started=true;
  addStyles();
  setHeaderConnection("CHECKING · VERIFYING SERVER");
- void checkDashboardConnection();
- setInterval(checkDashboardConnection,30000);
- setInterval(()=>{if(lastServerCheckAt&&Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");},10000);
  loadRaces().finally(()=>loadHistory());
  loadLucasFox();
  loadSportsFixtures();
@@ -524,6 +523,11 @@ document.addEventListener("DOMContentLoaded",()=>{
  addStyles();
  updateBrisbaneClock();
  setInterval(updateBrisbaneClock,1000);
+ // Start the lightweight liveness heartbeat on initial page load, not only after
+ // the entry-screen button is clicked. Feed coverage remains a separate status.
+ void checkDashboardConnection();
+ setInterval(checkDashboardConnection,30000);
+ setInterval(()=>{if(lastServerCheckAt&&Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");},10000);
  const enter=$("enterWebsiteBtn");
  if(enter)enter.addEventListener("click",()=>start(),{once:true});
  const refresh=$("refreshBtn");
