@@ -121,10 +121,10 @@ if ($tailscaleExe) {
   if ($LASTEXITCODE -eq 0) {
     & $tailscaleExe funnel status
   } else {
-    Write-Warning "Tailscale Funnel did not start. In another PowerShell window, run: & \"$env:ProgramFiles\Tailscale\tailscale.exe\" funnel --bg 8080"
+    Write-Warning ("Tailscale Funnel did not start. In another PowerShell window, run: & `"{0}`" funnel --bg 8080" -f $tailscaleExe)
   }
 } else {
-  Write-Warning "tailscale.exe was not found. Install/sign in to Tailscale, then run: & \"$env:ProgramFiles\Tailscale\tailscale.exe\" funnel --bg 8080"
+  Write-Warning "tailscale.exe was not found. Install Tailscale, sign in, then rerun this launcher."
 }
 Write-Host ""
 Write-Host "Starting local adapter on 127.0.0.1:8080. Keep this window open."
