@@ -314,12 +314,23 @@ async function loadSports() {
 const server=http.createServer(async(req,res)=>{
   res.setHeader("Content-Type","application/json; charset=utf-8");res.setHeader("Cache-Control","no-store");
   const path=req.url.split("?")[0];
-  if(path==="/health")return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
-    credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),authentication:lastBetfairApiCheck.status,
-    lastBetfairApiCheck,
-    racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
-    sportsCacheAt:cache.get("sports")?.at?new Date(cache.get("sports").at).toISOString():null,
-    routes:["/api/races","/api/sports"]}));
+  if(path==="/health"){
+    // A health response now verifies the authenticated Betfair API itself,
+    // not merely the presence of saved credentials. Cache the probe for 60s.
+    const checkedAt=Date.parse(lastBetfairApiCheck.at||"");
+    if(!Number.isFinite(checkedAt)||Date.now()-checkedAt>60000){
+      try{await rpc("listEventTypes",{filter:{}});}catch{}
+    }
+    return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
+      credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),
+      betfairApiAuthenticated:lastBetfairApiCheck.status==="accepted",
+      authentication:lastBetfairApiCheck.status,lastBetfairApiCheck,
+      racingCacheAt:cache.get("races")?.at?new Date(cache.get("races").at).toISOString():null,
+      racingMarketRows:cache.get("races")?.value?.races?.length||0,
+      sportsCacheAt:cache.get("sports")?.at?new Date(cache.get("sports").at).toISOString():null,
+      sportsMarketRows:cache.get("sports")?.value?.events?.length||0,
+      routes:["/api/races","/api/sports"]}));
+  }
   if(!PROXY_ACCESS_TOKEN){res.writeHead(503);return res.end(JSON.stringify({error:"BETFAIR_FEED_TOKEN is not configured."}));}
   const authorization = String(req.headers.authorization || "");
   const bearer = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
