@@ -931,14 +931,15 @@ function resultContainsPickedRunner(pick, result) {
   if (!wantedName) return false;
   return lists.flat().some(row => {
     if (!row || typeof row !== "object") return false;
-    const name = normalizeName(valueOf(row, ["name","runner_name","horse_name","greyhound_name","selection_name"]));
-    return !!name && wantedName === name;
+    const rawName=String(valueOf(row,["name","runner_name","horse_name","greyhound_name","selection_name"])||"");
+    const names=[rawName,rawName.match(/\\(([^)]+)\\)/)?.[1]].map(normalizeName).filter(Boolean);
+    return names.includes(wantedName);
   });
 }
 function findMatchingPick(picks, result) {
   const id = raceId(result);
   const exact = picks.filter(p => p.raceId === id);
-  if (exact.length === 1) return exact[0];
+  if (exact.length === 1) return resultContainsPickedRunner(exact[0],result)?exact[0]:null;
   if (exact.length > 1) return null;
 
   // First use the strict canonical venue/category/race/day identity.
@@ -949,7 +950,7 @@ function findMatchingPick(picks, result) {
         normalizeName(p.venue) === normalizeName(venueOf(result)) &&
         String(p.raceNumber) === String(raceNumberOf(result)) &&
         localRaceDate(p.startTime) === localRaceDate(startTimeOf(result))));
-    if (strictMatches.length === 1) return strictMatches[0];
+    if (strictMatches.length === 1) return resultContainsPickedRunner(strictMatches[0],result)?strictMatches[0]:null;
     if (strictMatches.length > 1) return null;
   }
 
