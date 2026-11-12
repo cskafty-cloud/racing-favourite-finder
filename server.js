@@ -3008,6 +3008,7 @@ async function refreshBackgroundRacingFeed() {
   })().finally(() => { puntersEdgeRefresh = null; });
   return puntersEdgeRefresh;
 }
+let backgroundRacingRefreshTimer = null;
 const httpServer = app.listen(PORT,"0.0.0.0",()=>{
   console.log(`Racing Favourite Finder listening on ${PORT}`);
   console.log("RACING_FEED_CONFIG", JSON.stringify({
@@ -3016,7 +3017,7 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
     scheduleHorizonHours: SCHEDULE_HORIZON_HOURS
   }));
   setTimeout(refreshBackgroundRacingFeed, 1500);
-  const backgroundRacingRefreshTimer = setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
+  backgroundRacingRefreshTimer = setInterval(refreshBackgroundRacingFeed, 2 * 60 * 1000);
   // Run the dashboard history-sync route at boot and log actual production outcomes.
   setTimeout(async()=>{
     try{
