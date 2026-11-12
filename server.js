@@ -1249,11 +1249,16 @@ function strictMarketQuoteAge(q,stampFields,ageField){
   return direct==null?stamped:Math.max(stamped,direct);
 }
 function racingMarketAge(q,market){
-  const fields=market==="place"?["place_last_update","place_updated_at","place_captured_at"]:["last_update","updated_at","captured_at","timestamp"];
+  // Verified prices require an actual market/runner quote timestamp.
+  // Adapter receipt time and race-card updated_at are deliberately not accepted.
+  const fields=market==="place"
+    ?["place_last_update","place_updated_at","place_captured_at"]
+    :["last_update","updated_at","captured_at","timestamp"];
   const ageField=market==="place"?"place_age_seconds":"age_seconds";
   const stamp=fields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
   if(stamp==null)return null;
-  const stamped=quoteAgeSeconds(stamp);if(stamped==null)return null;
+  const stamped=quoteAgeSeconds(stamp);
+  if(stamped==null)return null;
   const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
   return direct==null?stamped:Math.max(stamped,direct);
 }
@@ -2486,14 +2491,14 @@ async function getGlobalRacesUncached() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // price_ts is the MoviOdds runner-level price timestamp; race.updated_at is not.
-        const runnerUpdated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||null;
-        // MoviOdds documents race.updated_at as the race-card refresh time, not
-        // the exact time this runner's price moved. Preserve that distinction.
-        const updated=runnerUpdated||boardUpdatedAt;
-        const freshnessBasis=runnerUpdated?"runner_quote_timestamp":"race_board_updated_at";
+        const runnerUpdated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||null;
+        // Never promote race.updated_at, feed receipt time or a generic fixture
+        // timestamp into an individual runner's quote timestamp.
+        const updated=runnerUpdated;
+        const freshnessBasis=runnerUpdated?"runner_quote_timestamp":"missing_runner_quote_timestamp";
         const placeRunnerUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||null;
-        const placeUpdated=placeRunnerUpdated||boardUpdatedAt;
-        const placeFreshnessBasis=placeRunnerUpdated?"place_quote_timestamp":"race_board_updated_at";
+        const placeUpdated=placeRunnerUpdated;
+        const placeFreshnessBasis=placeRunnerUpdated?"place_quote_timestamp":"missing_place_quote_timestamp";
         const rawPlace=x.place_odds??x.fixed_place_odds??x.place_price??null;
         const placeFraction=typeof x.place_frac==="string"&&x.place_frac.includes("/")?x.place_frac.split("/").map(Number):null;
         const placeFractionPrice=placeFraction&&placeFraction.length===2&&placeFraction[1]>0?placeFraction[0]/placeFraction[1]+1:null;
@@ -2515,8 +2520,8 @@ async function getGlobalRacesUncached() {
           scratched:x.scratched===true||/scratched/i.test(String(x.status||"")),suspended:x.suspended===true,
           bookmakers:((Number.isFinite(price)&&price>1)||validPlacePrice!=null)&&quoteIsSupportedBook?[{key:quoteBook,bookmaker:"Bet365",name:"Bet365",
             ...(Number.isFinite(price)&&price>1?{win_price:price,market_type:"fixed_win"}:{}),
-            ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",place_last_update:placeUpdated,place_age_seconds:placeAge,place_stale:x.place_stale===true||placeAge==null||placeAge>=180}:{}),
-            last_update:updated,updated_at:updated,age_seconds:age,timestamp_status:freshnessBasis,freshness_basis:freshnessBasis,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
+            ...(validPlacePrice!=null?{place_price:validPlacePrice,place_market_type:"fixed_place",...(placeUpdated?{place_last_update:placeUpdated}:{}),place_age_seconds:placeAge,place_stale:x.place_stale===true||placeAge==null||placeAge>=180}:{}),
+            ...(updated?{last_update:updated,updated_at:updated}:{}),age_seconds:age,timestamp_status:freshnessBasis,freshness_basis:freshnessBasis,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed WIN/PLACE public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
             public_demo:true}]:[]};
