@@ -2501,9 +2501,11 @@ async function getGlobalRacesUncached() {
         const explicitPlaceAge=x.place_age_seconds??x.place_quote_age_seconds??null;
         const placeAge=explicitPlaceAge!=null&&Number.isFinite(Number(explicitPlaceAge))
           ?Math.max(0,Number(explicitPlaceAge)):(placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):null);
-        if(quoteIsBet365&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedBet365Quotes++;
-        if(quoteIsBet365&&validPlacePrice!=null&&placeAge!=null&&placeAge<180)verifiedBet365PlaceQuotes++;
-        if(quoteIsSportsbet&&Number.isFinite(price)&&price>1&&age!=null&&age<180)verifiedSportsbetQuotes++;
+        const verifiedWinAge=updated?quoteMarketAge({last_update:updated,age_seconds:age},"win"):null;
+        const verifiedPlaceAge=placeUpdated?quoteMarketAge({place_last_update:placeUpdated,place_age_seconds:placeAge},"place"):null;
+        if(quoteIsBet365&&Number.isFinite(price)&&price>1&&verifiedWinAge!=null&&verifiedWinAge<180)verifiedBet365Quotes++;
+        if(quoteIsBet365&&validPlacePrice!=null&&verifiedPlaceAge!=null&&verifiedPlaceAge<180)verifiedBet365PlaceQuotes++;
+        if(quoteIsSportsbet&&Number.isFinite(price)&&price>1&&verifiedWinAge!=null&&verifiedWinAge<180)verifiedSportsbetQuotes++;
         const raceId=r.id||r.race_id||"";
         return {number:x.number??x.runner_number??x.runner_no??x.box??x.saddlecloth??null,
           name:x.name||x.runner_name||x.selection_name||x.horse_name||x.dog_name||"Runner",
