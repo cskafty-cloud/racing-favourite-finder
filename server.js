@@ -2057,7 +2057,8 @@ async function getGlobalRacesUncached() {
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
-      const boardUpdatedAt=r.updated_at||payload.server_time||null;\n      const rawRunners=Array.isArray(r.runners)?r.runners:(Array.isArray(r.selections)?r.selections:[]);
+      const boardUpdatedAt=r.updated_at||payload.server_time||null;
+      const rawRunners=Array.isArray(r.runners)?r.runners:(Array.isArray(r.selections)?r.selections:[]);
       const runners=rawRunners.map(x=>{
         const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
         const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
