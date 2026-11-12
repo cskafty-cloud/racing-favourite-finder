@@ -170,9 +170,10 @@ async function getBetfairRaces() {
         pricedRaces:result.races.filter(r=>r.runners.some(x=>x.bookmakers.length)).length}));
     })().catch(error=>{
       betfairRacingCache.error=error.message;
+      const invalidSession=/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message);
       const blocked=/HTTP 403|egress\/IP-location block|geographic/i.test(error.message);
-      betfairRetryAt=Date.now()+(blocked?6*60*60*1000:15*60*1000);
-      console.warn("BETFAIR_RACING_CIRCUIT_OPEN",JSON.stringify({retryAt:new Date(betfairRetryAt).toISOString(),reason:error.message.slice(0,180)}));
+      betfairRetryAt=Date.now()+(invalidSession?12*60*60*1000:(blocked?6*60*60*1000:15*60*1000));
+      console.warn(invalidSession?"BETFAIR_RACING_REAUTH_REQUIRED":"BETFAIR_RACING_CIRCUIT_OPEN",JSON.stringify({retryAt:new Date(betfairRetryAt).toISOString(),reason:error.message.slice(0,180)}));
       throw error;
     }).finally(()=>{betfairRacingRefresh=null;});
     await betfairRacingRefresh;
@@ -260,7 +261,14 @@ async function getBetfairSports(){
       betfairSportsCache={at:Date.now(),events:result.events,eventTypes:result.eventTypes,error:null,errors:result.errors||[]};
       console.info("BETFAIR_SPORTS_FEED",JSON.stringify({events:result.events.length,sports:result.eventTypes.length,
         live:result.events.filter(x=>x.inPlay).length,priced:result.events.filter(x=>x.runners.some(r=>r.back||r.lay)).length}));
-    })().catch(error=>{betfairSportsCache.error=error.message;betfairSportsRetryAt=Date.now()+( /403|401/.test(error.message)?6*60*60*1000:15*60*1000 );throw error;}).finally(()=>{betfairSportsRefresh=null;});
+    })().catch(error=>{
+      betfairSportsCache.error=error.message;
+      const invalidSession=/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message);
+      betfairSportsRetryAt=Date.now()+(invalidSession?12*60*60*1000:(/403|401/.test(error.message)?6*60*60*1000:15*60*1000));
+      console.warn(invalidSession?"BETFAIR_SPORTS_REAUTH_REQUIRED":"BETFAIR_SPORTS_CIRCUIT_OPEN",
+        JSON.stringify({retryAt:new Date(betfairSportsRetryAt).toISOString(),reason:error.message.slice(0,180)}));
+      throw error;
+    }).finally(()=>{betfairSportsRefresh=null;});
     await betfairSportsRefresh;
   }
   return {events:betfairSportsCache.events,eventTypes:betfairSportsCache.eventTypes,
@@ -1245,15 +1253,17 @@ let krokFailureCount = 0;
 let krokRetryReason = "";
 function providerRetryTimestamp(error, now=Date.now()) {
   const message=String(error||"");
-  const retry=message.match(/retry-after=([^\]\s]+)/i);
+  const retry=message.match(/retry-after=([^\]]+)/i);
   if(retry){
-    const raw=retry[1],seconds=Number(raw),date=Date.parse(raw);
+    const raw=retry[1].trim(),seconds=Number(raw),date=Date.parse(raw);
     if(Number.isFinite(seconds)&&seconds>=0)return now+Math.max(1000,seconds*1000);
     if(Number.isFinite(date))return Math.max(now+1000,date);
   }
   const reset=message.match(/(?:reset|retry)[^0-9]*(\d{10,13})/i);
-  if(reset){const n=Number(reset[1]);return n>1e12?n:n*1000;}
-  if(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message))return nextMonthlyQuotaCheck(now);
+  if(reset){const n=Number(reset[1]);return Math.max(now+1000,n>1e12?n:n*1000);}
+  const humanReset=message.match(/(?:reset|available|renew(?:s|al)?)(?:\s+(?:at|on))?\s*[:=-]?\s*((?:\d{1,2}\s+)?(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:UTC|GMT)?)?)/i);
+  if(humanReset){const date=Date.parse(humanReset[1]);if(Number.isFinite(date)&&date>now)return date;}
+  if(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message))return now+24*60*60*1000;
   if(/429|rate.?limit/i.test(message))return now+Math.min(6*60*60*1000,Math.max(60*1000,Math.pow(2,Math.min(krokFailureCount,6))*60*1000));
   return now+5*60*1000;
 }
@@ -2239,10 +2249,10 @@ app.get("/api/feed-status",(_req,res)=>{
   const providerRecovery={
     puntersEdge:{schedule:retryInfo(providerRetryAt.schedule,providerErrors.schedule),odds:retryInfo(providerRetryAt.odds,providerErrors.odds)},
     krokOdds:retryInfo(krokRetryAt,krokRetryReason),
-    betfairRacing:{status:betfairRetryAt&&now<betfairRetryAt?"circuit-open":"probe-eligible",
+    betfairRacing:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairRacingCache.error||""))?"reauthentication-required":betfairRetryAt&&now<betfairRetryAt?"circuit-open":"probe-eligible",
       retryAt:betfairRetryAt&&now<betfairRetryAt?new Date(betfairRetryAt).toISOString():null,error:betfairRacingCache.error||null},
-    betfairSportsAdapter:{status:betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?"backoff":"probe-eligible",
-      retryAt:betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?new Date(betfairSportsAdapterRetryAt).toISOString():null,error:betfairSportsAdapterLastError||null}
+    betfairSportsAdapter:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairSportsCache.error||""))?"reauthentication-required":betfairSportsRetryAt&&now<betfairSportsRetryAt?"backoff":"probe-eligible",
+      retryAt:betfairSportsRetryAt&&now<betfairSportsRetryAt?new Date(betfairSportsRetryAt).toISOString():null,error:betfairSportsCache.error||null}
   };
   res.set("Cache-Control","no-store").json({racing,sports,liveSports,providerRecovery,checkedAt:new Date().toISOString()});
 });
