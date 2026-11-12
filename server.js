@@ -2810,18 +2810,18 @@ app.get("/api/live-sports",async(_req,res)=>{
     if(result.status!=="fulfilled"){errors.push(sports[index].title+": "+result.reason.message);return;}
     for(const e of result.value.rows||[])if(e.in_play===true)events.push({id:e.id,sport:sports[index].title,
       home:e.home_team,away:e.away_team,name:(e.away_team||"")+" @ "+(e.home_team||""),
-      commenceTime:e.commence_time,status:"LIVE",score:null,bookmakers:e.bookmakers||[],bookmakerFavourites:[],
-      quoteCount:(e.bookmakers||[]).reduce((n,b)=>n+(b.markets||[]).reduce((m,x)=>m+(x.outcomes||[]).length,0),0)});
+      commenceTime:e.commence_time,status:"LIVE",score:null,bookmakers:(e.bookmakers||[]).filter(b=>canonicalBookmakerKey(b.key||b.name)==="bet365"),bookmakerFavourites:[],
+      quoteCount:(e.bookmakers||[]).filter(b=>canonicalBookmakerKey(b.key||b.name)==="bet365").reduce((n,b)=>n+(b.markets||[]).reduce((m,x)=>m+(x.outcomes||[]).length,0),0)});
    });
    bet365LiveCache={at:Date.now(),events,errors};
    liveSportsFeedHealth={ok:true,status:errors.length?"partial":"active",fetchedAt:new Date().toISOString(),eventCount:events.length,sportsChecked:sports.length,errors};
    console.info("PUBLIC_LIVE_SPORTS",JSON.stringify({events:events.length,sportsChecked:sports.length,errors:errors.length}));
   }
   res.set("Cache-Control","no-store");
-  res.json({configured:true,provider:"Free public Sportsbet + Bet365 snapshots",events:bet365LiveCache.events,feedHealth:liveSportsFeedHealth,
-    sports:ODDS_DATA_SPORTS.length,bookmakers:["Sportsbet","Bet365"],resultsFetchedAt:new Date(bet365LiveCache.at).toISOString(),
+  res.json({configured:true,provider:"MoviOdds public Bet365 sports feed",events:bet365LiveCache.events,feedHealth:liveSportsFeedHealth,
+    sports:ODDS_DATA_SPORTS.length,bookmakers:["Bet365"],resultsFetchedAt:new Date(bet365LiveCache.at).toISOString(),
     ageSeconds:Math.round((Date.now()-bet365LiveCache.at)/1000),
-    note:"Live events are included only when the public bookmaker snapshot explicitly marks them in-play. This no-key preview may omit live markets; no event or score is inferred."});
+    note:"This endpoint contains Bet365 data from MoviOdds only. Events are included only when the source explicitly marks them in-play; it does not supply Sportsbet prices. No bookmaker substitution, event status or score is inferred."});
  }catch(err){res.status(502).json({error:err.message,provider:"Free public sports demo"});}
 });
 
