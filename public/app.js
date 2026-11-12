@@ -250,8 +250,8 @@ async function loadBetfairSports(){
   if(list)list.innerHTML=events.length?events.slice(0,120).map(e=>{
    const runners=(e.runners||[]).filter(r=>r.back||r.lay),favourite=e.favourite;
    const runnerRows=runners.map(r=>{
-    const back=r.back?"$"+Number(r.back.price).toFixed(2)+" · size "+(r.back.availableSize==null?"—":Number(r.back.availableSize).toFixed(2)):"—";
-    const lay=r.lay?"$"+Number(r.lay.price).toFixed(2)+" · size "+(r.lay.availableSize==null?"—":Number(r.lay.availableSize).toFixed(2)):"—";
+    const offerLabel=offer=>offer?"$"+Number(offer.price).toFixed(2)+" · size "+(offer.availableSize==null?"—":Number(offer.availableSize).toFixed(2))+" · "+(offer.ageSeconds==null?"age unknown":offer.ageSeconds>180?"STALE "+Math.round(offer.ageSeconds)+"s":Math.round(offer.ageSeconds)+"s old"):"—";
+    const back=offerLabel(r.back),lay=offerLabel(r.lay);
     return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+'</span></div>';
    }).join("");
    const favHtml=favourite?'<div class="rf-fav"><strong>EXCHANGE MARKET FAVOURITE · BACK</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">Lowest available BACK price in this market; not a prediction or guaranteed winner.</div></div>':'<div class="rf-muted">No available BACK offer; no favourite calculated.</div>';
