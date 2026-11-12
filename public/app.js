@@ -152,17 +152,13 @@ function renderRaces(data){
  renderBestTips(active);
 }
 function renderBestTips(list){
- const verified=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&Number(x.fav.signalScore||0)>=40)
+ // This panel is a verified bookmaker ranking, not a mixed estimate board.
+ // Exchange-derived equivalents and indicative estimates belong outside it.
+ const verified=list.map(r=>({race:r,fav:r.favourite}))
+  .filter(x=>x.fav?.status==="verified"&&Number(x.fav.signalScore||0)>=40)
   .sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)).slice(0,10);
- const estimatedRaceFavourites=list.map(r=>{
-  const ranked=(r.runners||[]).map(runner=>({runner,q:exchangeEstimate(auditRows(runner),"WIN")})).filter(x=>x.q).sort((a,b)=>a.q.price-b.q.price);
-  return ranked.length?{race:r,...ranked[0]}:null;
- }).filter(Boolean).slice(0,10);
- const sportMarketFavourites=betfairSportsEvents.filter(e=>e.favourite&&Number(e.favourite.price)>1).sort((a,b)=>Number(a.favourite.price)-Number(b.favourite.price)).slice(0,10);
  const raceHtml=verified.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · score '+esc(x.fav.signalScore)+'</span></div>').join("");
- const estimatedRaceHtml=estimatedRaceFavourites.map(x=>'<div class="rf-sports-row"><b>'+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.runner.name||"Runner")+'</b><span>Estimated WIN $'+x.q.price.toFixed(2)+' (range $'+x.q.low.toFixed(2)+'–$'+x.q.high.toFixed(2)+') · Exchange-derived · NOT bookmaker odds · '+esc(fmtTime(x.q.stamp))+'</span></div>').join("");
- const sportHtml=sportMarketFavourites.map(x=>{const r=(x.runners||[]).find(y=>y.name===x.favourite.name),b=Number(r?.back?.price),l=Number(r?.lay?.price),ref=b>1?(l>1?(b+l)/2:b):null;return '<div class="rf-sports-row"><b>'+esc(x.sport)+' · '+esc(x.event)+' · '+esc(x.favourite.name)+'</b><span>$'+Number(x.favourite.price).toFixed(2)+' Exchange BACK · '+(ref?'estimated equivalent $'+(ref/1.05).toFixed(2):'estimate unavailable')+' · NOT bookmaker odds</span></div>';}).join("");
- if($("bestTipsList"))$("bestTipsList").innerHTML=(raceHtml+estimatedRaceHtml+sportHtml)||'<div class="rf-empty">No verified prices or fresh Exchange estimates are available right now.</div>';
+ if($("bestTipsList"))$("bestTipsList").innerHTML=raceHtml||'<div class="rf-empty">No verified bookmaker favourites currently meet the ranking threshold. Estimates and Exchange prices are excluded.</div>';
 }
 
 async function loadRaces(){
@@ -199,9 +195,11 @@ async function loadBetfairSports(){
   if(!response.ok)throw new Error(data.error||"Betfair sports feed HTTP "+response.status);
   betfairSportsEvents=Array.isArray(data.events)?data.events:[];
   const events=betfairSportsEvents,live=events.filter(e=>e.inPlay),priced=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay));
-  if($("betfairSportsStats"))$("betfairSportsStats").innerHTML=[[events.length,"Exchange markets"],[new Set(events.map(e=>e.sport)).size,"Sports"],[live.length,"In-play"],[priced.length,"Priced markets"]].map(x=>'<div class="stat"><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></div>').join("");
+  const soccerMarketCount=Number(data.soccerMarketCount??events.filter(e=>/soccer|football/i.test(String(e.sport||e.sport_name||""))&&(e.marketId||e.market_id||e.marketName||e.market_name||Array.isArray(e.runners))).length);
+  const soccerPricedMarkets=Number(data.soccerPricedMarkets??events.filter(e=>/soccer|football/i.test(String(e.sport||e.sport_name||""))&&(e.runners||[]).some(r=>r.back||r.lay)).length);
+  if($("betfairSportsStats"))$("betfairSportsStats").innerHTML=[[events.length,"Exchange markets"],[new Set(events.map(e=>e.sport||e.sport_name).filter(Boolean)).size,"Sports"],[live.length,"In-play"],[priced.length,"Priced markets"],[soccerMarketCount,"Soccer markets"],[soccerPricedMarkets,"Priced soccer"]].map(x=>'<div class="stat"><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></div>').join("");
   const status=String(data.status||"unknown");
-  if(state)state.textContent=status==="connected-delayed"?"CONNECTED · DELAYED EXCHANGE":status==="configured-no-quotes"?"CONNECTED · NO CURRENT MARKETS":status.toUpperCase().replaceAll("-"," ")+" · "+(data.error||"");
+  if(state)state.textContent=(status==="connected-delayed"?"CONNECTED · DELAYED EXCHANGE":status==="configured-no-quotes"?"CONNECTED · NO CURRENT MARKETS":status.toUpperCase().replaceAll("-"," "))+ " · SOCCER "+soccerMarketCount+" MARKETS / "+soccerPricedMarkets+" PRICED"+(data.error?" · "+data.error:"");
   if(list)list.innerHTML=events.length?events.slice(0,120).map(e=>{
    const runners=(e.runners||[]).filter(r=>r.back||r.lay),favourite=e.favourite;
    const runnerRows=runners.map(r=>{
