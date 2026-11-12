@@ -113,7 +113,93 @@ Write-Host "The Railway shared token is separate from your Betfair app key/sessi
 Write-Host ""
 
 $values = $null
-if (Test-Path -LiteralPath $CredentialFile) {
+
+# When launched through "railway run", Railway injects the production variables
+# into this process. Import them into this Windows user's DPAPI store so future
+# starts can use the encrypted local file without needing Railway CLI each time.
+$railwayNames = @("BETFAIR_APP_KEY", "BETFAIR_SESSION_TOKEN", "BETFAIR_FEED_TOKEN")
+$railwayPresent = @($railwayNames | Where-Object {
+  -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_, "Process"))
+})
+if ($railwayPresent.Count -gt 0) {
+  if ($railwayPresent.Count -ne $railwayNames.Count) {
+    throw "Railway supplied only some Betfair variables. Ensure BETFAIR_APP_KEY, BETFAIR_SESSION_TOKEN and BETFAIR_FEED_TOKEN are all set in Railway Production. No credentials were saved."
+  }
+  $values = @{
+    BETFAIR_APP_KEY = [Environment]::GetEnvironmentVariable("BETFAIR_APP_KEY", "Process")
+    BETFAIR_SESSION_TOKEN = [Environment]::GetEnvironmentVariable("BETFAIR_SESSION_TOKEN", "Process")
+    BETFAIR_FEED_TOKEN = [Environment]::GetEnvironmentVariable("BETFAIR_FEED_TOKEN", "Process")
+  }
+  if ([string]::IsNullOrWhiteSpace($values.BETFAIR_APP_KEY) -or
+      [string]::IsNullOrWhiteSpace($values.BETFAIR_SESSION_TOKEN) -or
+      $values.BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}
+  $choice = Read-Host "Use saved encrypted Betfair credentials? [Y]es / [N]o, replace"
+  if ($choice -match '^(n|no)$') {
+    $values = Read-NewCredentials
+  } else {
+    $values = Load-EncryptedCredentials
+    Write-Host "Loaded saved encrypted Betfair credentials." -ForegroundColor Green
+
+    # If clipboard contains a new valid feed token, rotate only that field.
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted Railway shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ($env:BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
+  throw "The shared token is invalid. Adapter was not started."
+}
+
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    throw "Railway Betfair variables are incomplete or the shared token is not 64 hexadecimal characters. No credentials were saved."
+  }
+  Save-EncryptedCredentials $values
+  Write-Host "Imported Railway Production Betfair variables and saved them encrypted with Windows DPAPI." -ForegroundColor Green
+}
+
+if (-not $values -and (Test-Path -LiteralPath $CredentialFile)) {
   $choice = Read-Host "Use saved encrypted Betfair credentials? [Y]es / [N]o, replace"
   if ($choice -match '^(n|no)$') {
     $values = Read-NewCredentials
