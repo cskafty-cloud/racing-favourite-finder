@@ -185,17 +185,24 @@ async function loadBetfairSports(){
   const eventTypes=await betfairRpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
     .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name)).slice(0,40);
-  const catalogues=await Promise.all(types.map(async type=>{
-    try{
-      const markets=await betfairRpc("listMarketCatalogue",{
-        filter:{eventTypeIds:[type.id],marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"],
-          marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
-        marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-        sort:"FIRST_TO_START",maxResults:"1000"
-      });
-      return {type,markets:markets||[]};
-    }catch(error){return {type,markets:[],error:error.message};}
-  }));
+  const catalogues=[];
+  // Keep requests bounded: some sports (especially Soccer) have very large
+  // catalogues. Five concurrent requests and a 200-market cap avoid a burst
+  // that can starve the app while still checking every supported event type.
+  for(let i=0;i<types.length;i+=5){
+    const batch=await Promise.all(types.slice(i,i+5).map(async type=>{
+      try{
+        const markets=await betfairRpc("listMarketCatalogue",{
+          filter:{eventTypeIds:[type.id],marketTypeCodes:["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER","MONEYLINE","H2H"],
+            marketStartTime:{from:from.toISOString(),to:to.toISOString()}},
+          marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
+          sort:"FIRST_TO_START",maxResults:"200"
+        });
+        return {type,markets:markets||[]};
+      }catch(error){return {type,markets:[],error:error.message};}
+    }));
+    catalogues.push(...batch);
+  }
   const all=catalogues.flatMap(g=>g.markets.map(m=>({...m,_sportName:g.type.name})));
   const books=[];
   for(let i=0;i<all.length;i+=40){
@@ -227,7 +234,14 @@ async function loadBetfairSports(){
       source:"Betfair Exchange Delayed API",sourceDelayMaxSeconds:180,
       runners,favourite:favourite?{name:favourite.name,price:favourite.back.price,side:"BACK"}:null};
   }).filter(Boolean).sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
+  const marketCountsBySport=types.map(type=>({
+    sport:type.name,marketCount:catalogues.find(x=>x.type.id===type.id)?.markets.length||0,
+    error:catalogues.find(x=>x.type.id===type.id)?.error||null
+  }));
+  const soccer=marketCountsBySport.find(x=>/soccer|football/i.test(x.sport))||{marketCount:0,error:null};
   return {events,eventTypes:types,capturedAt,from:from.toISOString(),to:to.toISOString(),
+    marketCountsBySport,soccerMarketCount:soccer.marketCount,
+    soccerPricedMarkets:events.filter(e=>/soccer|football/i.test(e.sport||"")&&(e.runners||[]).some(r=>r.back||r.lay)).length,
     errors:catalogues.filter(x=>x.error).map(x=>({sport:x.type.name,message:x.error}))};
 }
 async function getBetfairSports(){
@@ -1835,7 +1849,7 @@ function normalizeBetfairAdapterRaces(data) {
   }));
 }
 
-async function getGlobalRaces() {
+async function getGlobalRacesUncached() {
   const failures=[];
   // Add the user's authorised delayed Betfair Exchange markets as a separate
   // source. Exchange prices remain labelled as exchange data, never as bookmaker fixed odds.
@@ -2151,6 +2165,17 @@ function dedupeRaces(input) {
 let racingFeedHealth = {ok:false,status:"checking",fetchedAt:null,feedSource:null,byCode:{},errors:[]};
 const sportsFeedHealth = {};
 let liveSportsFeedHealth = {ok:false,status:"checking",fetchedAt:null,eventCount:0,errors:[]};
+
+let globalRacesRefresh=null;
+async function getGlobalRaces(){
+  // Single-flight the expensive multi-provider refresh. Concurrent browser
+  // requests must share one adapter call rather than fan out dozens of 25s
+  // timeouts and exhaust the small Railway instance.
+  if(globalRacesRefresh)return globalRacesRefresh;
+  globalRacesRefresh=getGlobalRacesUncached().finally(()=>{globalRacesRefresh=null;});
+  return globalRacesRefresh;
+}
+
 function feedHealthStatus(at, errors=[], ok=false) {
   if(!at)return "checking";
   const age=Math.max(0,(Date.now()-Date.parse(at))/1000);
@@ -2350,23 +2375,54 @@ app.get("/api/betfair/au/races",async(_req,res)=>{
     return res.status(503).json({status:"configured-but-unavailable",error:error.message,races:[]});
   }
 });
+let betfairSportsAdapterCache={at:0,data:null};
+let betfairSportsAdapterRefresh=null;
+let betfairSportsAdapterRetryAt=0;
+let betfairSportsAdapterLastError="";
+async function readBetfairSportsAdapter(url){
+  if(betfairSportsAdapterCache.data&&Date.now()-betfairSportsAdapterCache.at<20000)return betfairSportsAdapterCache.data;
+  if(Date.now()<betfairSportsAdapterRetryAt)throw new Error("Australian Betfair sports adapter retry paused: "+betfairSportsAdapterLastError);
+  if(betfairSportsAdapterRefresh)return betfairSportsAdapterRefresh;
+  betfairSportsAdapterRefresh=(async()=>{
+    const response=await fetch(url,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
+    const body=await response.text();let data;
+    try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair sports adapter returned invalid JSON (HTTP "+response.status+").");}
+    if(!response.ok)throw new Error(data.error||"Australian Betfair sports adapter HTTP "+response.status);
+    const events=Array.isArray(data.events)?data.events:(Array.isArray(data.markets)?data.markets:[]);
+    const sportOf=e=>String(e.sport||e.sport_name||e.sportName||e.category||e.eventTypeName||e.sport_id||"");
+    const soccerRows=events.filter(e=>/soccer|football/i.test(sportOf(e))||String(e.sport_id||e.sportId||"")==="1");
+    const hasMarket=e=>!!(e.marketId||e.market_id||e.marketName||e.market_name||e.marketType||e.market_type||Array.isArray(e.runners));
+    const soccerMarketCount=soccerRows.filter(hasMarket).length;
+    const backOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.back).length,0);
+    const layOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.lay).length,0);
+    const pricedMarkets=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
+    const result={...data,events,marketCount:events.filter(hasMarket).length,soccerEventCount:soccerRows.length,
+      soccerMarketCount,soccerPricedMarkets:soccerRows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length,
+      pricedMarkets,backOffers,layOffers,status:pricedMarkets>0?"connected-delayed":"configured-no-quotes",
+      provider:"Betfair Exchange Delayed API · Australian adapter",
+      note:"Australian adapter Exchange BACK/LAY offers only. Soccer market counts are separated from fixtures; these are not Sportsbet or Bet365 fixed odds."};
+    betfairSportsAdapterCache={at:Date.now(),data:result};
+    betfairSportsAdapterRetryAt=0;betfairSportsAdapterLastError="";
+    console.info("BETFAIR_SPORTS_ADAPTER_TEST",JSON.stringify({events:events.length,markets:result.marketCount,
+      soccerEvents:result.soccerEventCount,soccerMarkets:result.soccerMarketCount,
+      soccerPricedMarkets:result.soccerPricedMarkets,pricedMarkets,backOffers,layOffers,
+      errors:Array.isArray(data.errors)?data.errors.length:0}));
+    return result;
+  })().catch(error=>{
+    betfairSportsAdapterLastError=error.message;
+    betfairSportsAdapterRetryAt=Date.now()+60000;
+    console.warn("BETFAIR_SPORTS_ADAPTER_FAILED",error.message);
+    throw error;
+  }).finally(()=>{betfairSportsAdapterRefresh=null;});
+  return betfairSportsAdapterRefresh;
+}
 app.get("/api/betfair/sports",async(_req,res)=>{
   try{
     const sportsFeedUrl=process.env.BETFAIR_SPORTS_FEED_URL||"";
     if(sportsFeedUrl){
-      const response=await fetch(sportsFeedUrl,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
-      const body=await response.text();let data;
-      try{data=JSON.parse(body);}catch{throw new Error("Australian Betfair sports adapter returned invalid JSON (HTTP "+response.status+").");}
-      if(!response.ok)throw new Error(data.error||"Australian Betfair sports adapter HTTP "+response.status);
-      const events=Array.isArray(data.events)?data.events:[];
-      const backOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.back).length,0);
-      const layOffers=events.reduce((n,e)=>n+(e.runners||[]).filter(r=>r.lay).length,0);
-      const pricedMarkets=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
-      const status=pricedMarkets>0?"connected-delayed":"configured-no-quotes";
+      const data=await readBetfairSportsAdapter(sportsFeedUrl);
       res.set("Cache-Control","no-store");
-      return res.json({...data,status,pricedMarkets,backOffers,layOffers,
-        provider:"Betfair Exchange Delayed API · Australian adapter",
-        note:"Australian adapter Exchange BACK/LAY offers only. These are not Sportsbet or Bet365 fixed odds."});
+      return res.json(data);
     }
     if(!BETFAIR_APP_KEY||!BETFAIR_SESSION_TOKEN)return res.status(503).json({
       status:"credentials-missing",provider:"Betfair Exchange Delayed API",
