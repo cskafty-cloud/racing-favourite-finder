@@ -7,6 +7,7 @@ const {
   MOVI_WS_QUOTES_PER_FIXTURE_LIMIT,
   MEMORY_SOFT_LIMIT_BYTES,
   CGROUP_MEMORY_SOFT_LIMIT_MB,
+  getCgroupMemorySoftLimitMB,
   MEMORY_CLEANUP_INTERVAL_MS,
   isMemoryPressure,
   trimInsertionOrderedMap,
@@ -62,4 +63,9 @@ test("memory pressure cleanup starts well below the Railway container limit",()=
  assert.equal(isMemoryPressure({rssBytes:383*1024*1024,cgroupCurrentMB:599}),false);
  assert.equal(isMemoryPressure({rssBytes:384*1024*1024,cgroupCurrentMB:100}),true);
  assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:600}),true);
+ assert.equal(getCgroupMemorySoftLimitMB(954),596);
+ assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:595,cgroupLimitMB:954}),false);
+ assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:596,cgroupLimitMB:954}),true);
+ assert.equal(getCgroupMemorySoftLimitMB(2048),600);
+ assert.equal(getCgroupMemorySoftLimitMB(null),600);
 });
