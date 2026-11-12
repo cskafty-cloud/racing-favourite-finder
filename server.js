@@ -22,6 +22,7 @@ let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
 let betfairRacingRefresh = null;
 let betfairRetryAt = 0;
 let betfairFeedRetryAt = 0;
+let betfairFeedLastError = "";
 let betfairSessionKeepAliveAt = 0;
 let betfairSessionKeepAliveInFlight = null;
 async function ensureBetfairSession(){
@@ -1917,13 +1918,17 @@ async function getGlobalRacesUncached() {
       if(!response.ok)throw new Error(data.error||"Australian Betfair adapter HTTP "+response.status);
       betfairSupplementalRows=normalizeBetfairAdapterRaces(data);
       betfairFeedRetryAt=0;
+      betfairFeedLastError="";
       if(!betfairSupplementalRows.length)failures.push({feed:"Betfair AU adapter",message:"Connected, but no Australian WIN/PLACE markets were returned."});
       console.info("BETFAIR_AU_ADAPTER_RACING",JSON.stringify({races:betfairSupplementalRows.length,
         runners:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).length,0),
         exchangeQuotes:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>q.exchange===true).length,0),0)}));
     } catch(error) {
-      console.warn("BETFAIR_AU_ADAPTER_FAILED",error.message);
-      betfairFeedRetryAt=Date.now()+( /401|403/.test(error.message)?5*60*1000:60*1000 );
+      betfairFeedLastError=error.message;
+      const authFailure=/401|403|INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message);
+      const timedOut=/timeout|aborted|ETIMEDOUT/i.test(error.message);
+      betfairFeedRetryAt=Date.now()+(authFailure?6*60*60*1000:(timedOut?15*60*1000:5*60*1000));
+      console.warn("BETFAIR_AU_ADAPTER_CIRCUIT_OPEN",JSON.stringify({retryAt:new Date(betfairFeedRetryAt).toISOString(),reason:error.message.slice(0,180)}));
       failures.push({feed:"Betfair AU adapter",message:error.message});
     }
   } else if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()<betfairFeedRetryAt) {
@@ -2249,6 +2254,8 @@ app.get("/api/feed-status",(_req,res)=>{
   const providerRecovery={
     puntersEdge:{schedule:retryInfo(providerRetryAt.schedule,providerErrors.schedule),odds:retryInfo(providerRetryAt.odds,providerErrors.odds)},
     krokOdds:retryInfo(krokRetryAt,krokRetryReason),
+    betfairAuRacingAdapter:{status:betfairFeedRetryAt&&now<betfairFeedRetryAt?"circuit-open":"probe-eligible",
+      retryAt:betfairFeedRetryAt&&now<betfairFeedRetryAt?new Date(betfairFeedRetryAt).toISOString():null,error:betfairFeedLastError||null},
     betfairRacing:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairRacingCache.error||""))?"reauthentication-required":betfairRetryAt&&now<betfairRetryAt?"circuit-open":"probe-eligible",
       retryAt:betfairRetryAt&&now<betfairRetryAt?new Date(betfairRetryAt).toISOString():null,error:betfairRacingCache.error||null},
     betfairSportsAdapter:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairSportsCache.error||""))?"reauthentication-required":betfairSportsRetryAt&&now<betfairSportsRetryAt?"backoff":"probe-eligible",
