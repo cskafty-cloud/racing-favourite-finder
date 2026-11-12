@@ -4,6 +4,11 @@ const MOVI_WS_QUOTES_PER_FIXTURE_LIMIT = 100;
 const MEMORY_SOFT_LIMIT_BYTES = 384 * 1024 * 1024;
 const CGROUP_MEMORY_SOFT_LIMIT_MB = 600;
 const MEMORY_CLEANUP_INTERVAL_MS = 30000;
+function getNodeRssSoftLimitMB(cgroupLimitMB=null){
+ const limit=Number(cgroupLimitMB);
+ if(!Number.isFinite(limit)||limit<=0)return Math.round(MEMORY_SOFT_LIMIT_BYTES/1048576);
+ return Math.max(64,Math.min(Math.round(MEMORY_SOFT_LIMIT_BYTES/1048576),Math.floor(limit*0.4)));
+}
 function getCgroupMemorySoftLimitMB(cgroupLimitMB=null){
  const limit=Number(cgroupLimitMB);
  if(!Number.isFinite(limit)||limit<=0)return CGROUP_MEMORY_SOFT_LIMIT_MB;
@@ -11,8 +16,9 @@ function getCgroupMemorySoftLimitMB(cgroupLimitMB=null){
 }
 function isMemoryPressure({ rssBytes=0, cgroupCurrentMB=null, cgroupLimitMB=null }={}){
  const rss=Number(rssBytes),cgroup=Number(cgroupCurrentMB);
+ const rssThreshold=getNodeRssSoftLimitMB(cgroupLimitMB)*1048576;
  const cgroupThreshold=getCgroupMemorySoftLimitMB(cgroupLimitMB);
- return (Number.isFinite(rss)&&rss>=MEMORY_SOFT_LIMIT_BYTES) ||
+ return (Number.isFinite(rss)&&rss>=rssThreshold) ||
   (cgroupCurrentMB!=null&&Number.isFinite(cgroup)&&cgroup>=cgroupThreshold);
 }
 function trimInsertionOrderedMap(map,limit=5000,target=4000){
@@ -32,4 +38,4 @@ function trimMoviOddsFixtures(items,options={}){
  if(!ordered)items.sort(compareFixturePriority);if(items.length>limit)items.length=limit;return items;
 }
 function trimQuoteList(quotes,limit=MOVI_WS_QUOTES_PER_FIXTURE_LIMIT){if(!Array.isArray(quotes))return[];if(!Number.isInteger(limit)||limit<1)throw new RangeError("Quote limit must be a positive integer.");return quotes.length>limit?quotes.slice(-limit):quotes;}
-module.exports={MOVI_WS_FIXTURE_LIMIT,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT,MEMORY_SOFT_LIMIT_BYTES,CGROUP_MEMORY_SOFT_LIMIT_MB,MEMORY_CLEANUP_INTERVAL_MS,getCgroupMemorySoftLimitMB,isMemoryPressure,trimInsertionOrderedMap,trimMoviOddsFixtures,trimQuoteList};
+module.exports={MOVI_WS_FIXTURE_LIMIT,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT,MEMORY_SOFT_LIMIT_BYTES,CGROUP_MEMORY_SOFT_LIMIT_MB,MEMORY_CLEANUP_INTERVAL_MS,getNodeRssSoftLimitMB,getCgroupMemorySoftLimitMB,isMemoryPressure,trimInsertionOrderedMap,trimMoviOddsFixtures,trimQuoteList};
