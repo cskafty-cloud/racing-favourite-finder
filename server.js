@@ -828,6 +828,7 @@ function raceId(r) {
 function localRaceDate(value) {
   if (!value) return "";
   const raw = String(value);
+  if (/^\d{8}$/.test(raw)) return raw.slice(0,4)+"-"+raw.slice(4,6)+"-"+raw.slice(6,8);
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", {
@@ -1087,18 +1088,29 @@ function selectFavourite(race) {
 function winnerFromResult(r) {
   const direct = valueOf(r, ["winner_name","winning_runner_name","first_place_name"]);
   if (direct) return { name: direct, number: valueOf(r, ["winner_number","winning_runner_number"]) };
-  const directWinner = r.winner || r.winning_runner;
+  const directWinner = r.winner || r.winning_runner || r.first;
   if (typeof directWinner === "string") return { name: directWinner, number: null };
-  if (directWinner && typeof directWinner === "object") return {
-    name: directWinner.name || directWinner.runner_name || directWinner.horse_name || directWinner.greyhound_name,
-    number: directWinner.number ?? directWinner.runner_number ?? null
-  };
-  const runners = r.runners || r.results || r.placings || r.finishers || [];
-  const winner = runners.find(x => Number(x.position ?? x.placing ?? x.place ?? x.finish_position ?? x.position_number) === 1);
+  if (directWinner && typeof directWinner === "object") {
+    const name = directWinner.name || directWinner.runner_name || directWinner.horse_name || directWinner.greyhound_name;
+    if (name) return { name, number: directWinner.number ?? directWinner.runner_number ?? directWinner.box ?? null };
+  }
+  // MoviOdds result rows expose ordered placings. Accept its documented
+  // placings array and common nested runner/result array variants.
+  const candidates = [r.placings,r.runners,r.results,r.finishers,r.runners_result,r.finishing_order];
+  const runners = candidates.find(Array.isArray) || [];
+  const winner = runners.find(x => Number(x.position ?? x.placing ?? x.place ?? x.finish_position ?? x.position_number ?? x.rank) === 1);
   if (winner) return {
-    name: winner.name || winner.runner_name || winner.horse_name || winner.greyhound_name,
-    number: winner.number ?? winner.runner_number ?? null
+    name: winner.name || winner.runner_name || winner.horse_name || winner.greyhound_name || winner.selection_name,
+    number: winner.number ?? winner.runner_number ?? winner.box ?? winner.saddlecloth ?? null
   };
+  if (r.placings && !Array.isArray(r.placings) && typeof r.placings === "object") {
+    const first = r.placings["1"] ?? r.placings.first ?? r.placings.first_place;
+    if (typeof first === "string") return {name:first,number:null};
+    if (first && typeof first === "object") {
+      const name=first.name||first.runner_name||first.horse_name||first.greyhound_name;
+      if(name)return {name,number:first.number??first.runner_number??first.box??null};
+    }
+  }
   return null;
 }
 function isSameRunner(pick, winner) {
@@ -2746,22 +2758,47 @@ async function loadMoviOddsFinalResults(){
    const body=await response.text();let payload;
    try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds results "+date+" returned invalid JSON (HTTP "+response.status+").");}
    if(!response.ok)throw new Error("MoviOdds results "+date+" HTTP "+response.status+": "+(payload.error||"request failed"));
-   const rows=Array.isArray(payload)?payload:(Array.isArray(payload.races)?payload.races:Array.isArray(payload.results)?payload.results:Array.isArray(payload.data)?payload.data:[]);
-   return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results"}));
+   let rows=Array.isArray(payload)?payload:
+    (Array.isArray(payload.races)?payload.races:Array.isArray(payload.results)?payload.results:Array.isArray(payload.data)?payload.data:[]);
+   if(!rows.length&&Array.isArray(payload.meetings))rows=payload.meetings.flatMap(meeting=>(meeting.races||[]).map(row=>({...row,
+    course:row.course||meeting.course||meeting.track||meeting.name,
+    code:row.code||meeting.code||payload.code||"all"})));
+   const sample=rows[0]||null;
+   const placingList=sample?(sample.placings||sample.runners||sample.results||sample.finishers||[]):[];
+   console.info("MOVIODDS_RESULTS_RESPONSE_CONFIRMED",JSON.stringify({
+    date,httpStatus:response.status,topLevelKeys:Object.keys(payload||{}),
+    raceCount:rows.length,sampleRaceKeys:sample?Object.keys(sample):[],
+    sampleStatus:sample?.status||null,placingsType:Array.isArray(placingList)?"array":typeof placingList,
+    samplePlacingKeys:Array.isArray(placingList)&&placingList[0]?Object.keys(placingList[0]):[],
+    samplePlacingCount:Array.isArray(placingList)?placingList.length:null
+   }));
+   return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results",_result_date:date}));
   }));
   const errors=reads.filter(x=>x.status==="rejected").map(x=>x.reason.message);
   const rows=reads.filter(x=>x.status==="fulfilled").flatMap(x=>x.value);
   if(!rows.length&&errors.length===reads.length)throw new Error(errors.join(" · "));
-  const finalRows=rows.filter(row=>/^(result_final|final|settled)$/i.test(String(row.status||"")));
+  const finalRows=rows.filter(row=>/^(result_final|final|settled)$/i.test(String(row.status||row.result_status||"")));
   const unique=new Map();
-  for(const row of finalRows){const key=raceId(row)+"|"+raceMatchKey(row);if(!unique.has(key))unique.set(key,row);}
-  const payload={at:Date.now(),rows:[...unique.values()],dates,errors};
+  for(const row of finalRows){
+   const key=String(row.race_id||row.id||"")+"|"+String(row.code||"")+"|"+String(row.date||row.jump_utc||"");
+   if(!unique.has(key))unique.set(key,row);
+  }
+  const sample=rows[0]||null;
+  const payload={at:Date.now(),rows:[...unique.values()],dates,errors,rawRows:rows.length,
+   sampleRaceKeys:sample?Object.keys(sample):[],sampleStatus:sample?.status||sample?.result_status||null};
   moviOddsResultsCache=payload;
   console.info("MOVIODDS_FINAL_RESULTS",JSON.stringify({dates,rows:rows.length,final:payload.rows.length,errors}));
   return payload;
  })().catch(error=>{moviOddsResultsCache.error=error.message;throw error;}).finally(()=>{moviOddsResultsRefresh=null;});
  return moviOddsResultsRefresh;
 }
+// Fetch once at startup and refresh periodically, even before the first history
+// sync request. This verifies the real no-key results response independently of
+// whether the user currently has pending picks.
+void loadMoviOddsFinalResults().catch(error=>console.warn("MOVIODDS_RESULTS_STARTUP_CHECK_FAILED",error.message));
+const moviResultsPollTimer=setInterval(()=>loadMoviOddsFinalResults().catch(error=>
+ console.warn("MOVIODDS_RESULTS_POLL_FAILED",error.message)),10*60*1000);
+if(typeof moviResultsPollTimer.unref==="function")moviResultsPollTimer.unref();
 
 app.post("/api/history/sync", async (_req,res) => {
   try {
@@ -2791,12 +2828,13 @@ app.post("/api/history/sync", async (_req,res) => {
     if (backfilled) await saveHistory(history);
     const pending = history.picks.filter(p => p.status === "pending");
     let settled = 0, unmatched = 0, checked = 0, resultSource="MoviOdds";
+    // Always fetch/confirm the provider response, even when there are no pending
+    // picks; otherwise the app can claim "no settled races" without ever reading
+    // the results endpoint.
+    const resultFeed = await loadMoviOddsFinalResults();
+    const results = resultFeed.rows;
+    checked = results.length;
     if (pending.length) {
-      // MoviOdds publishes a separate no-key results endpoint for all three racing codes.
-      // Only result_final rows are accepted; interim placings never settle a pick.
-      const resultFeed = await loadMoviOddsFinalResults();
-      const results = resultFeed.rows;
-      checked = results.length;
       const matched = new Set();
       for (const result of results) {
         const pick = findMatchingPick(pending,result);
@@ -2806,7 +2844,7 @@ app.post("/api/history/sync", async (_req,res) => {
         pick.status = "final";
         pick.winnerName = winner.name;
         pick.favouriteWon = isSameRunner(pick,winner);
-        pick.resultedAt = result.resulted_at || new Date().toISOString();
+        pick.resultedAt = result.resulted_at || result.updated_at || new Date().toISOString();
         matched.add(pick);
         settled++;
       }
@@ -2816,7 +2854,9 @@ app.post("/api/history/sync", async (_req,res) => {
     res.set("Cache-Control","no-store");
     return res.json({ok:true,settled,unmatched,checked,backfilled,resultSource,pending:history.picks.filter(p=>p.status==="pending").length,
       resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
-      note:"MoviOdds /racing/results supplies the settled placings. Only result_final rows are used; interim, abandoned and unmatched races remain pending."});
+      resultResponse:{rawRows:moviOddsResultsCache.rawRows??null,finalRows:moviOddsResultsCache.rows?.length??0,
+        sampleRaceKeys:moviOddsResultsCache.sampleRaceKeys||[],sampleStatus:moviOddsResultsCache.sampleStatus||null},
+      note:"MoviOdds /racing/results response was fetched and inspected. Only result_final rows with a confirmed first placing are used; interim, abandoned and unmatched races remain pending."});
   } catch (error) {
     return res.status(502).json({error:"Results sync failed: "+error.message});
   }
