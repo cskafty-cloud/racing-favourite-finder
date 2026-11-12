@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.8"
+$RffLauncherVersion = "2026-11-13.9"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -128,18 +128,15 @@ if ($railwayPresent.Count -gt 0) {
   Save-EncryptedCredentials $values
   Write-Host "Imported Railway Production Betfair variables and saved them encrypted with Windows DPAPI." -ForegroundColor Green
 } elseif (Test-Path -LiteralPath $CredentialFile) {
-  $choice = Read-Host "Use saved encrypted Betfair credentials? [Y]es / [N]o, replace"
-  if ($choice -match '^(n|no)$') {
-    $values = Read-NewCredentials
-  } else {
-    $values = Load-EncryptedCredentials
-    Write-Host "Loaded saved encrypted Betfair credentials." -ForegroundColor Green
-    $newFeedToken = Get-ClipboardFeedToken
-    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
-      $values.BETFAIR_FEED_TOKEN = $newFeedToken
-      Save-EncryptedCredentials $values
-      Write-Host "Updated the encrypted Railway shared token; retained the saved Betfair login." -ForegroundColor Green
-    }
+  # Start unattended from the last known-good encrypted credentials.
+  # Railway CLI login is not required when using this local DPAPI file.
+  $values = Load-EncryptedCredentials
+  Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+  $newFeedToken = Get-ClipboardFeedToken
+  if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+    $values.BETFAIR_FEED_TOKEN = $newFeedToken
+    Save-EncryptedCredentials $values
+    Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
   }
 } else {
   Write-Host "No saved credential file found. Enter credentials once to create it."
