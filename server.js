@@ -2298,6 +2298,8 @@ async function getGlobalRacesUncached() {
       betfairFeedLastError="";
       if(!betfairSupplementalRows.length)failures.push({feed:"Betfair AU adapter",message:"Connected, but no Australian WIN/PLACE markets were returned."});
       console.info("BETFAIR_AU_ADAPTER_RACING",JSON.stringify({races:betfairSupplementalRows.length,
+        byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,betfairSupplementalRows.filter(r=>categoryOf(r)===code).length])),
+        sampleRaceCodes:[...new Set(betfairSupplementalRows.map(r=>String(r.code||r.category||r.race_type||"unknown")))].slice(0,12),
         runners:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).length,0),
         exchangeQuotes:betfairSupplementalRows.reduce((n,r)=>n+(r.runners||[]).reduce((m,x)=>m+(x.bookmakers||[]).filter(q=>q.exchange===true).length,0),0)}));
     } catch(error) {
@@ -3118,39 +3120,35 @@ async function loadMoviOddsFinalResults(extraDates=[]){
   if(dates.every(date=>(moviOddsResultsCache.dates||[]).includes(date)))return moviOddsResultsCache;
  }
  moviOddsResultsRefresh=(async()=>{
-  async function readDate(date){
-   const url="https://moviodds.com/racing/results?code=all&date="+date;
+  async function readDate(date,code){
+   const url="https://moviodds.com/racing/results?code="+encodeURIComponent(code)+"&date="+date;
    const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(18000)});
    const body=await response.text();let payload;
-   try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds results "+date+" returned invalid JSON (HTTP "+response.status+").");}
-   if(!response.ok)throw new Error("MoviOdds results "+date+" HTTP "+response.status+": "+(payload.error||"request failed"));
+   try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds results "+code+" "+date+" returned invalid JSON (HTTP "+response.status+").");}
+   if(!response.ok)throw new Error("MoviOdds results "+code+" "+date+" HTTP "+response.status+": "+(payload.error||"request failed"));
    let rows=Array.isArray(payload)?payload:
     (Array.isArray(payload.races)?payload.races:Array.isArray(payload.results)?payload.results:Array.isArray(payload.data)?payload.data:[]);
    if(!rows.length&&Array.isArray(payload.meetings))rows=payload.meetings.flatMap(meeting=>(meeting.races||[]).map(row=>({...row,
     course:row.course||meeting.course||meeting.track||meeting.name,
-    code:row.code||meeting.code||payload.code||"all"})));
+    code:row.code||meeting.code||payload.code||code})));
    const sample=rows.find(x=>/^(result_final|final|settled)$/i.test(String(x.status||x.result_status||"")))||rows[0]||null;
    const placingList=sample?(sample.placings||sample.runners||sample.results||sample.finishers||[]):[];
-   const resultValue=sample?.result??null;
    console.info("MOVIODDS_RESULTS_RESPONSE_CONFIRMED",JSON.stringify({
-    date,httpStatus:response.status,topLevelKeys:Object.keys(payload||{}),
+    date,code,httpStatus:response.status,topLevelKeys:Object.keys(payload||{}),
     raceCount:rows.length,finalRaceCount:rows.filter(x=>/^(result_final|final|settled)$/i.test(String(x.status||x.result_status||""))).length,
     sampleRaceKeys:sample?Object.keys(sample):[],sampleStatus:sample?.status||null,
-    resultType:Array.isArray(resultValue)?"array":typeof resultValue,
-    resultKeys:resultValue&&typeof resultValue==="object"&&!Array.isArray(resultValue)?Object.keys(resultValue):[],
-    resultPreview:resultValue==null?null:JSON.stringify(resultValue).slice(0,700),
     placingsType:Array.isArray(placingList)?"array":typeof placingList,
     samplePlacingKeys:Array.isArray(placingList)&&placingList[0]?Object.keys(placingList[0]):[],
-    samplePlacingCount:Array.isArray(placingList)?placingList.length:null,
-    firstRunnerPreview:Array.isArray(placingList)&&placingList[0]?JSON.stringify(placingList[0]).slice(0,450):null
+    samplePlacingCount:Array.isArray(placingList)?placingList.length:null
    }));
-   return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results",_result_date:date}));
+   return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||code,_results_source:"MoviOdds /racing/results",_result_date:date}));
   }
+  const requests=dates.flatMap(date=>["horse","greyhound","harness"].map(code=>({date,code})));
   const reads=[];
-  // Read historical dates in small batches so expanding the settlement
-  // lookback cannot overwhelm the free public results endpoint.
-  for(let i=0;i<dates.length;i+=4){
-   reads.push(...await Promise.allSettled(dates.slice(i,i+4).map(readDate)));
+  // Code-scoped result reads avoid relying on the combined "all" filter, and
+  // small batches keep the free endpoint and this 1 GB service under control.
+  for(let i=0;i<requests.length;i+=6){
+   reads.push(...await Promise.allSettled(requests.slice(i,i+6).map(({date,code})=>readDate(date,code))));
   }
   const errors=reads.filter(x=>x.status==="rejected").map(x=>x.reason.message);
   const rows=reads.filter(x=>x.status==="fulfilled").flatMap(x=>x.value);
@@ -3165,7 +3163,8 @@ async function loadMoviOddsFinalResults(extraDates=[]){
   const payload={at:Date.now(),rows:[...unique.values()],dates,errors,rawRows:rows.length,
    sampleRaceKeys:sample?Object.keys(sample):[],sampleStatus:sample?.status||sample?.result_status||null};
   moviOddsResultsCache=payload;
-  console.info("MOVIODDS_FINAL_RESULTS",JSON.stringify({dates,rows:rows.length,final:payload.rows.length,errors}));
+  console.info("MOVIODDS_FINAL_RESULTS",JSON.stringify({dates,requests:requests.length,rows:rows.length,final:payload.rows.length,
+   byCode:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,payload.rows.filter(row=>String(row.code||"").toLowerCase()===code).length])),errors:errors.slice(0,8)}));
   return payload;
  })().catch(error=>{moviOddsResultsCache.error=error.message;throw error;}).finally(()=>{moviOddsResultsRefresh=null;});
  return moviOddsResultsRefresh;
