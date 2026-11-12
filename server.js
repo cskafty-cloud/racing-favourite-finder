@@ -1950,7 +1950,7 @@ async function getGlobalRacesUncached() {
   // A 402 is a hard monthly quota exhaustion, not a transient error. Do not
   // keep entering the provider loader on every browser/background refresh while
   // both racing endpoints are inside their cooldown; use the free feeds below.
-  const puntersEdgeQuotaPaused = API_KEY && Date.now() < providerRetryAt.schedule && Date.now() < providerRetryAt.odds;
+  const puntersEdgeQuotaPaused = API_KEY && (Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
   if (puntersEdgeQuotaPaused) {
     failures.push({feed:"PuntersEdge",message:"Monthly credits exhausted (HTTP 402); authenticated racing requests are paused until the provider cooldown expires. Continuing with available public feeds."});
   }
@@ -2258,8 +2258,9 @@ app.get("/api/feed-status",(_req,res)=>{
       retryAt:betfairFeedRetryAt&&now<betfairFeedRetryAt?new Date(betfairFeedRetryAt).toISOString():null,error:betfairFeedLastError||null},
     betfairRacing:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairRacingCache.error||""))?"reauthentication-required":betfairRetryAt&&now<betfairRetryAt?"circuit-open":"probe-eligible",
       retryAt:betfairRetryAt&&now<betfairRetryAt?new Date(betfairRetryAt).toISOString():null,error:betfairRacingCache.error||null},
-    betfairSportsAdapter:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairSportsCache.error||""))?"reauthentication-required":betfairSportsRetryAt&&now<betfairSportsRetryAt?"backoff":"probe-eligible",
-      retryAt:betfairSportsRetryAt&&now<betfairSportsRetryAt?new Date(betfairSportsRetryAt).toISOString():null,error:betfairSportsCache.error||null}
+    betfairSportsAdapter:{status:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(String(betfairSportsAdapterLastError||betfairSportsCache.error||""))?"reauthentication-required":betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?"backoff":"probe-eligible",
+      retryAt:betfairSportsAdapterRetryAt&&now<betfairSportsAdapterRetryAt?new Date(betfairSportsAdapterRetryAt).toISOString():null,
+      error:betfairSportsAdapterLastError||betfairSportsCache.error||null}
   };
   res.set("Cache-Control","no-store").json({racing,sports,liveSports,providerRecovery,checkedAt:new Date().toISOString()});
 });
@@ -2481,8 +2482,13 @@ async function readBetfairSportsAdapter(url){
     return result;
   })().catch(error=>{
     betfairSportsAdapterLastError=error.message;
-    betfairSportsAdapterRetryAt=Date.now()+60000;
-    console.warn("BETFAIR_SPORTS_ADAPTER_FAILED",error.message);
+    const invalidSession=/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message);
+    const authFailure=/401|403/i.test(error.message);
+    const timedOut=/timeout|aborted|ETIMEDOUT/i.test(error.message);
+    const delay=invalidSession?12*60*60*1000:(authFailure?6*60*60*1000:(timedOut?15*60*1000:5*60*1000));
+    betfairSportsAdapterRetryAt=Date.now()+delay;
+    console.warn(invalidSession?"BETFAIR_SPORTS_ADAPTER_REAUTH_REQUIRED":"BETFAIR_SPORTS_ADAPTER_CIRCUIT_OPEN",
+      JSON.stringify({retryAt:new Date(betfairSportsAdapterRetryAt).toISOString(),reason:error.message.slice(0,180)}));
     throw error;
   }).finally(()=>{betfairSportsAdapterRefresh=null;});
   return betfairSportsAdapterRefresh;
@@ -2495,16 +2501,22 @@ app.get("/api/betfair/sports",async(_req,res)=>{
       res.set("Cache-Control","no-store");
       return res.json(data);
     }
-    if(!BETFAIR_APP_KEY||!BETFAIR_SESSION_TOKEN)return res.status(503).json({
-      status:"credentials-missing",provider:"Betfair Exchange Delayed API",
+    if(!BETFAIR_APP_KEY||!BETFAIR_SESSION_TOKEN)return res.status(200).json({
+      status:"credentials-missing",provider:"Betfair Exchange Delayed API",events:[],eventTypes:[],
+      pricedMarkets:0,backOffers:0,layOffers:0,soccerMarketCount:0,soccerPricedMarkets:0,
       error:"Configure the Australian adapter URL or Betfair credentials."});
     const data=await getBetfairSports();
     res.set("Cache-Control","no-store");
     return res.json(data);
   }catch(error){
     console.error("BETFAIR_SPORTS_API_FAILED",error.message);
-    return res.status(503).json({status:"configured-but-unavailable",provider:"Betfair Exchange Delayed API",error:error.message,
-      note:"No Betfair sports prices are shown unless the authorised Australian adapter returns actual BACK/LAY offers."});
+    return res.status(200).json({status:"configured-but-unavailable",provider:"Betfair Exchange Delayed API",
+      events:[],eventTypes:[],pricedMarkets:0,backOffers:0,layOffers:0,soccerMarketCount:0,soccerPricedMarkets:0,
+      retryAt:betfairSportsAdapterRetryAt?new Date(betfairSportsAdapterRetryAt).toISOString():
+        (betfairSportsRetryAt?new Date(betfairSportsRetryAt).toISOString():null),
+      reauthenticationRequired:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message),
+      error:error.message,
+      note:"Betfair Exchange data is temporarily unavailable. No prices are fabricated; other public sports feeds remain independent."});
   }
 });
 app.get("/api/sports", async (_req,res) => {
