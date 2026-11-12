@@ -28,3 +28,15 @@ jobs:
           node --check betfair-feed.js
           node --check public/app.js
           node --check public/api-retry.js
+
+  desktop-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Build Windows portable application
+        run: npm run desktop:dist
