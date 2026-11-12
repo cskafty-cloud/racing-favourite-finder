@@ -176,8 +176,16 @@ async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS"
   }
 }
 async function fetchSportBooks(marketIds) {
+  const request = (ids, depth, virtualise) => rpc("listMarketBook",{
+    marketIds:ids,
+    priceProjection:{
+      priceData:["EX_BEST_OFFERS"],
+      exBestOffersOverrides:{bestPricesDepth:depth},
+      virtualise
+    }
+  });
   try {
-    return {books:await rpc("listMarketBook",{marketIds,priceProjection:{priceData:["EX_BEST_OFFERS"],virtualise:true}})||[],errors:[]};
+    return {books:await request(marketIds,3,true)||[],errors:[]};
   } catch (error) {
     if (/TOO_MUCH_DATA/i.test(error.message) && marketIds.length > 1) {
       const middle = Math.ceil(marketIds.length / 2);
@@ -185,7 +193,17 @@ async function fetchSportBooks(marketIds) {
       const right = await fetchSportBooks(marketIds.slice(middle));
       return {books:[...left.books,...right.books],errors:[...left.errors,...right.errors]};
     }
-    return {books:[],errors:[error.message]};
+    // A single dense Soccer market can exceed the response limit on the
+    // default best-offers depth. Retry that one market with only the top
+    // price level and without virtual prices before reporting it as failed.
+    if (/TOO_MUCH_DATA/i.test(error.message) && marketIds.length === 1) {
+      try {
+        return {books:await request(marketIds,1,false)||[],errors:[]};
+      } catch (retryError) {
+        return {books:[],errors:["Market "+marketIds[0]+" failed at bestPricesDepth=1: "+retryError.message]};
+      }
+    }
+    return {books:[],errors:["Market batch ("+marketIds.length+"): "+error.message]};
   }
 }
 async function loadSports() {
