@@ -5,6 +5,10 @@ const assert=require("node:assert/strict");
 const {
   MOVI_WS_FIXTURE_LIMIT,
   MOVI_WS_QUOTES_PER_FIXTURE_LIMIT,
+  MEMORY_SOFT_LIMIT_BYTES,
+  CGROUP_MEMORY_SOFT_LIMIT_MB,
+  MEMORY_CLEANUP_INTERVAL_MS,
+  isMemoryPressure,
   trimInsertionOrderedMap,
   trimMoviOddsFixtures,
   trimQuoteList
@@ -49,4 +53,13 @@ test("quote arrays are bounded while preserving the newest entries",()=>{
   assert.deepEqual(trimQuoteList(rows).slice(0,2),[25,26]);
   assert.equal(trimQuoteList(rows).length,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT);
   assert.deepEqual(trimQuoteList([1,2,3],5),[1,2,3]);
+});
+
+test("memory pressure cleanup starts well below the Railway container limit",()=>{
+ assert.equal(MEMORY_SOFT_LIMIT_BYTES,384*1024*1024);
+ assert.equal(CGROUP_MEMORY_SOFT_LIMIT_MB,600);
+ assert.equal(MEMORY_CLEANUP_INTERVAL_MS,30000);
+ assert.equal(isMemoryPressure({rssBytes:383*1024*1024,cgroupCurrentMB:599}),false);
+ assert.equal(isMemoryPressure({rssBytes:384*1024*1024,cgroupCurrentMB:100}),true);
+ assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:600}),true);
 });
