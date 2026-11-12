@@ -877,42 +877,42 @@ async function loadPublicDemoSport(sport) {
     for(const match of matches){
       const quotes=Array.isArray(match.quotes)?match.quotes:[];
       const groupIds=MOVI_WINNER_GROUPS[sport.key]||[];
-      const main=quotes.filter(q=>groupIds.includes(String(q.group_id))||/full time result|to win|match winner|match result|3.?way result|moneyline|game winner/i.test(String(q.group_name||q.market_name||"")));
       const byBook=new Map();
-      for(const q of main){
-        // MoviOdds documents /odds as its Bet365 odds feed. Accept its quotes as
-        // Bet365 unless an explicit per-quote source contradicts that provenance.
+      for(const q of quotes){
+        // MoviOdds is documented as Bet365-only. Keep all available markets,
+        // while retaining source/selection identity and never inventing prices.
         const explicitBook=moviQuoteBookmakerKey(q);
-        // MoviOdds is documented as Bet365-only. Its "ws", "poll", "pm" and
-        // "card" values describe transport/feed channels, not other bookmakers.
         if(explicitBook&&!["bet365","pm","ws","poll","card"].includes(explicitBook))continue;
         const bookKey="bet365";
         const name=q.label||q.name||q.selection||"Selection";
         const price=Number(q.odds_dec??q.price??q.decimal_odds);
         if(!Number.isFinite(price)||price<=1)continue;
-        const groupStatus=match.group_status?.[String(q.group_id)]||match.group_status?.[q.group_id]||{};
+        const groupId=String(q.group_id??"");
+        const groupStatus=match.group_status?.[groupId]||match.group_status?.[q.group_id]||{};
         if(q.suspended===true||groupStatus.suspended===true)continue;
-        // ts is when the price last MOVED; polled_at is when MoviOdds last
-        // re-confirmed that market. A stable price can have an old ts while
-        // remaining current, so freshness must prefer the market read time.
         const quoteUpdatedAt=moviTimestamp(q.ts??q.timestamp??q.last_update??q.updated_at);
         const polledAt=moviTimestamp(groupStatus.polled_at||match.polled_at);
         const ageStamp=polledAt||quoteUpdatedAt;
         const quoteAge=ageStamp?Math.max(0,Math.floor((Date.now()-Date.parse(ageStamp))/1000)):
           (q.age_seconds??q.quote_age_seconds??null);
         const quoteStale=groupStatus.stale===true||(quoteAge!=null&&Number(quoteAge)>=180);
+        const isWinnerMarket=groupIds.includes(groupId)||/full time result|to win|match winner|match result|3.?way result|moneyline|game winner/i.test(String(q.group_name||q.market_name||""));
+        const marketKey=isWinnerMarket?"h2h":"movi_"+groupId+"_"+String(q.market_id??"");
+        const marketName=isWinnerMarket?"Head to head":String(q.group_name||q.market_name||("Market "+groupId));
         if(!byBook.has(bookKey))byBook.set(bookKey,{key:bookKey,name:"Bet365",
-          last_update:quoteUpdatedAt,age_seconds:quoteAge,
-          stale:groupStatus.stale===true,
-          markets:[{key:"h2h",name:"Head to head",outcomes:[]}],public_demo:true,source:"MoviOdds Bet365 feed · quote-level timestamp"});
-        const book=byBook.get(bookKey),outcomes=book.markets[0].outcomes;
+          last_update:polledAt||quoteUpdatedAt,age_seconds:quoteAge,stale:false,
+          markets:[],public_demo:true,source:"MoviOdds Bet365 REST/WebSocket feed"});
+        const book=byBook.get(bookKey);
         if(book.age_seconds==null||quoteAge!=null&&quoteAge>book.age_seconds)book.age_seconds=quoteAge;
+        let market=book.markets.find(m=>m.key===marketKey);
+        if(!market){market={key:marketKey,name:marketName,group_id:groupId,market_id:q.market_id??null,outcomes:[]};book.markets.push(market);}
         // Keep both times: last price movement and latest provider confirmation.
-        const prior=outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase());
-        const outcome={name:String(name),price,last_update:polledAt||quoteUpdatedAt,
-          price_changed_at:quoteUpdatedAt,polled_at:polledAt,
+        const outcome={name:String(name),price,line:q.line??q.handicap??null,
+          last_update:polledAt||quoteUpdatedAt,price_changed_at:quoteUpdatedAt,polled_at:polledAt,
           age_seconds:quoteAge,observed_at:polledAt||null,stale:quoteStale};
-        if(prior)Object.assign(prior,outcome);else outcomes.push(outcome);
+        const prior=market.outcomes.find(o=>String(o.name).toLowerCase()===String(name).toLowerCase()&&
+          String(o.line??"")===String(outcome.line??""));
+        if(prior)Object.assign(prior,outcome);else market.outcomes.push(outcome);
       }
       const eventStart=match.kickoff_utc||match.start_time||match.commence_time||null;
       const eventLive=match.in_play===true||/^(live|in.?play|running)$/i.test(String(match.status||""));
