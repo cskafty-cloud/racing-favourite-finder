@@ -145,10 +145,315 @@ function renderBestTips(list){
   const ranked=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&!x.fav.previewOnly&&Number(x.fav.signalScore||0)>=28).sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)||Number(a.fav.price)-Number(b.fav.price)).slice(0,10);
   const raceHtml=ranked.map((x,i)=>'<div class="rf-sports-row"><b>#'+(i+1)+' · '+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · confidence '+esc(x.fav.signalScore)+'/100</span><div class="rf-muted">'+esc(String(x.race.category||x.race.code||"Racing").toUpperCase())+' · '+esc(x.fav.priceSource||"Verified fixed WIN")+' · '+Number(x.fav.quoteCount||0)+' independent bookmaker source(s) · '+(Number(x.fav.quoteCount||0)>1?Number(x.fav.spreadPct||0).toFixed(1)+"% price spread":"no cross-book spread available")+' · '+esc(fmtTime(x.race.start_time||x.race.commence_time))+'</div></div>').join("");
   const now=Date.now();
-  const exchangeSports=betfairSportsEvents.filter(e=>e.favourite&&Number(e.favourite.price)>1&&
-    Number.isFinite(Date.parse(e.marketPublishedAt||""))&&now-Date.parse(e.marketPublishedAt)<=180000&&now-Date.parse(e.marketPublishedAt)>=-60000)
+  // listMarketBook has no general market publication timestamp. The adapter
+  // deliberately leaves marketPublishedAt null and supplies per-offer
+  // observedAt/ageSeconds instead. Use that observation time for freshness;
+  // otherwise every valid exchange favourite is incorrectly hidden.
+  const exchangeSports=betfairSportsEvents.map(e=>{
+    const quote=(e.runners||[]).find(r=>r.name===e.favourite?.name)?.back||null;
+    const observedAt=quote?.observedAt||null,observedMs=Date.parse(observedAt||"");
+    const reportedAge=Number(quote?.ageSeconds);
+    const clockAge=Number.isFinite(observedMs)?Math.max(0,(now-observedMs)/1000):null;
+    const age=Number.isFinite(reportedAge)&&clockAge!=null?Math.max(reportedAge,clockAge):null;
+    return {...e,_freshFavouriteQuote:quote,_freshFavouriteObservedAt:observedAt,_freshFavouriteAge:age};
+  }).filter(e=>e.favourite&&Number(e.favourite.price)>1&&e._freshFavouriteQuote&&
+    e._freshFavouriteAge!=null&&e._freshFavouriteAge>=0&&e._freshFavouriteAge<=180)
     .sort((a,b)=>Date.parse(a.startTime||0)-Date.parse(b.startTime||0)).slice(0,10);
-  const sportsHtml=exchangeSports.map((e,i)=>'<div class="rf-sports-row"><b>EXCHANGE #'+(i+1)+' · '+esc(e.event||"Event")+' · '+esc(e.favourite.name)+'</b><span>$'+Number(e.favourite.price).toFixed(2)+' · BACK · '+(e.inPlay?"IN-PLAY":"UPCOMING")+'</span><div class="rf-muted">'+esc(e.sport||"Sport")+' · '+esc(e.marketName||"Market")+' · Betfair Exchange delayed up to 180s · market publish time '+esc(fmtTime(e.marketPublishedAt))+'</div></div>').join("");
+  const sportsHtml=exchangeSports.map((e,i)=>'<div class="rf-sports-row"><b>EXCHANGE #'+(i+1)+' · '+esc(e.event||"Event")+' · '+esc(e.favourite.name)+'</b><span>
+  if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">RACING SHORTLIST · Fresh, timestamped verified fixed-WIN bookmaker quotes only. Confidence measures data quality, not a win probability. Exchange prices are kept separate.</div>'+(raceHtml||'<div class="rf-empty">No fresh verified bookmaker racing favourites currently qualify.</div>')+'<div class="rf-market-title">SPORTS MARKET FAVOURITES · BETFAIR EXCHANGE BACK (DELAYED)</div><div class="rf-muted">These are actual available Exchange BACK prices, not bookmaker odds or predictions.</div>'+(sportsHtml||'<div class="rf-empty">No fresh priced Exchange sports favourites currently qualify.</div>');
+}
+async function checkDashboardConnection(){
+ if(healthCheckInFlight)return healthCheckInFlight;
+ healthCheckInFlight=(async()=>{
+  try{
+   const response=await apiFetch("/api/health",{cache:"no-store",headers:{"Cache-Control":"no-cache"},signal:AbortSignal.timeout(5000)});
+   if(!response.ok)throw new Error("Health check HTTP "+response.status);
+   const health=await response.json();
+   const serverMs=Date.parse(health?.serverTime||"");
+   const ageMs=Date.now()-serverMs;
+   if(health?.ok!==true||!Number.isFinite(serverMs)||ageMs < -60000||ageMs>120000)
+    throw new Error("Server did not return a recent, timestamped health response");
+   lastServerCheckAt=Date.now();
+   const serverClock=new Date(serverMs).toLocaleTimeString("en-AU",{timeZone:"Australia/Brisbane",hour12:false});
+   setHeaderConnection("CONNECTED · SERVER "+serverClock);
+   if($("feedStatus"))$("feedStatus").title="Server health confirmed at "+new Date(serverMs).toLocaleString("en-AU",{timeZone:"Australia/Brisbane"})+" · uptime "+Number(health.uptimeSeconds||0)+" seconds";
+   return true;
+  }catch(error){
+   if(!lastServerCheckAt)setHeaderConnection("OFFLINE · SERVER NOT REACHABLE");
+   else if(Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");
+   return false;
+  }finally{healthCheckInFlight=null;}
+ })();
+ return healthCheckInFlight;
+}
+async function loadHistory(){
+ try{
+  // Sync final race placings first, then render the persistent pick ledger.
+  const sync=await apiFetch("/api/history/sync",{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"}});
+  if(!sync.ok){const err=await sync.json().catch(()=>({}));throw new Error(err.error||"Results sync HTTP "+sync.status);}
+  const syncData=await sync.json();
+  const response=await apiFetch("/api/history",{cache:"no-store"});
+  if(!response.ok)throw new Error("History HTTP "+response.status);
+  const data=await response.json(),summary=data.summary||{};
+  const set=(id,value)=>{if($(id))$(id).textContent=value;};
+  set("histRaces",String(summary.races??0));
+  set("histWins",String(summary.wins??0));
+  set("histRate",summary.strikeRate==null?"—":Number(summary.strikeRate).toFixed(1)+"%");
+  set("histPending",String(summary.pending??0));
+  const record=(value)=>value&&Number(value.races)>0?
+   Number(value.races)+" settled · "+Number(value.wins||0)+" wins · "+Number(value.losses||0)+" losses · "+(value.strikeRate==null?"—":Number(value.strikeRate).toFixed(1)+"%"):
+   "0 settled · awaiting final results";
+  set("horseRecord",record(summary.horse));
+  set("dogRecord",record(summary.greyhound));
+  set("harnessRecord",record(summary.harness));
+  const rows=(data.picks||[]).slice(0,30);
+  if($("historyRows"))$("historyRows").innerHTML=rows.length?rows.map(p=>{
+   const state=p.status==="final"?(p.favouriteWon?"FAVOURITE WON":"FAVOURITE LOST"):"AWAITING RESULT";
+   const price=Number(p.selectedOdds)>1?"$"+Number(p.selectedOdds).toFixed(2):"price unavailable";
+   return '<div class="rf-sports-row"><b>'+esc(String(p.category||"racing").toUpperCase())+' · '+esc(p.venue||"Track")+' R'+esc(p.raceNumber??"?")+' · '+esc(p.runnerName||"Favourite")+'</b><span>'+esc(state)+' · '+esc(price)+'</span><div class="rf-muted">'+esc(p.priceSource||"Recorded market snapshot")+' · '+esc(fmtTime(p.startTime||p.selectedAt))+(p.winnerName?" · Winner: "+esc(p.winnerName):"")+(p.backfilledFromPreJumpSnapshot?" · recovered from pre-jump snapshot":"")+'</div></div>';
+  }).join(""):'<div class="empty">No pre-jump selections have been recorded yet. The app records verified favourites before the jump and settles them when MoviOdds confirms final results.</div>';
+  if($("historyRows"))$("historyRows").title="MoviOdds results checked: "+Number(syncData.checked||0)+" · newly settled: "+Number(syncData.settled||0)+" · pending: "+Number(syncData.pending||0);
+ }catch(error){
+  if($("historyRows")&&!$("historyRows").textContent.trim())$("historyRows").textContent="Results/history sync unavailable: "+error.message;
+  console.warn("RACING_HISTORY_SYNC_FAILED",error.message);
+ }
+}
+async function loadRaces(){
+ // The health heartbeat is independent of the slower upstream race-feed request.
+ void checkDashboardConnection();
+ try{
+  const response=await apiFetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
+  if(!response.ok)throw new Error("Race feed HTTP "+response.status);
+  const data=await response.json();renderRaces(data);
+ }catch(error){
+  if($("raceList"))$("raceList").innerHTML='<div class="rf-empty">The server connection is monitored separately. Racing feed response delayed or unavailable: '+esc(error.message)+'</div>';
+ }
+}
+async function loadLucasFox(){
+ try{
+  const response=await apiFetch("/api/lucasfox/sports",{cache:"no-store",signal:AbortSignal.timeout(18000)});
+  const data=await response.json();if(!response.ok)throw new Error(data.error||"LucasFox unavailable");
+  const events=data.events||[],quotes=events.flatMap(e=>(e.bookmakers||[]).flatMap(b=>(b.markets||[]).flatMap(m=>(m.outcomes||[]).map(o=>({e,b,m,o})))));
+  const fresh=quotes.filter(x=>Number(x.o.age_seconds)<900);
+  if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent=quotes.length?"SPORTSBET QUOTES FOUND":"NO QUOTES RETURNED";
+  if($("lucasFoxSportsStats"))$("lucasFoxSportsStats").innerHTML=[[events.length,"Sports fixtures"],[quotes.length,"Sportsbet quotes"],[fresh.length,"Fresh under 15m"],[data.dailyLimit||100,"Free requests/day"]].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
+  if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML=quotes.length?quotes.slice(0,60).map(x=>'<div class="rf-sports-row"><b>'+esc(x.e.home_team)+' v '+esc(x.e.away_team)+' · '+esc(x.m.name||x.m.key)+'</b>'+esc(x.o.name)+' · $'+Number(x.o.price).toFixed(2)+' · '+(Number(x.o.age_seconds)<900?'FRESH':'STALE / NOT RANKED')+'<div class="rf-muted">Sportsbet · captured '+esc(fmtTime(x.o.captured_at||x.o.last_update))+' · '+esc(fmtAge(x.o.age_seconds))+'</div></div>').join(""):'<div class="rf-empty">No current LucasFox Sportsbet sports quotes were returned. Racing WIN/PLACE is not covered by this feed.</div>';
+  if($("lucasFoxSportsDetail"))$("lucasFoxSportsDetail").textContent=data.note||"LucasFox sports markets only; not horse-racing odds.";
+ }catch(error){
+  if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent="FEED UNAVAILABLE";
+  if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML='<div class="rf-empty">'+esc(error.message)+' · LucasFox is sports-only.</div>';
+ }
+}
+async function loadBetfairSports(){
+ const state=$("betfairSportsNotice"),list=$("betfairSportsEvents");
+ try{
+  if(state)state.textContent="Refreshing authorised Betfair delayed Exchange markets…";
+  const response=await apiFetch("/api/betfair/sports",{cache:"no-store",signal:AbortSignal.timeout(45000)});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Betfair sports feed HTTP "+response.status);
+  betfairSportsEvents=Array.isArray(data.events)?data.events:[];
+  const events=betfairSportsEvents,live=events.filter(e=>e.inPlay),priced=events.filter(e=>(e.runners||[]).some(r=>r.back||r.lay));
+  const soccerMarketCount=Number(data.soccerMarketCount??events.filter(e=>/soccer|football/i.test(String(e.sport||e.sport_name||""))&&(e.marketId||e.market_id||e.marketName||e.market_name||Array.isArray(e.runners))).length);
+  const soccerPricedMarkets=Number(data.soccerPricedMarkets??events.filter(e=>/soccer|football/i.test(String(e.sport||e.sport_name||""))&&(e.runners||[]).some(r=>r.back||r.lay)).length);
+  if($("betfairSportsStats"))$("betfairSportsStats").innerHTML=[[events.length,"Exchange markets"],[new Set(events.map(e=>e.sport||e.sport_name).filter(Boolean)).size,"Sports"],[live.length,"In-play"],[priced.length,"Priced markets"],[soccerMarketCount,"Soccer markets"],[soccerPricedMarkets,"Priced soccer"]].map(x=>'<div class="stat"><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></div>').join("");
+  const status=String(data.status||"unknown");
+  if(state)state.textContent=(status==="connected-delayed"?"CONNECTED · DELAYED EXCHANGE":status==="configured-no-quotes"?"CONNECTED · NO CURRENT MARKETS":status.toUpperCase().replaceAll("-"," "))+ " · SOCCER "+soccerMarketCount+" MARKETS / "+soccerPricedMarkets+" PRICED"+(data.error?" · "+data.error:"");
+  if(list)list.innerHTML=events.length?events.slice(0,120).map(e=>{
+   const runners=(e.runners||[]).filter(r=>r.back||r.lay),favourite=e.favourite;
+   const runnerRows=runners.map(r=>{
+    const offerLabel=offer=>offer?"$"+Number(offer.price).toFixed(2)+" · size "+(offer.availableSize==null?"—":Number(offer.availableSize).toFixed(2))+" · "+(offer.ageSeconds==null?"age unknown":offer.ageSeconds>180?"STALE "+Math.round(offer.ageSeconds)+"s":Math.round(offer.ageSeconds)+"s old"):"—";
+    const back=offerLabel(r.back),lay=offerLabel(r.lay);
+    return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+'</span></div>';
+   }).join("");
+   const favHtml=favourite?'<div class="rf-fav"><strong>EXCHANGE MARKET FAVOURITE · BACK</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">Lowest available BACK price in this market; not a prediction or guaranteed winner.</div></div>':'<div class="rf-muted">No available BACK offer; no favourite calculated.</div>';
+   const pricesHtml=runnerRows?'<div class="rf-market-section">'+runnerRows+'</div>':'<div class="rf-empty">No available BACK/LAY offers returned for this market.</div>';
+   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(e.event||"Sports event")+' · '+esc(e.sport||"Sport")+'</div><div class="rf-muted">'+esc(e.competition||"")+' · '+esc(e.marketName||"Market")+' · '+esc(fmtTime(e.startTime))+' · '+(e.inPlay?"IN-PLAY":"UPCOMING")+'</div></div><span class="rf-muted">Betfair Exchange</span></div>'+favHtml+pricesHtml+'<div class="rf-muted">Betfair Exchange · delayed up to '+esc(data.delayMaximumSeconds||180)+'s · observed '+esc(fmtTime(e.marketPublishedAt||e.capturedAt||data.fetchedAt))+' · source '+esc(e.source||data.provider||"Betfair Exchange")+'</div></article>';
+  }).join(""):'<div class="rf-empty">No upcoming or in-play sports markets returned by the authorised Betfair delayed feed. No odds are estimated.</div>';
+  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent=(data.note||"Delayed Betfair Exchange data.")+" Last API refresh: "+fmtTime(data.fetchedAt)+". "+(data.errors||[]).map(x=>x.sport+": "+x.message).join(" · ");
+  renderBestTips(races.filter(r=>!r.abandoned));
+ }catch(error){
+  betfairSportsEvents=[];
+  if(state)state.textContent="FEED UNAVAILABLE · "+error.message;
+  if(list)list.innerHTML='<div class="rf-empty">'+esc(error.message)+' · No Betfair sports prices are being estimated.</div>';
+  if($("betfairSportsDetail"))$("betfairSportsDetail").textContent=error.message+" The application will not show estimated prices or label unavailable data as connected.";
+ }
+}
+function sportQuoteAge(quote,book) {
+  const direct=quote?.age_seconds??quote?.freshness_seconds??book?.age_seconds;
+  const directAge=direct!=null&&Number.isFinite(Number(direct))?Math.max(0,Number(direct)):null;
+  const stamp=quote?.last_update||quote?.updated_at||quote?.timestamp||book?.last_update||book?.updated_at||null;
+  const numeric=Number(stamp);
+  const ms=stamp==null?NaN:(Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp));
+  const stampedAge=Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
+  if(directAge!=null&&stampedAge!=null)return Math.max(directAge,stampedAge);
+  return directAge??stampedAge;
+}
+function renderSportsBookmaker(event,book) {
+  const bookmaker=String(book.name||book.title||book.key||"Bookmaker");
+  const markets=(book.markets||[]).filter(m=>(m.outcomes||[]).some(o=>Number(o.price)>1));
+  if(!markets.length)return "";
+  const main=markets.find(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.name||"").toLowerCase().replace(/[\s-]+/g,"_")))||markets[0];
+  const outcomes=(main.outcomes||[]).filter(o=>Number(o.price)>1&&!o.suspended&&!o.removed);
+  // Only call a sports selection the current favourite when its source quote
+  // has a known age under 180 seconds. Unknown/stale prices remain visible,
+  // but cannot win the live-favourite label.
+  const freshOutcomes=outcomes.filter(o=>{
+    const age=sportQuoteAge(o,book);
+    return age!=null&&age>=0&&age<180&&o.stale!==true&&book.stale!==true;
+  });
+  const favourite=[...freshOutcomes].sort((a,b)=>Number(a.price)-Number(b.price))[0]||null;
+  const age=favourite?sportQuoteAge(favourite,book):null;
+  const freshness=age==null?"QUOTE AGE UNKNOWN · NOT VERIFIED":age<180?"SOURCE QUOTE "+Math.round(age)+"s OLD":"STALE SOURCE QUOTE · "+Math.round(age)+"s";
+  const lines=markets.map(m=>{
+    const rows=(m.outcomes||[]).filter(o=>Number(o.price)>1&&!o.suspended&&!o.removed);
+    if(!rows.length)return "";
+    return '<div class="rf-market-title">'+esc(m.name||m.key||"Market")+'</div>'+rows.map(o=>{
+      const a=sportQuoteAge(o,book);
+      return '<div class="rf-price-line"><span>'+esc(o.name||o.label||"Selection")+(favourite&&m===main&&o===favourite?' · FAVOURITE':'')+'</span><b>$'+Number(o.price).toFixed(2)+'</b><span class="rf-muted">'+(a==null?'AGE UNKNOWN':Math.round(a)+'s old')+'</span></div>';
+    }).join("");
+  }).join("");
+  const source=String(book.source||book.provider||event._provider||"Source not supplied");
+  const sourceUrl=String(book.source_url||book.url||"");
+  const link=/^https?:\/\//i.test(sourceUrl)?'<a class="rf-source-link" href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(new URL(sourceUrl).hostname.replace(/^www\./,""))+' ↗</a>':"";
+  return '<div class="rf-price-box"><h4>'+esc(bookmaker)+' <span class="rf-book-label">BOOKMAKER QUOTE</span></h4>'+
+    '<div class="rf-source-meta">DATA SOURCE · '+esc(source)+' '+link+'</div>'+
+    (favourite?'<div class="rf-fav"><strong>'+esc(bookmaker)+' MARKET FAVOURITE</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">'+esc(freshness)+' · shortest price in '+esc(main.name||main.key||"market")+'</div></div>':'')+lines+'</div>';
+}
+async function loadSportsFixtures(){
+ if(Date.now()-lastSportsAt<10*60*1000)return;
+ lastSportsAt=Date.now();
+ try{
+  const res=await apiFetch("/api/sports",{cache:"no-store"});
+  if(!res.ok)throw new Error("Sports catalogue HTTP "+res.status);
+  const data=await res.json(),allSports=data.sports||[];
+  const results=[];
+  // Fetch every catalogue sport in small batches to avoid a burst of provider requests.
+  for(let i=0;i<allSports.length;i+=4){
+   const batch=allSports.slice(i,i+4);
+   const settled=await Promise.all(batch.map(async sport=>{
+    try{
+     const response=await apiFetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});
+     if(!response.ok)return {sport,data:null,error:"HTTP "+response.status};
+     return {sport,data:await response.json(),error:null};
+    }catch(error){return {sport,data:null,error:error.message};}
+   }));
+   results.push(...settled);
+  }
+  const byEvent=new Map();
+  for(const result of results)for(const event of (result.data?.events||result.data?.rows||[])){
+   const key=[String(event.home_team||event.home||"").toLowerCase().replace(/[^a-z0-9]/g,""),
+     String(event.away_team||event.away||"").toLowerCase().replace(/[^a-z0-9]/g,""),
+     String(event.commence_time||event.start_time||"").slice(0,10)].join("|");
+   if(!byEvent.has(key))byEvent.set(key,{...event,_sportTitle:result.sport.title,_provider:result.data.provider||"Public sports source"});
+   else{
+    const old=byEvent.get(key);
+    old.bookmakers=[...(old.bookmakers||[]),...(event.bookmakers||[])];
+   }
+  }
+  const events=[...byEvent.values()].sort((a,b)=>Number(!!b.in_play)-Number(!!a.in_play)||
+    Date.parse(a.commence_time||a.start_time||0)-Date.parse(b.commence_time||b.start_time||0));
+  const pricedEvents=events.filter(e=>(e.bookmakers||[]).some(b=>(b.markets||[]).some(m=>(m.outcomes||[]).some(o=>Number(o.price)>1))));
+  // Fresh winner-market prices only. One-source selections are not labelled consensus.
+  const sportsTips=[];
+  for(const event of events){
+   const selections=new Map(),seenBooks=new Set();
+   for(const book of (event.bookmakers||[])){
+    const bookId=String(book.key||book.name||book.title||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+    if(!bookId||seenBooks.has(bookId)||book.stale===true)continue;
+    seenBooks.add(bookId);
+    const main=(book.markets||[]).find(m=>["h2h","head_to_head","moneyline","match_winner","winner"].includes(String(m.key||m.name||"").toLowerCase().replace(/[\\s-]+/g,"_")));
+    if(!main)continue;
+    for(const outcome of (main.outcomes||[])){
+     const price=Number(outcome.price),age=sportQuoteAge(outcome,book);
+     if(!Number.isFinite(price)||price<=1||outcome.suspended||outcome.removed||outcome.stale===true||age==null||age<0||age>=180)continue;
+     const key=String(outcome.name||outcome.label||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+     if(!key)continue;
+     if(!selections.has(key))selections.set(key,{name:outcome.name||outcome.label,quotes:[]});
+     selections.get(key).quotes.push({price,book:book.name||book.title||book.key});
+    }
+   }
+   const candidates=[...selections.values()].map(x=>{
+    const prices=x.quotes.map(q=>q.price).sort((p,q)=>p-q),mid=prices.length%2?prices[(prices.length-1)/2]:(prices[prices.length/2-1]+prices[prices.length/2])/2;
+    const spread=prices.length>1?(prices[prices.length-1]-prices[0])/mid*100:null;
+    return {...x,price:mid,probability:x.quotes.reduce((n,q)=>n+1/q.price,0)/x.quotes.length,spread};
+   }).sort((x,y)=>y.probability-x.probability);
+   if(candidates[0])sportsTips.push({event,selection:candidates[0]});
+  }
+  sportsTips.sort((x,y)=>y.selection.quotes.length-x.selection.quotes.length||y.selection.probability-x.selection.probability);
+  const sportsTipsHtml='<div class="rf-price-box"><h4>UPCOMING SPORTS · TOP MARKET FAVOURITES</h4><div class="rf-muted">Fresh head-to-head/winner quotes only · under 180 seconds old · market favourites are not guaranteed winners.</div>'+
+   sportsTips.slice(0,10).map((x,i)=>{
+    const q=x.selection.quotes;
+    const agreement=q.length>1&&x.selection.spread<=20?"MULTI-BOOK AGREEMENT":"SINGLE BOOKMAKER · LIMITED CONFIRMATION";
+    return '<div class="rf-sports-row"><b>#'+(i+1)+' · '+esc(x.event.home_team||x.event.home||x.event.event||"Fixture")+' v '+esc(x.event.away_team||x.event.away||"")+' · '+esc(x.selection.name)+'</b><span>$'+Number(x.selection.price).toFixed(2)+' · '+esc(agreement)+'</span><div class="rf-muted">'+esc(x.event._sportTitle||x.event.sport_name||"Sport")+' · '+esc(x.event.league||x.event.competition||"")+' · '+q.length+' source(s) · '+esc([...new Set(q.map(v=>v.book))].join(", "))+' · '+esc(fmtTime(x.event.commence_time||x.event.start_time))+'</div></div>';
+   }).join("")+(sportsTips.length?"":'<div class="rf-empty">No fresh head-to-head prices are currently available for sports tips. Fixtures remain listed below.</div>')+'</div>';
+  const quoteCount=events.reduce((n,e)=>n+(e.bookmakers||[]).reduce((m,b)=>m+(b.markets||[]).reduce((k,market)=>k+(market.outcomes||[]).filter(o=>Number(o.price)>1).length,0),0),0);
+  const eventHtml=events.map(e=>{
+   const books=(e.bookmakers||[]).map(b=>renderSportsBookmaker(e,b)).filter(Boolean).join("");
+   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(e.home_team||e.home||e.event||"Fixture")+' v '+esc(e.away_team||e.away||"")+'</div><div class="rf-muted">'+esc(e._sportTitle||e.sport_name||e.sport||"Sport")+' · '+esc(e.league||e.competition||"")+' · '+esc(fmtTime(e.commence_time||e.start_time))+' · '+(e.in_play===true?"IN-PLAY":"UPCOMING")+'</div></div></div>'+
+    (books?'<div class="rf-price-groups">'+books+'</div>':'<div class="rf-empty">Fixture returned; no bookmaker prices supplied by the connected public feeds.</div>')+'</article>';
+  }).join("");
+  const sportRows=allSports.map(s=>{
+   const count=events.filter(e=>String(e._sportTitle||e.sport_name||"")===String(s.title)).length;
+   return count?'<div class="rf-muted">'+esc(s.title)+' · '+count+' fixture(s)</div>':'<div class="rf-muted">'+esc(s.title)+' · no fixture returned by available feeds</div>';
+  }).join("");
+  if($("sportsNotice"))$("sportsNotice").textContent=events.length?
+   events.length+" fixtures across "+allSports.length+" catalogue sports · "+pricedEvents.length+" priced fixtures · "+quoteCount+" source quotes · only provider-supplied prices shown.":
+   "No fixtures returned by the available public feeds across "+allSports.length+" catalogue sports. Sports are still listed below.";
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=sportsTipsHtml+(eventHtml||'<div class="rf-empty">No upcoming or in-play fixtures returned by available sources.</div>')+
+   '<div class="rf-price-box"><h4>SPORTS COVERAGE · ALL CATALOGUE SPORTS</h4>'+sportRows+'</div>';
+ }catch(error){
+  if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;
+  if($("sportsCatalogue"))$("sportsCatalogue").innerHTML='<div class="rf-empty">'+esc(error.message)+'</div>';
+ }
+}
+
+function start(){
+ if(started)return;
+ started=true;
+ addStyles();
+ setHeaderConnection("CHECKING · VERIFYING SERVER");
+ void checkDashboardConnection();
+ setInterval(checkDashboardConnection,30000);
+ setInterval(()=>{if(lastServerCheckAt&&Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");},10000);
+ loadRaces().finally(()=>loadHistory());
+ loadLucasFox();
+ loadSportsFixtures();
+ loadBetfairSports();
+ setInterval(()=>loadRaces().finally(()=>loadHistory()),2*60*1000);
+ setInterval(loadHistory,5*60*1000);
+ setInterval(loadLucasFox,15*60*1000);
+ setInterval(loadSportsFixtures,10*60*1000);
+ setInterval(loadBetfairSports,60*1000);
+}
+window.startFullDashboardFeeds=start;
+document.addEventListener("DOMContentLoaded",()=>{
+ addStyles();
+ updateBrisbaneClock();
+ setInterval(updateBrisbaneClock,1000);
+ const enter=$("enterWebsiteBtn");
+ if(enter)enter.addEventListener("click",()=>start(),{once:true});
+ const refresh=$("refreshBtn");
+ if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ const refreshBetfairSports=$("refreshBetfairSportsBtn");
+ if(refreshBetfairSports)refreshBetfairSports.addEventListener("click",()=>loadBetfairSports());
+ const loadAllSportsButton=$("loadAllSportsBtn");
+ if(loadAllSportsButton)loadAllSportsButton.addEventListener("click",()=>{lastSportsAt=0;loadSportsFixtures();});
+ const refreshLiveSportsButton=$("refreshLiveSportsBtn");
+ if(refreshLiveSportsButton)refreshLiveSportsButton.addEventListener("click",()=>{loadLucasFox();loadBetfairSports();lastSportsAt=0;loadSportsFixtures();});
+ document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
+  filter=button.dataset.filter;
+  document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));
+  renderRaces({races,fetchedAt:new Date().toISOString()});
+ }));
+ if($("sort"))$("sort").addEventListener("change",event=>{sort=event.target.value;renderRaces({races,fetchedAt:new Date().toISOString()});});
+ if($("search"))$("search").addEventListener("input",event=>{
+  const q=event.target.value.toLowerCase();
+  document.querySelectorAll(".rf-race").forEach(card=>card.style.display=card.textContent.toLowerCase().includes(q)?"":"none");
+ });
+ // Start the heartbeat immediately, including while the entry screen is visible.
+ start();
+});
+})();+Number(e.favourite.price).toFixed(2)+' · BACK · '+(e.inPlay?"IN-PLAY":"UPCOMING")+'</span><div class="rf-muted">'+esc(e.sport||"Sport")+' · '+esc(e.marketName||"Market")+' · Betfair Exchange delayed up to 180s · adapter observed '+esc(fmtTime(e._freshFavouriteObservedAt))+' · '+Math.round(e._freshFavouriteAge)+'s old</div></div>').join("");
   if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">RACING SHORTLIST · Fresh, timestamped verified fixed-WIN bookmaker quotes only. Confidence measures data quality, not a win probability. Exchange prices are kept separate.</div>'+(raceHtml||'<div class="rf-empty">No fresh verified bookmaker racing favourites currently qualify.</div>')+'<div class="rf-market-title">SPORTS MARKET FAVOURITES · BETFAIR EXCHANGE BACK (DELAYED)</div><div class="rf-muted">These are actual available Exchange BACK prices, not bookmaker odds or predictions.</div>'+(sportsHtml||'<div class="rf-empty">No fresh priced Exchange sports favourites currently qualify.</div>');
 }
 async function checkDashboardConnection(){
