@@ -24,10 +24,16 @@ jobs:
       - name: Verify and name release executable
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path release -Filter '*.exe' | Select-Object -First 1
-          if (-not $exe) { throw 'Portable Windows executable was not produced.' }
-          Copy-Item $exe.FullName 'release/CSKAFTY.exe' -Force
-          if ((Get-Item 'release/CSKAFTY.exe').Length -lt 10000000) { throw 'Executable is unexpectedly small.' }
+          $target = Join-Path 'release' 'CSKAFTY.exe'
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            $exe = Get-ChildItem -Path release -Filter '*.exe' -File | Select-Object -First 1
+            if (-not $exe) { throw 'Portable Windows executable was not produced.' }
+            Copy-Item -LiteralPath $exe.FullName -Destination $target
+          }
+          if ((Get-Item -LiteralPath $target).Length -lt 10000000) {
+            throw 'Executable is unexpectedly small.'
+          }
+          Write-Host "Verified $target ($((Get-Item -LiteralPath $target).Length) bytes)."
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
