@@ -1266,7 +1266,7 @@ function providerRetryTimestamp(error, now=Date.now()) {
   if(reset){const n=Number(reset[1]);return Math.max(now+1000,n>1e12?n:n*1000);}
   const humanReset=message.match(/(?:reset|available|renew(?:s|al)?)(?:\s+(?:at|on))?\s*[:=-]?\s*((?:\d{1,2}\s+)?(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:UTC|GMT)?)?)/i);
   if(humanReset){const date=Date.parse(humanReset[1]);if(Number.isFinite(date)&&date>now)return date;}
-  if(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message))return now+24*60*60*1000;
+  if(/402|monthly.*(?:limit|quota)|credit.*(?:limit|exhaust)/i.test(message))return nextMonthlyQuotaCheck(now);
   if(/429|rate.?limit/i.test(message))return now+Math.min(6*60*60*1000,Math.max(60*1000,Math.pow(2,Math.min(krokFailureCount,6))*60*1000));
   return now+5*60*1000;
 }
