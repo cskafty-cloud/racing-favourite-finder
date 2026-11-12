@@ -3,6 +3,8 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
 const { isEstimatedQuote } = require("./market-quality");
+const { trimInsertionOrderedMap, trimMoviOddsFixtures, trimQuoteList,
+  MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -329,34 +331,7 @@ const lastSnapshotAt = new Map();
 // Bound in-memory indexes and live sports fixtures as well as the persisted archive.
 // The all-sports feed is broad; unbounded websocket fixture/quote growth can exceed
 // Railway's 1 GB RSS limit even when the V8 old-space heap is capped.
-const MARKET_TRACKING_MAP_LIMIT = 5000;
-const MARKET_TRACKING_MAP_TARGET = 4000;
-const MOVI_WS_FIXTURE_LIMIT = 1200;
-const MOVI_WS_QUOTES_PER_FIXTURE_LIMIT = 300;
-function trimInsertionOrderedMap(map, limit=MARKET_TRACKING_MAP_LIMIT, target=MARKET_TRACKING_MAP_TARGET) {
-  if(map.size<=limit)return;
-  for(const key of map.keys()){
-    map.delete(key);
-    if(map.size<=target)break;
-  }
-}
-function trimMoviOddsFixtures(items) {
-  const now=Date.now();
-  const retained=items.filter(item=>{
-    if(item?.in_play===true||item?.inPlay===true)return true;
-    const start=Date.parse(item?.kickoff_utc||item?.commence_time||item?.start_time||item?.startTime||"");
-    return !Number.isFinite(start)||start>=now-6*60*60*1000;
-  });
-  retained.sort((a,b)=>{
-    const liveA=a?.in_play===true||a?.inPlay===true?0:1;
-    const liveB=b?.in_play===true||b?.inPlay===true?0:1;
-    if(liveA!==liveB)return liveA-liveB;
-    const timeA=Date.parse(a?.kickoff_utc||a?.commence_time||a?.start_time||a?.startTime||"")||Number.MAX_SAFE_INTEGER;
-    const timeB=Date.parse(b?.kickoff_utc||b?.commence_time||b?.start_time||b?.startTime||"")||Number.MAX_SAFE_INTEGER;
-    return timeA-timeB;
-  });
-  items.splice(0,items.length,...retained.slice(0,MOVI_WS_FIXTURE_LIMIT));
-}
+
 // Snapshots were growing past 20k entries (every race, every ~20s), which pushed the
 // Node heap over its limit and crash-looped the service. Keep the archive small.
 const MARKET_HISTORY_LIMIT = 3000;
@@ -544,7 +519,7 @@ function applyMoviOddsStreamMessage(message){
   }
   const item=items[index];
   if(type==="snapshot"){
-   item.quotes=Array.isArray(message.quotes)?message.quotes.slice(-MOVI_WS_QUOTES_PER_FIXTURE_LIMIT).map(q=>({...q,suspended:q.suspended===true})): [];
+   item.quotes=trimQuoteList(message.quotes,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT).map(q=>({...q,suspended:q.suspended===true}));
    item.home=message.home||item.home;item.away=message.away||item.away;
    item.league=message.league||item.league;item.kickoff_utc=item.kickoff_utc||(
     message.kickoff_ts?new Date(Number(message.kickoff_ts)*1000).toISOString():null);
@@ -558,8 +533,7 @@ function applyMoviOddsStreamMessage(message){
     const next={...quote,suspended:quote.suspended===true};
     if(old>=0)item.quotes[old]=next;else item.quotes.push(next);
    }
-   if(item.quotes.length>MOVI_WS_QUOTES_PER_FIXTURE_LIMIT)
-    item.quotes=item.quotes.slice(-MOVI_WS_QUOTES_PER_FIXTURE_LIMIT);
+   item.quotes=trimQuoteList(item.quotes,MOVI_WS_QUOTES_PER_FIXTURE_LIMIT);
    item._moviServerTime=message.server_time||new Date().toISOString();
   }else if(type==="remove"){
    const removeKeys=new Set((message.quotes||[]).map(moviWsQuoteKey));
