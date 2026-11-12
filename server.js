@@ -2030,7 +2030,7 @@ async function getGlobalRacesUncached() {
     // This is still the same free, no-key MoviOdds source; it only broadens
     // schedule coverage and never turns its Bet365 prices into Sportsbet prices.
     const boardResults=await Promise.all(["horse","greyhound","harness"].map(async code=>{
-      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=500",{
+      const response=await fetch("https://moviodds.com/racing?code="+code+"&near=1000",{
         headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error(code+" board invalid JSON (HTTP "+response.status+").");}
