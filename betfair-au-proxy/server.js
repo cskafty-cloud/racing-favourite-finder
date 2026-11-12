@@ -75,12 +75,21 @@ async function rpc(method, params) {
     throw error;
   }
 }
-function quote(level,publishedAt=null) {
+// listMarketBook has no general quote-publication timestamp. Timestamp the
+// successful retrieval instead; never misrepresent retrieval time as Betfair
+// publication time. "fresh" means recently observed by this adapter, not proof
+// that delayed exchange data is live at the source.
+function quote(level,observedAt=null,isMarketDataDelayed=null) {
   if(!level||!(Number(level.price)>1))return null;
-  const publishedMs=publishedAt?Date.parse(publishedAt):NaN;
-  const ageSeconds=Number.isFinite(publishedMs)?Math.max(0,(Date.now()-publishedMs)/1000):null;
-  return {price:Number(level.price),size:Number(level.size)||0,publishedAt:publishedAt||null,
-    ageSeconds,fresh:ageSeconds!=null&&ageSeconds<=180};
+  const observedMs=observedAt?Date.parse(observedAt):NaN;
+  const ageSeconds=Number.isFinite(observedMs)?Math.max(0,(Date.now()-observedMs)/1000):null;
+  return {price:Number(level.price),size:Number(level.size)||0,
+    publishedAt:null,sourceTimestampAvailable:false,
+    observedAt:observedAt||null,ageSeconds,
+    fresh:ageSeconds!=null&&ageSeconds<=180,
+    freshnessBasis:"adapter_retrieval_time",
+    isMarketDataDelayed:typeof isMarketDataDelayed==="boolean"?isMarketDataDelayed:null,
+    delayMaximumSeconds:180};
 }
 function cached(key, loader) {
   const old=cache.get(key);
@@ -129,7 +138,8 @@ async function loadRaces() {
         marketIds,
         priceProjection:{priceData:["EX_BEST_OFFERS"],exBestOffersOverrides:{bestPricesDepth:3},virtualise:true}
       });
-      return {books:result||[],errors:[]};
+      const observedAt=new Date().toISOString();
+      return {books:(result||[]).map(book=>({...book,_adapterObservedAt:observedAt})),errors:[]};
     } catch(error) {
       if(/TOO_MUCH_DATA/i.test(error.message)&&marketIds.length>1) {
         const middle=Math.ceil(marketIds.length/2);
@@ -143,7 +153,8 @@ async function loadRaces() {
             marketIds,
             priceProjection:{priceData:["EX_BEST_OFFERS"],exBestOffersOverrides:{bestPricesDepth:1},virtualise:false}
           });
-          return {books:retry||[],errors:[]};
+          const observedAt=new Date().toISOString();
+          return {books:(retry||[]).map(book=>({...book,_adapterObservedAt:observedAt})),errors:[]};
         } catch(retryError) {
           return {books:[],errors:["Market "+marketIds[0]+" remained oversized at depth 1: "+retryError.message]};
         }
@@ -170,7 +181,9 @@ async function loadRaces() {
       category:raceCategory(market._type),code:raceCategory(market._type),venue:eventName,
       track:eventName,race_number:raceNumberMatch?Number(raceNumberMatch[1]):null,start_time:market.marketStartTime,
       country:"Australia",status:book.inplay?"in_play":"scheduled",in_play:!!book.inplay,
-      closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:capturedAt,runners:[]});
+      closed:false,market_id:market.marketId,market_name:"Betfair Exchange",captured_at:capturedAt,
+      marketDataDelayed:typeof book.isMarketDataDelayed==="boolean"?book.isMarketDataDelayed:null,
+      sourceTimestampAvailable:false,freshnessBasis:"adapter_retrieval_time",runners:[]});
     const race=grouped.get(key);
     for(const runner of market.runners||[]){
       let target=race.runners.find(x=>x.selectionId===runner.selectionId);
@@ -179,7 +192,7 @@ async function loadRaces() {
       const priced=(book.runners||[]).find(x=>x.selectionId===runner.selectionId);
       if(!priced||priced.status==="REMOVED")continue;
       const kind=String(market.description?.marketType||market.marketName||"WIN").toUpperCase().includes("PLACE")?"place":"win";
-      target.exchange[kind]={back:quote(priced.ex?.availableToBack?.[0],book.publishTime),lay:quote(priced.ex?.availableToLay?.[0],book.publishTime)};
+      target.exchange[kind]={back:quote(priced.ex?.availableToBack?.[0],book._adapterObservedAt,book.isMarketDataDelayed),lay:quote(priced.ex?.availableToLay?.[0],book._adapterObservedAt,book.isMarketDataDelayed)};
     }
   }
   const races=[...grouped.values()].map(race=>{
@@ -190,12 +203,16 @@ async function loadRaces() {
     return {...race,
       exchangeFavourite:winFavourite?{name:winFavourite.name,selectionId:winFavourite.selectionId,
         price:winFavourite.exchange.win.back.price,side:"BACK",market:"WIN",
-        source:"Betfair Exchange Delayed API",capturedAt:winFavourite.exchange.win.back.publishedAt||null,
-        observedAt:race.captured_at,delayMaximumSeconds:180}:null,
+        source:"Betfair Exchange Delayed API",capturedAt:null,
+        observedAt:winFavourite.exchange.win.back.observedAt,sourceTimestampAvailable:false,
+        freshnessBasis:"adapter_retrieval_time",isMarketDataDelayed:winFavourite.exchange.win.back.isMarketDataDelayed,
+        delayMaximumSeconds:180}:null,
       exchangePlaceFavourite:placeFavourite?{name:placeFavourite.name,selectionId:placeFavourite.selectionId,
         price:placeFavourite.exchange.place.back.price,side:"BACK",market:"PLACE",
-        source:"Betfair Exchange Delayed API",capturedAt:placeFavourite.exchange.place.back.publishedAt||null,
-        observedAt:race.captured_at,delayMaximumSeconds:180}:null
+        source:"Betfair Exchange Delayed API",capturedAt:null,
+        observedAt:placeFavourite.exchange.place.back.observedAt,sourceTimestampAvailable:false,
+        freshnessBasis:"adapter_retrieval_time",isMarketDataDelayed:placeFavourite.exchange.place.back.isMarketDataDelayed,
+        delayMaximumSeconds:180}:null
     };
   });
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
@@ -203,7 +220,7 @@ async function loadRaces() {
     feedErrors:[...groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
       ...bookErrors.map(message=>({sport:"Australian racing",message}))],
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
-    note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
+    note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively, based on adapter retrieval time rather than a source publication timestamp. Betfair delayed data may be up to 180 seconds old. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
 async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"]) {
   const filter = {
@@ -260,7 +277,9 @@ async function fetchSportBooks(marketIds) {
     }
   });
   try {
-    return {books:await request(marketIds,3,true)||[],errors:[]};
+    const result=await request(marketIds,3,true);
+    const observedAt=new Date().toISOString();
+    return {books:(result||[]).map(book=>({...book,_adapterObservedAt:observedAt})),errors:[]};
   } catch (error) {
     if (/TOO_MUCH_DATA/i.test(error.message) && marketIds.length > 1) {
       const middle = Math.ceil(marketIds.length / 2);
@@ -273,7 +292,9 @@ async function fetchSportBooks(marketIds) {
     // price level and without virtual prices before reporting it as failed.
     if (/TOO_MUCH_DATA/i.test(error.message) && marketIds.length === 1) {
       try {
-        return {books:await request(marketIds,1,false)||[],errors:[]};
+        const result=await request(marketIds,1,false);
+        const observedAt=new Date().toISOString();
+        return {books:(result||[]).map(book=>({...book,_adapterObservedAt:observedAt})),errors:[]};
       } catch (retryError) {
         return {books:[],errors:["Market "+marketIds[0]+" failed at bestPricesDepth=1: "+retryError.message]};
       }
@@ -312,13 +333,13 @@ async function loadSports() {
       const p=(book.runners||[]).find(x=>x.selectionId===r.selectionId);
       if(!p||p.status==="REMOVED")return null;
       return {name:r.runnerName,selectionId:r.selectionId,
-        back:quote(p.ex?.availableToBack?.[0],book.publishTime),lay:quote(p.ex?.availableToLay?.[0],book.publishTime)};
+        back:quote(p.ex?.availableToBack?.[0],book._adapterObservedAt,book.isMarketDataDelayed),lay:quote(p.ex?.availableToLay?.[0],book._adapterObservedAt,book.isMarketDataDelayed)};
     }).filter(Boolean);
     const favourite=runners.filter(r=>r.back?.fresh===true).sort((a,b)=>a.back.price-b.back.price)[0]||null;
     return {id:"betfair-sport-"+m.marketId,marketId:m.marketId,eventId:m.event?.id||null,
       sport:m._sport,event:m.event?.name||"Event",competition:m.event?.venue||null,
       startTime:m.marketStartTime,marketName:m.marketName||"Match odds",status:book.inplay?"in_play":"upcoming",
-      inPlay:!!book.inplay,capturedAt,marketPublishedAt:book.publishTime||null,
+      inPlay:!!book.inplay,capturedAt,marketPublishedAt:null,sourceTimestampAvailable:false,
       isMarketDataDelayed:!!book.isMarketDataDelayed,source:"Betfair Exchange Delayed API",
       sourceDelayMaxSeconds:180,runners,favourite:favourite?{name:favourite.name,price:favourite.back.price,side:"BACK"}:null};
   }).filter(Boolean).sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
@@ -342,7 +363,7 @@ async function loadSports() {
     backOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.back).length,0),
     layOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.lay).length,0),
     errors,provider:"Betfair Exchange Delayed API",delayMaximumSeconds:180,
-    note:"Exchange BACK/LAY prices, not bookmaker fixed odds. Delayed data may be up to 180 seconds old."};
+    note:"Exchange BACK/LAY prices only. Freshness measures time since this adapter retrieved the market book; Betfair does not expose a general quote-publication timestamp in listMarketBook. The API may return delayed data (up to 180 seconds). These are not live bookmaker prices."};
 }
 const server=http.createServer(async(req,res)=>{
   res.setHeader("Content-Type","application/json; charset=utf-8");res.setHeader("Cache-Control","no-store");
