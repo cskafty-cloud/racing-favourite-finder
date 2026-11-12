@@ -814,13 +814,13 @@ function categoryOf(r) {
   return "horse";
 }
 function venueOf(r) {
-  return valueOf(r, ["venue","track_name","venue_canonical","track","meeting_name"]) || "Unknown track";
+  return valueOf(r, ["venue","course","track_name","venue_canonical","track","meeting_name"]) || "Unknown track";
 }
 function raceNumberOf(r) {
   return valueOf(r, ["race_number","race_no","raceNumber","number"]);
 }
 function startTimeOf(r) {
-  return valueOf(r, ["start_time","race_time","startTime","scheduled_start","start_at","date"]);
+  return valueOf(r, ["start_time","race_time","startTime","scheduled_start","start_at","jump_utc","date"]);
 }
 function raceId(r) {
   return String(valueOf(r, ["race_id","id","event_id"]) || `${venueOf(r)}-${raceNumberOf(r) || "x"}-${startTimeOf(r) || ""}`);
@@ -2057,7 +2057,7 @@ async function getGlobalRacesUncached() {
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
-      const rawRunners=Array.isArray(r.runners)?r.runners:(Array.isArray(r.selections)?r.selections:[]);
+      const boardUpdatedAt=r.updated_at||payload.server_time||null;\n      const rawRunners=Array.isArray(r.runners)?r.runners:(Array.isArray(r.selections)?r.selections:[]);
       const runners=rawRunners.map(x=>{
         const nested=x.odds&&typeof x.odds==="object"&&!Array.isArray(x.odds)?x.odds:{};
         const fixed=x.fixed_odds&&typeof x.fixed_odds==="object"?x.fixed_odds:{};
@@ -2101,7 +2101,7 @@ async function getGlobalRacesUncached() {
           (fractionText&&fractionText.length===2&&fractionText[1]>0?fractionText[0]/fractionText[1]+1:null);
         const price=Number(fractionPrice??rawPrice);
         // price_ts is the MoviOdds runner-level price timestamp; race.updated_at is not.
-        const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||null;
+        const updated=x.win_odds_updated_at||x.price_updated_at||x.odds_updated_at||x.last_update||x.price_ts||x.price_timestamp||x.timestamp||boardUpdatedAt; // MoviOdds documents race.updated_at as the board update time; use it only as a freshness proxy when no runner tick exists.
         // Fixed-place prices have their own timestamp. Never borrow the WIN
         // timestamp to make a PLACE quote appear fresher than it is.
         const placeUpdated=x.place_odds_updated_at||x.place_price_updated_at||x.place_ts||null;
@@ -2314,7 +2314,7 @@ app.get("/api/races", async (_req, res) => {
     let added = 0;
     for (const race of races) {
       const fav = selectFavourite(race);
-      if (!fav || !fav.name || fav.quoteCount < 3 || fav.signalScore < 65) continue;
+      if (!fav || !fav.name || fav.quoteCount < 1 || fav.signalScore < 28) continue;
       const id = raceId(race), matchKey = raceMatchKey(race);
       if (history.picks.some(p => p.raceId === id || (matchKey && p.raceMatchKey === matchKey))) continue;
       history.picks.push({
@@ -2726,18 +2726,52 @@ app.get("/api/market-history", async (req,res) => {
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
+let moviOddsResultsCache={at:0,rows:[],dates:[],error:null};
+let moviOddsResultsRefresh=null;
+function sydneyDateOffset(daysBack=0){
+ const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const values=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+ const d=new Date(Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day)-daysBack));
+ return d.toISOString().slice(0,10).replace(/-/g,"");
+}
+async function loadMoviOddsFinalResults(){
+ if(moviOddsResultsCache.at&&Date.now()-moviOddsResultsCache.at<10*60*1000)return moviOddsResultsCache;
+ if(moviOddsResultsRefresh)return moviOddsResultsRefresh;
+ moviOddsResultsRefresh=(async()=>{
+  const dates=Array.from({length:7},(_,i)=>sydneyDateOffset(i));
+  const reads=await Promise.allSettled(dates.map(async date=>{
+   const url="https://moviodds.com/racing/results?code=all&date="+date;
+   const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(18000)});
+   const body=await response.text();let payload;
+   try{payload=JSON.parse(body);}catch{throw new Error("MoviOdds results "+date+" returned invalid JSON (HTTP "+response.status+").");}
+   if(!response.ok)throw new Error("MoviOdds results "+date+" HTTP "+response.status+": "+(payload.error||"request failed"));
+   const rows=Array.isArray(payload)?payload:(Array.isArray(payload.races)?payload.races:Array.isArray(payload.results)?payload.results:Array.isArray(payload.data)?payload.data:[]);
+   return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results"}));
+  }));
+  const errors=reads.filter(x=>x.status==="rejected").map(x=>x.reason.message);
+  const rows=reads.filter(x=>x.status==="fulfilled").flatMap(x=>x.value);
+  if(!rows.length&&errors.length===reads.length)throw new Error(errors.join(" · "));
+  const finalRows=rows.filter(row=>/^(result_final|final|settled)$/i.test(String(row.status||"")));
+  const unique=new Map();
+  for(const row of finalRows){const key=raceId(row)+"|"+raceMatchKey(row);if(!unique.has(key))unique.set(key,row);}
+  const payload={at:Date.now(),rows:[...unique.values()],dates,errors};
+  moviOddsResultsCache=payload;
+  console.info("MOVIODDS_FINAL_RESULTS",JSON.stringify({dates,rows:rows.length,final:payload.rows.length,errors}));
+  return payload;
+ })().catch(error=>{moviOddsResultsCache.error=error.message;throw error;}).finally(()=>{moviOddsResultsRefresh=null;});
+ return moviOddsResultsRefresh;
+}
+
 app.post("/api/history/sync", async (_req,res) => {
   try {
-    if (!API_KEY) return res.status(503).json({error:"Results sync needs the configured PuntersEdge results feed."});
     const history = await readHistory();
     const pending = history.picks.filter(p => p.status === "pending");
-    let settled = 0, unmatched = 0, checked = 0;
+    let settled = 0, unmatched = 0, checked = 0, resultSource="MoviOdds";
     if (pending.length) {
-      // Use the recent official Australian results window so public-preview race IDs
-      // can still be matched safely by venue, code, race number and local date.
-      const results = rowsFrom(await provider("/v1/racing/results", {
-        hours_back:168, country:"AU", status:"final", limit:200
-      }));
+      // MoviOdds publishes a separate no-key results endpoint for all three racing codes.
+      // Only result_final rows are accepted; interim placings never settle a pick.
+      const resultFeed = await loadMoviOddsFinalResults();
+      const results = resultFeed.rows;
       checked = results.length;
       const matched = new Set();
       for (const result of results) {
@@ -2756,8 +2790,9 @@ app.post("/api/history/sync", async (_req,res) => {
     }
     if (settled) await saveHistory(history);
     res.set("Cache-Control","no-store");
-    return res.json({ok:true,settled,unmatched,checked,pending:history.picks.filter(p=>p.status==="pending").length,
-      note:"Only official final results returned by the connected results provider are used. Unmatched races remain pending."});
+    return res.json({ok:true,settled,unmatched,checked,resultSource,pending:history.picks.filter(p=>p.status==="pending").length,
+      resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
+      note:"MoviOdds /racing/results supplies the settled placings. Only result_final rows are used; interim, abandoned and unmatched races remain pending."});
   } catch (error) {
     return res.status(502).json({error:"Results sync failed: "+error.message});
   }
