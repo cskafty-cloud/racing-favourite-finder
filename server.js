@@ -928,13 +928,11 @@ function resultContainsPickedRunner(pick, result) {
   const lists = [result?.runners, result?.placings, result?.finishers,
     resultObject.runners, resultObject.placings, resultObject.results].filter(Array.isArray);
   const wantedName = normalizeName(pick.runnerName);
-  const wantedNumber = pick.runnerNumber == null ? "" : String(pick.runnerNumber);
+  if (!wantedName) return false;
   return lists.flat().some(row => {
     if (!row || typeof row !== "object") return false;
     const name = normalizeName(valueOf(row, ["name","runner_name","horse_name","greyhound_name","selection_name"]));
-    const number = valueOf(row, ["number","runner_number","box","saddlecloth"]);
-    return (!!wantedName && !!name && wantedName === name) ||
-      (!!wantedNumber && number != null && String(number) === wantedNumber);
+    return !!name && wantedName === name;
   });
 }
 function findMatchingPick(picks, result) {
