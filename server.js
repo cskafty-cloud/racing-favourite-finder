@@ -2957,12 +2957,21 @@ function sydneyDateOffset(daysBack=0){
  const d=new Date(Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day)-daysBack));
  return d.toISOString().slice(0,10).replace(/-/g,"");
 }
-async function loadMoviOddsFinalResults(){
- if(moviOddsResultsCache.at&&Date.now()-moviOddsResultsCache.at<10*60*1000)return moviOddsResultsCache;
+function sydneyDateForValue(value){
+ const ms=Date.parse(value||"");
+ if(!Number.isFinite(ms))return null;
+ const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(ms));
+ const values=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+ return values.year+values.month+values.day;
+}
+async function loadMoviOddsFinalResults(extraDates=[]){
+ const baseDates=Array.from({length:7},(_,i)=>sydneyDateOffset(i));
+ const dates=[...new Set([...baseDates,...extraDates.filter(x=>/^\\d{8}$/.test(String(x)))])];
+ const cacheCoversDates=dates.every(date=>(moviOddsResultsCache.dates||[]).includes(date));
+ if(moviOddsResultsCache.at&&Date.now()-moviOddsResultsCache.at<10*60*1000&&cacheCoversDates)return moviOddsResultsCache;
  if(moviOddsResultsRefresh)return moviOddsResultsRefresh;
  moviOddsResultsRefresh=(async()=>{
-  const dates=Array.from({length:7},(_,i)=>sydneyDateOffset(i));
-  const reads=await Promise.allSettled(dates.map(async date=>{
+  async function readDate(date){
    const url="https://moviodds.com/racing/results?code=all&date="+date;
    const response=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(18000)});
    const body=await response.text();let payload;
@@ -2989,7 +2998,13 @@ async function loadMoviOddsFinalResults(){
     firstRunnerPreview:Array.isArray(placingList)&&placingList[0]?JSON.stringify(placingList[0]).slice(0,450):null
    }));
    return rows.map(row=>({...row,code:row.code||row.race_code||payload.code||"all",_results_source:"MoviOdds /racing/results",_result_date:date}));
-  }));
+  }
+  const reads=[];
+  // Read historical dates in small batches so expanding the settlement
+  // lookback cannot overwhelm the free public results endpoint.
+  for(let i=0;i<dates.length;i+=4){
+   reads.push(...await Promise.allSettled(dates.slice(i,i+4).map(readDate)));
+  }
   const errors=reads.filter(x=>x.status==="rejected").map(x=>x.reason.message);
   const rows=reads.filter(x=>x.status==="fulfilled").flatMap(x=>x.value);
   if(!rows.length&&errors.length===reads.length)throw new Error(errors.join(" · "));
@@ -3044,11 +3059,13 @@ app.post("/api/history/sync", async (_req,res) => {
     if (backfilled) await saveHistory(history);
     const pending = history.picks.filter(p => p.status === "pending");
     let settled = 0, unmatched = 0, checked = 0, resultSource="MoviOdds";
-    let unmatchedOverdue = 0, upcomingPending = 0, pendingUnknownStart = 0;
+    let unmatchedOverdue = 0, upcomingPending = 0, pendingUnknownStart = 0, pendingOutsideResultsLookback = 0;
     // Always fetch/confirm the provider response, even when there are no pending
     // picks; otherwise the app can claim "no settled races" without ever reading
     // the results endpoint.
-    const resultFeed = await loadMoviOddsFinalResults();
+    const pendingResultDates=[...new Set(pending.map(p=>sydneyDateForValue(p.startTime)).filter(Boolean)
+      .filter(date=>date>=sydneyDateOffset(30)&&date<=sydneyDateOffset(0)))];
+    const resultFeed = await loadMoviOddsFinalResults(pendingResultDates);
     const results = resultFeed.rows;
     checked = results.length;
     const matched = new Set();
@@ -3074,6 +3091,7 @@ app.post("/api/history/sync", async (_req,res) => {
       const start = Date.parse(pick.startTime||"");
       if (!Number.isFinite(start)) pendingUnknownStart++;
       else if (start > settlementCutoff) upcomingPending++;
+      else if (start < Date.now() - 30*86400000) pendingOutsideResultsLookback++;
       else if (!matched.has(pick)) unmatchedOverdue++;
     }
     if (settled) await saveHistory(history);
@@ -3084,14 +3102,16 @@ app.post("/api/history/sync", async (_req,res) => {
     const pendingCount=history.picks.filter(p=>p.status==="pending").length;
     console.info("RACING_HISTORY_SETTLEMENT",JSON.stringify({
       picks:history.picks.length,backfilled,checked,finalResultRows:results.length,
-      settledThisRun:settled,unmatchedPending:unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,pending:pendingCount,
+      resultDatesQueried:resultFeed.dates?.length||0,settledThisRun:settled,unmatchedPending:unmatched,unmatchedOverdue,
+      upcomingPending,pendingUnknownStart,pendingOutsideResultsLookback,pending:pendingCount,
       finalPicks:finalPicks.length,wins,losses,decided:wins+losses,
       strikeRate:wins+losses?+(100*wins/(wins+losses)).toFixed(1):null,
       unknownFinal:finalPicks.length-decidedPicks.length,
       sampleSettlements:finalPicks.slice(-5).map(p=>({venue:p.venue,raceNumber:p.raceNumber,runner:p.runnerName,winner:p.winnerName,favouriteWon:p.favouriteWon}))
     }));
     res.set("Cache-Control","no-store");
-    return res.json({ok:true,settled,unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,checked,backfilled,resultSource,pending:pendingCount,
+    return res.json({ok:true,settled,unmatched,unmatchedOverdue,upcomingPending,pendingUnknownStart,pendingOutsideResultsLookback,
+      resultDatesQueried:resultFeed.dates?.length||0,checked,backfilled,resultSource,pending:pendingCount,
       resultDates:moviOddsResultsCache.dates||[],resultFeedErrors:moviOddsResultsCache.errors||[],
       resultResponse:{rawRows:moviOddsResultsCache.rawRows??null,finalRows:moviOddsResultsCache.rows?.length??0,
         sampleRaceKeys:moviOddsResultsCache.sampleRaceKeys||[],sampleStatus:moviOddsResultsCache.sampleStatus||null},
