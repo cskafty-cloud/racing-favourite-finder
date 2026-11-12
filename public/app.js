@@ -311,7 +311,7 @@ function renderSportsBookmaker(event,book) {
     (favourite?'<div class="rf-fav"><strong>'+esc(bookmaker)+' MARKET FAVOURITE</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">'+esc(freshness)+' · shortest price in '+esc(main.name||main.key||"market")+'</div></div>':'')+lines+'</div>';
 }
 async function loadSportsFixtures(){
- if(Date.now()-lastSportsAt<85*1000)return;
+ if(Date.now()-lastSportsAt<25*1000)return;
  lastSportsAt=Date.now();
  try{
   const res=await apiFetch("/api/sports",{cache:"no-store"});
@@ -412,7 +412,7 @@ function start(){
  loadBetfairSports();
  setInterval(()=>loadRaces().finally(()=>loadHistory()),2*60*1000);
  setInterval(loadHistory,5*60*1000);
- setInterval(loadSportsFixtures,90*1000);
+ setInterval(loadSportsFixtures,30*1000);
  setInterval(loadBetfairSports,60*1000);
 }
 window.startFullDashboardFeeds=start;
