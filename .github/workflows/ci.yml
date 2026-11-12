@@ -1,0 +1,30 @@
+name: Test and validate application
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check betfair-au-proxy/server.js
+          node --check betfair-feed.js
+          node --check public/app.js
+          node --check public/api-retry.js

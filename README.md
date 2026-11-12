@@ -113,3 +113,26 @@ See [`betfair-au-proxy/CONFIGURATION-TEMPLATE.md`](betfair-au-proxy/CONFIGURATIO
 - Exchange BACK/LAY offers remain separate from fixed bookmaker WIN/PLACE prices.
 - A bookmaker quote is eligible for verified racing rankings only when its market is supported, its source timestamp is known, and it is younger than 180 seconds.
 - Run `npm test` to execute the market-quality regression tests. The GitHub Actions workflows run these tests and JavaScript syntax checks before release builds.
+
+
+## Railway deployment resilience and history safety
+
+Production currently uses a Railway Volume mounted at `/data` for `history.json`. Railway cannot keep the old and new deployment online simultaneously when both need the same attached volume. The service therefore cannot promise zero-downtime deployments while this volume remains attached. The application does not detach or delete the volume automatically.
+
+The deployment resilience changes in this release:
+- On `SIGTERM`, stop recurring racing/results refresh timers, finish in-flight HTTP requests, and flush the queued history-file write before the process exits (with a 25-second safety limit).
+- The browser retries same-origin API requests after transient HTTP 502, 503, 504 responses and transient network/timeout errors, with bounded backoff. This can recover short interruptions automatically; it does not remove the underlying volume restriction.
+- Keep the Railway healthcheck at `/api/health`, timeout 120 seconds, and 30-second shutdown drain.
+
+A true zero-downtime migration requires moving `history.json` to shared external persistent storage, verifying a complete backup, switching the application to that store, and only then detaching the Railway Volume. Railway Buckets are not zero-cost: current pricing is $0.015 per GB-month, and uploads from the service also incur normal service egress. No bucket or paid storage has been provisioned for this project. The volume is intentionally retained to protect the existing history.
+
+### Production feed verification snapshot
+
+The latest production log sample checked on 12 November 2026 at 10:47 UTC reported:
+- Betfair Australian racing adapter: 160 races, 1,653 runners, 4,835 Exchange quotes.
+- Betfair sports adapter: 573 markets, including 275 priced soccer markets; zero adapter errors in its startup test.
+- Combined Australian race board: 509 cards (276 horse, 225 greyhound, 8 harness) in that refresh.
+- Bet365: 198 verified WIN and 118 verified PLACE quotes in that sample.
+- Sportsbet: zero verified racing quotes. The public preview supplied 24 untimestamped WIN preview rows and no PLACE quotes; these remain unverified and are excluded from verified rankings.
+
+These are time-stamped diagnostic snapshots, not guaranteed live totals. The live dashboard and feed timestamps remain the source of current availability. Do not relabel exchange prices, public previews, or another bookmaker's prices as Sportsbet.

@@ -160,7 +160,7 @@ async function checkDashboardConnection(){
  if(healthCheckInFlight)return healthCheckInFlight;
  healthCheckInFlight=(async()=>{
   try{
-   const response=await fetch("/api/health",{cache:"no-store",headers:{"Cache-Control":"no-cache"},signal:AbortSignal.timeout(5000)});
+   const response=await apiFetch("/api/health",{cache:"no-store",headers:{"Cache-Control":"no-cache"},signal:AbortSignal.timeout(5000)});
    if(!response.ok)throw new Error("Health check HTTP "+response.status);
    const health=await response.json();
    const serverMs=Date.parse(health?.serverTime||"");
@@ -183,10 +183,10 @@ async function checkDashboardConnection(){
 async function loadHistory(){
  try{
   // Sync final race placings first, then render the persistent pick ledger.
-  const sync=await fetch("/api/history/sync",{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"}});
+  const sync=await apiFetch("/api/history/sync",{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"}});
   if(!sync.ok){const err=await sync.json().catch(()=>({}));throw new Error(err.error||"Results sync HTTP "+sync.status);}
   const syncData=await sync.json();
-  const response=await fetch("/api/history",{cache:"no-store"});
+  const response=await apiFetch("/api/history",{cache:"no-store"});
   if(!response.ok)throw new Error("History HTTP "+response.status);
   const data=await response.json(),summary=data.summary||{};
   const set=(id,value)=>{if($(id))$(id).textContent=value;};
@@ -216,7 +216,7 @@ async function loadRaces(){
  // The health heartbeat is independent of the slower upstream race-feed request.
  void checkDashboardConnection();
  try{
-  const response=await fetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
+  const response=await apiFetch("/api/races",{cache:"no-store",signal:AbortSignal.timeout(25000)});
   if(!response.ok)throw new Error("Race feed HTTP "+response.status);
   const data=await response.json();renderRaces(data);
  }catch(error){
@@ -225,7 +225,7 @@ async function loadRaces(){
 }
 async function loadLucasFox(){
  try{
-  const response=await fetch("/api/lucasfox/sports",{cache:"no-store",signal:AbortSignal.timeout(18000)});
+  const response=await apiFetch("/api/lucasfox/sports",{cache:"no-store",signal:AbortSignal.timeout(18000)});
   const data=await response.json();if(!response.ok)throw new Error(data.error||"LucasFox unavailable");
   const events=data.events||[],quotes=events.flatMap(e=>(e.bookmakers||[]).flatMap(b=>(b.markets||[]).flatMap(m=>(m.outcomes||[]).map(o=>({e,b,m,o})))));
   const fresh=quotes.filter(x=>Number(x.o.age_seconds)<900);
@@ -242,7 +242,7 @@ async function loadBetfairSports(){
  const state=$("betfairSportsNotice"),list=$("betfairSportsEvents");
  try{
   if(state)state.textContent="Refreshing authorised Betfair delayed Exchange markets…";
-  const response=await fetch("/api/betfair/sports",{cache:"no-store",signal:AbortSignal.timeout(45000)});
+  const response=await apiFetch("/api/betfair/sports",{cache:"no-store",signal:AbortSignal.timeout(45000)});
   const data=await response.json();
   if(!response.ok)throw new Error(data.error||"Betfair sports feed HTTP "+response.status);
   betfairSportsEvents=Array.isArray(data.events)?data.events:[];
@@ -319,7 +319,7 @@ async function loadSportsFixtures(){
  if(Date.now()-lastSportsAt<10*60*1000)return;
  lastSportsAt=Date.now();
  try{
-  const res=await fetch("/api/sports",{cache:"no-store"});
+  const res=await apiFetch("/api/sports",{cache:"no-store"});
   if(!res.ok)throw new Error("Sports catalogue HTTP "+res.status);
   const data=await res.json(),allSports=data.sports||[];
   const results=[];
@@ -328,7 +328,7 @@ async function loadSportsFixtures(){
    const batch=allSports.slice(i,i+4);
    const settled=await Promise.all(batch.map(async sport=>{
     try{
-     const response=await fetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});
+     const response=await apiFetch("/api/public-sports/"+encodeURIComponent(sport.key),{cache:"no-store"});
      if(!response.ok)return {sport,data:null,error:"HTTP "+response.status};
      return {sport,data:await response.json(),error:null};
     }catch(error){return {sport,data:null,error:error.message};}
