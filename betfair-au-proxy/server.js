@@ -82,11 +82,42 @@ async function loadRaces() {
     return {type,markets:result.markets,errors:result.errors};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_type:g.type.name})));
-  const books=[];
-  for(let i=0;i<all.length;i+=40){
-    const result=await rpc("listMarketBook",{marketIds:all.slice(i,i+40).map(m=>m.marketId),
-      priceProjection:{priceData:["EX_BEST_OFFERS"],virtualise:true}});
-    books.push(...(result||[]));
+  // Betfair can return HTTP 200 with TOO_MUCH_DATA for a batch of
+  // market books. Split oversized batches recursively so one dense race
+  // does not discard every other Australian market in the refresh.
+  async function fetchRaceBooks(marketIds) {
+    try {
+      const result=await rpc("listMarketBook",{
+        marketIds,
+        priceProjection:{priceData:["EX_BEST_OFFERS"],exBestOffersOverrides:{bestPricesDepth:3},virtualise:true}
+      });
+      return {books:result||[],errors:[]};
+    } catch(error) {
+      if(/TOO_MUCH_DATA/i.test(error.message)&&marketIds.length>1) {
+        const middle=Math.ceil(marketIds.length/2);
+        const left=await fetchRaceBooks(marketIds.slice(0,middle));
+        const right=await fetchRaceBooks(marketIds.slice(middle));
+        return {books:[...left.books,...right.books],errors:[...left.errors,...right.errors]};
+      }
+      if(/TOO_MUCH_DATA/i.test(error.message)&&marketIds.length===1) {
+        try {
+          const retry=await rpc("listMarketBook",{
+            marketIds,
+            priceProjection:{priceData:["EX_BEST_OFFERS"],exBestOffersOverrides:{bestPricesDepth:1},virtualise:false}
+          });
+          return {books:retry||[],errors:[]};
+        } catch(retryError) {
+          return {books:[],errors:["Market "+marketIds[0]+" remained oversized at depth 1: "+retryError.message]};
+        }
+      }
+      return {books:[],errors:["Market batch ("+marketIds.length+"): "+error.message]};
+    }
+  }
+  const books=[],bookErrors=[];
+  for(let i=0;i<all.length;i+=40) {
+    const result=await fetchRaceBooks(all.slice(i,i+40).map(m=>m.marketId));
+    books.push(...result.books);
+    bookErrors.push(...result.errors);
   }
   const byId=new Map(books.map(b=>[b.marketId,b]));
   const grouped=new Map();
@@ -126,7 +157,8 @@ async function loadRaces() {
   });
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
     scheduleFetchedAt:new Date().toISOString(),oddsFetchedAt:new Date().toISOString(),horizonHours:168,
-    feedErrors:groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
+    feedErrors:[...groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
+      ...bookErrors.map(message=>({sport:"Australian racing",message}))],
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
     note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
