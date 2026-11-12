@@ -445,6 +445,117 @@ async function demoRacingFeed() {
 }
 
 const publicDemoCache = new Map();
+const moviOddsStreamState={status:"starting",connectedAt:null,lastMessageAt:null,lastError:null,reconnects:0};
+let moviOddsStreamSocket=null,moviOddsStreamRetryTimer=null,moviOddsStreamRetryMs=3000;
+function moviWsQuoteKey(q){
+ return [q?.group_id??"",q?.market_id??"",q?.sel_id??""].map(String).join("|");
+}
+function moviWsFindFixture(fixture){
+ return moviOddsAllSportsCache.items.findIndex(x=>String(x.id||x.event_id||"")===String(fixture));
+}
+function applyMoviOddsStreamMessage(message){
+ if(!message||typeof message!=="object")return;
+ const type=String(message.type||"");
+ const items=moviOddsAllSportsCache.items;
+ const fixture=String(message.fixture||"");
+ if(type==="snapshot"||type==="delta"||type==="remove"||type==="status"){
+  if(!fixture)return;
+  let index=moviWsFindFixture(fixture);
+  if(type==="remove"&&!Array.isArray(message.quotes)){
+   if(index>=0)items.splice(index,1);
+   publicDemoCache.clear();
+   return;
+  }
+  if(index<0){
+   const kickoff=message.kickoff_ts?new Date(Number(message.kickoff_ts)*1000).toISOString():null;
+   items.push({id:fixture,home:message.home||"",away:message.away||"",league:message.league||"",
+    kickoff_utc:kickoff,in_play:message.in_play===true,quotes:[],group_status:{},polled_at:message.polled_at||null});
+   index=items.length-1;
+  }
+  const item=items[index];
+  if(type==="snapshot"){
+   item.quotes=Array.isArray(message.quotes)?message.quotes.map(q=>({...q,suspended:q.suspended===true})): [];
+   item.home=message.home||item.home;item.away=message.away||item.away;
+   item.league=message.league||item.league;item.kickoff_utc=item.kickoff_utc||(
+    message.kickoff_ts?new Date(Number(message.kickoff_ts)*1000).toISOString():null);
+   item.polled_at=message.polled_at||item.polled_at;
+   item.group_status=message.group_status||item.group_status||{};
+   item._moviServerTime=message.server_time||new Date().toISOString();
+  }else if(type==="delta"){
+   if(!Array.isArray(item.quotes))item.quotes=[];
+   for(const quote of message.quotes||[]){
+    const key=moviWsQuoteKey(quote),old=item.quotes.findIndex(q=>moviWsQuoteKey(q)===key);
+    const next={...quote,suspended:quote.suspended===true};
+    if(old>=0)item.quotes[old]=next;else item.quotes.push(next);
+   }
+   item._moviServerTime=message.server_time||new Date().toISOString();
+  }else if(type==="remove"){
+   const removeKeys=new Set((message.quotes||[]).map(moviWsQuoteKey));
+   item.quotes=(item.quotes||[]).filter(q=>!removeKeys.has(moviWsQuoteKey(q)));
+  }else if(type==="status"){
+   item.group_status={...(item.group_status||{}),...(message.group_status||{})};
+  }
+  publicDemoCache.clear();
+ }else if(type==="polled"){
+  for(const [id,stamp] of Object.entries(message.fixtures||{})){
+   const index=moviWsFindFixture(id);if(index>=0)items[index].polled_at=stamp;
+  }
+  for(const [id,groups] of Object.entries(message.groups||{})){
+   const index=moviWsFindFixture(id);if(index<0)continue;
+   const item=items[index];item.group_status=item.group_status||{};
+   for(const [groupId,stamp] of Object.entries(groups||{})){
+    item.group_status[groupId]={...(item.group_status[groupId]||{}),polled_at:stamp};
+   }
+  }
+  publicDemoCache.clear();
+ }else if(type==="resync"||type==="lagged"){
+  moviOddsAllSportsCache.at=0;
+  publicDemoCache.clear();
+ }
+ moviOddsStreamState.lastMessageAt=new Date().toISOString();
+}
+function startMoviOddsStream(){
+ if(typeof WebSocket!=="function"){
+  moviOddsStreamState.status="unsupported";
+  moviOddsStreamState.lastError="This Node runtime does not expose the built-in WebSocket client.";
+  return;
+ }
+ if(moviOddsStreamSocket&&[WebSocket.CONNECTING,WebSocket.OPEN].includes(moviOddsStreamSocket.readyState))return;
+ try{
+  moviOddsStreamState.status="connecting";
+  const socket=new WebSocket("wss://moviodds.com/ws");
+  moviOddsStreamSocket=socket;
+  socket.addEventListener("open",()=>{
+   moviOddsStreamState.status="connected";moviOddsStreamState.connectedAt=new Date().toISOString();
+   moviOddsStreamState.lastError=null;moviOddsStreamState.reconnects=0;moviOddsStreamRetryMs=3000;
+   socket.send(JSON.stringify({op:"subscribe"}));
+   console.info("MOVIODDS_WEBSOCKET_CONNECTED",JSON.stringify({scope:"all sports and markets",provider:"Bet365"}));
+  });
+  socket.addEventListener("message",event=>{
+   try{applyMoviOddsStreamMessage(JSON.parse(String(event.data)));}
+   catch(error){moviOddsStreamState.lastError="Invalid WebSocket message: "+String(error.message||error).slice(0,160);}
+  });
+  socket.addEventListener("error",()=>{
+   moviOddsStreamState.lastError="MoviOdds WebSocket transport error";
+  });
+  socket.addEventListener("close",event=>{
+   if(moviOddsStreamSocket===socket)moviOddsStreamSocket=null;
+   moviOddsStreamState.status="disconnected";moviOddsStreamState.reconnects++;
+   moviOddsStreamState.lastError="WebSocket closed ("+event.code+")";
+   const delay=moviOddsStreamRetryMs;
+   moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
+   if(moviOddsStreamRetryTimer)clearTimeout(moviOddsStreamRetryTimer);
+   moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+   console.warn("MOVIODDS_WEBSOCKET_RECONNECT",JSON.stringify({closeCode:event.code,retryInMs:delay}));
+  });
+ }catch(error){
+  moviOddsStreamState.status="disconnected";
+  moviOddsStreamState.lastError=String(error.message||error).slice(0,180);
+  const delay=moviOddsStreamRetryMs;moviOddsStreamRetryMs=Math.min(30000,moviOddsStreamRetryMs*2);
+  moviOddsStreamRetryTimer=setTimeout(startMoviOddsStream,delay);
+ }
+}
+
 let moviOddsAllSportsCache={at:0,items:[],error:null};
 let moviOddsAllSportsRefresh=null;
 async function loadMoviOddsAllSports(){
@@ -3013,6 +3124,7 @@ async function loadMoviOddsFinalResults(extraDates=[]){
 // sync request. This verifies the real no-key results response independently of
 // whether the user currently has pending picks.
 void loadMoviOddsFinalResults().catch(error=>console.warn("MOVIODDS_RESULTS_STARTUP_CHECK_FAILED",error.message));
+startMoviOddsStream();
 const moviResultsPollTimer=setInterval(()=>loadMoviOddsFinalResults().catch(error=>
  console.warn("MOVIODDS_RESULTS_POLL_FAILED",error.message)),10*60*1000);
 if(typeof moviResultsPollTimer.unref==="function")moviResultsPollTimer.unref();
