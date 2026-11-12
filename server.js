@@ -964,6 +964,14 @@ function racingMarketAge(q,market){
   const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
   return direct==null?stamped:Math.max(stamped,direct);
 }
+function isEstimatedQuote(q){
+  if(!q||typeof q!=="object")return false;
+  const flags=["estimated","estimate","is_estimate","isEstimate","indicative","is_indicative","isIndicative","projected","is_projected","isProjected","synthetic","is_synthetic","isSynthetic","simulated","predicted"];
+  if(flags.some(k=>q[k]===true||q[k]===1||String(q[k]||"").toLowerCase()==="true"))return true;
+  const descriptors=[q.market_type,q.place_market_type,q.price_type,q.bookmaker_type,q.quote_type,q.type,q.method,q.source,q.provider,q.feed,q.price_source,q.provenance,q.bookmaker,q.bookmaker_name,q.name,q.key]
+    .filter(v=>v!=null).join(" ").toLowerCase();
+  return /\\b(estimate|estimated|indicative|projection|projected|modelled|modeled|consensus|synthetic|simulated|predicted)\\b|fair[ _-]?(odds|price)/i.test(descriptors);
+}
 function runnerMarketQuotes(runner,market="win"){
   const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
   if(!normalizeName(runnerName)||normalizeName(runnerName)==="runner"||
@@ -971,7 +979,7 @@ function runnerMarketQuotes(runner,market="win"){
   const unique=new Map();
   for(const q of (runner.bookmakers||runner.odds||[])){
     const key=bookmakerKey(q),price=market==="place"?racingPlacePrice(q):racingWinPrice(q),age=racingMarketAge(q,market);
-    if(key==="betfair"||!key||price==null||q.stale===true||q.suspended===true||q.scratched===true||age==null||age>=racingQuoteMaxAge())continue;
+    if(key==="betfair"||!key||price==null||isEstimatedQuote(q)||q.stale===true||q.suspended===true||q.scratched===true||age==null||age>=racingQuoteMaxAge())continue;
     const previous=unique.get(key),previousAge=previous?racingMarketAge(previous,market):null;
     if(!previous||previousAge==null||age<previousAge)unique.set(key,q);
   }
@@ -987,7 +995,7 @@ function runnerQuoteAudit(runner){
   // Keep bookmaker-attributed public previews visible as reference rows even when
   // they are stale or untimestamped. They remain unverified and never enter
   // verified favourites, top tips or price comparisons.
-  const book=bookmakerKey(q),publicPreview=q.public_demo===true&&book==="sportsbet";
+  const book=bookmakerKey(q),publicPreview=q.public_demo===true&&book==="sportsbet",estimated=isEstimatedQuote(q);
   if(q.suspended===true||q.scratched===true||((q.stale===true)&&!publicPreview))continue;
   if(!book)continue;
   const label=q.bookmaker||q.bookmaker_name||q.name||q.key||"Unknown bookmaker";
@@ -1002,6 +1010,7 @@ function runnerQuoteAudit(runner){
    if(age!=null&&age>=racingQuoteMaxAge()&&!publicPreview)continue;
    const marketType=String(market==="place"?(q.place_market_type||q.market_type||q.bookmaker_type||""):(q.market_type||q.bookmaker_type||"")).toLowerCase();
    const reasons=[];
+   if(estimated)reasons.push("estimated, indicative or consensus quote; excluded from verified bookmaker rankings");
     if(q.exchange===true||book==="betfair")reasons.push("Betfair Exchange quote · delayed feed (up to 180 seconds); not bookmaker fixed odds");
    if(q.suspended===true||q.scratched===true)continue;
    const marketStale=market==="place"?(q.place_stale===true||q.stale===true):q.stale===true;
