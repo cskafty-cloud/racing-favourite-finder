@@ -1050,7 +1050,7 @@ function selectFavourite(race) {
     const seen=new Set();
     const quotes=runnerQuotes(r).filter(q=>{
       const key=bookmakerKey(q),age=Number(q.age_seconds);
-      if(!key||seen.has(key)||isEstimatedQuote(q)||q.stale===true||(Number.isFinite(age)&&age>=180))return false;
+      if(!key||seen.has(key)||isEstimatedQuote(q)||q.stale===true||!Number.isFinite(age)||age<0||age>=180)return false;
       seen.add(key);return true;
     });
     const prices=quotes.map(racingWinPrice).filter(p=>p!=null);
