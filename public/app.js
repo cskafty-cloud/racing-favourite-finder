@@ -370,7 +370,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  // Start the server heartbeat immediately, including while the entry screen is visible.
  start();
 });
-})();+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · confidence '+esc(x.fav.signalScore)+'/100</span><div class="rf-muted">'+esc(String(x.race.category||x.race.code||"Racing").toUpperCase())+' · '+esc(x.fav.priceSource||"Verified fixed WIN")+' · '+Number(x.fav.quoteCount||0)+' independent bookmaker source(s) · '+Number(x.fav.spreadPct||0).toFixed(1)+'% price spread · '+esc(fmtTime(x.race.start_time||x.race.commence_time))+'</div></div>').join("");
+})();+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · confidence '+esc(x.fav.signalScore)+'/100</span><div class="rf-muted">'+esc(String(x.race.category||x.race.code||"Racing").toUpperCase())+' · '+esc(x.fav.priceSource||"Verified fixed WIN")+' · '+Number(x.fav.quoteCount||0)+' independent bookmaker source(s) · '+(Number(x.fav.quoteCount||0)>1?Number(x.fav.spreadPct||0).toFixed(1)+'% price spread':'no cross-book spread available')+' · '+esc(fmtTime(x.race.start_time||x.race.commence_time))+'</div></div>').join("");
  if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">FRESH FIXED-WIN SHORTLIST · Only timestamped verified bookmaker prices qualify. Single-bookmaker picks are marked limited confirmation; exchange, estimates and Sportsbet public previews are excluded. Confidence is a market-data quality score, not a probability of winning.</div>'+(raceHtml||'<div class="rf-empty">No fresh verified bookmaker favourites currently qualify. No estimated or exchange prices are substituted.</div>');
 }
 
