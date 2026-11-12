@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtTime=value=>{const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane"}):"Time unavailable";};
 const fmtAge=value=>Number.isFinite(Number(value))?Math.max(0,Math.round(Number(value)))+"s old":"age unknown";
-let races=[],filter="all",sort="time",started=false,lastSportsAt=0,betfairSportsEvents=[],lastServerCheckAt=0,healthCheckInFlight=null;
+let races=[],filter="all",sort="time",started=false,lastSportsAt=0,betfairSportsEvents=[],lastServerCheckAt=0,healthCheckInFlight=null,previousSportsPrices=new Map();
 const statusBadge=(status,label)=>status==="verified"?'<span class="price-status verified">VERIFIED</span>':'<span class="price-status unverified">'+esc(label||"UNVERIFIED")+'</span>';
 function addStyles(){
  if(document.getElementById("rf-extra-styles"))return;
@@ -138,8 +138,23 @@ function renderRaces(data){
     '<div class="feed-status-item"><span class="feed-dot '+(betfairState==="connected-delayed"?"connected":"checking")+'"></span><span><b>BETFAIR EXCHANGE · '+betfairLabel+'</b><small>Exchange WIN quotes '+exchangeWin+' · exchange PLACE quotes '+exchangePlace+'. BACK and LAY are shown separately with available size. Delayed exchange prices are never counted as Sportsbet, Bet365 or TAB fixed odds. '+(betfairState==="credentials-missing"?"Add a valid Betfair app key and session token in Railway to enable this feed.":"")+'</small></span></div>'+
    '<div class="feed-status-item"><span class="feed-dot checking"></span><span><b>B337 PUBLIC REFERENCE · MANUAL COMPARISON</b><small><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">B337 free account</a> may show limited live Sportsbet and TAB racing information with price history. It remains a separate reference: no B337 prices are imported or counted as verified quotes. Automatic import is allowed only from an authorised public machine-readable source.</small></span></div>';
  }
+ renderSportsbetCoverage(active,data);
  window.dispatchEvent(new CustomEvent("racing-data-updated",{detail:data}));
  renderBestTips(active);
+}
+function renderSportsbetCoverage(active,data){
+ const audits=active.flatMap(r=>(r.runners||[]).flatMap(x=>x.bookmakerPriceAudit||[]));
+ const count=(market,status)=>audits.filter(q=>q.bookmaker_key==="sportsbet"&&q.market===market&&(!status||q.status===status)).length;
+ const win=count("WIN","verified"),place=count("PLACE","verified");
+ const unverified=count("WIN","unverified")+count("PLACE","unverified")+Number(data.sportsbetStalePreviewQuotes||0);
+ if($("sbCoverageState"))$("sbCoverageState").textContent=win||place?"VERIFIED QUOTES AVAILABLE":"NO VERIFIED SPORTSBET PRICES";
+ if($("sbCoverageCards"))$("sbCoverageCards").innerHTML=[["Race cards",active.length],["Sportsbet WIN",win],["Sportsbet PLACE",place],["Unverified Sportsbet",unverified]].map(([label,value])=>'<div class="stat"><b>'+esc(value)+'</b><span>'+esc(label)+'</span></div>').join("");
+ if($("sbCoverageByCode"))$("sbCoverageByCode").innerHTML=["horse","greyhound","harness"].map(code=>{
+  const n=active.filter(r=>String(r.category||r.code||"").toLowerCase()===code).length;
+  return '<div class="source-link"><b>'+esc(code.toUpperCase())+'</b><span>'+n+' returned cards · '+(win||place?"verified Sportsbet quotes counted above":"0 verified Sportsbet WIN/PLACE quotes")+'</span></div>';
+ }).join("");
+ if($("sbCoverageDetail"))$("sbCoverageDetail").textContent=win||place?"Verified timestamped Sportsbet fixed prices are present. Other bookmaker and exchange quotes are excluded.":"No genuine Sportsbet-labelled fixed WIN/PLACE quotes with individual source timestamps are present. Untimestamped previews remain unverified and excluded from rankings.";
+ if($("sbCoverageErrors"))$("sbCoverageErrors").textContent=(data.feedErrors||data.feedHealth?.errors||[]).map(x=>typeof x==="string"?x:x?.message||"").filter(Boolean).slice(0,3).join(" · ");
 }
 function renderBestTips(list){
   const ranked=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&!x.fav.previewOnly&&Number(x.fav.signalScore||0)>=28).sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)||Number(a.fav.price)-Number(b.fav.price)).slice(0,10);
@@ -395,12 +410,90 @@ async function loadSportsFixtures(){
    "No fixtures returned by the available public feeds across "+allSports.length+" catalogue sports. Sports are still listed below.";
   if($("sportsCatalogue"))$("sportsCatalogue").innerHTML=sportsTipsHtml+(eventHtml||'<div class="rf-empty">No upcoming or in-play fixtures returned by available sources.</div>')+
    '<div class="rf-price-box"><h4>SPORTS COVERAGE · ALL CATALOGUE SPORTS</h4>'+sportRows+'</div>';
+  if($("sportsEvents"))$("sportsEvents").innerHTML=eventHtml||'<div class="empty">No upcoming or in-play sports fixtures returned by the available public feeds.</div>';
+  updateSportsTrends(events);
  }catch(error){
   if($("sportsNotice"))$("sportsNotice").textContent="Public sports fixtures unavailable: "+error.message;
   if($("sportsCatalogue"))$("sportsCatalogue").innerHTML='<div class="rf-empty">'+esc(error.message)+'</div>';
  }
 }
 
+function updateSportsTrends(events){
+ const now=Date.now(),current=new Map(),changes=[];
+ for(const event of events)for(const book of event.bookmakers||[]){
+  if(book.stale===true)continue;
+  const bookName=String(book.name||book.title||book.key||"Bookmaker");
+  for(const market of book.markets||[])for(const outcome of market.outcomes||[]){
+   const price=Number(outcome.price),age=sportQuoteAge(outcome,book);
+   if(!Number.isFinite(price)||price<=1||outcome.suspended||outcome.removed||outcome.stale===true||age==null||age<0||age>=180)continue;
+   const eventKey=String(event.id||event.fixture_id||[event.home_team||event.home,event.away_team||event.away,event.commence_time||event.start_time].join("|"));
+   const key=[eventKey,bookName,market.key||market.name||"market",outcome.name||outcome.label||"Selection",outcome.point??outcome.line??""].join("|");
+   const item={event,bookName,marketName:market.name||market.key||"Market",outcomeName:outcome.name||outcome.label||"Selection",price,seenAt:now};
+   current.set(key,item);
+   const old=previousSportsPrices.get(key);
+   if(old&&now-old.seenAt<=30*60*1000&&old.price!==price)changes.push({...item,oldPrice:old.price,changePct:(price-old.price)/old.price*100});
+  }
+ }
+ if(current.size)previousSportsPrices=current;
+ if(!$("sportsTrends"))return;
+ if(changes.length){
+  changes.sort((a,b)=>Math.abs(b.changePct)-Math.abs(a.changePct));
+  $("sportsTrends").innerHTML=changes.slice(0,12).map(x=>'<div class="rf-sports-row"><b>'+esc(x.event.home_team||x.event.home||x.event.event||"Fixture")+' v '+esc(x.event.away_team||x.event.away||"")+' · '+esc(x.outcomeName)+'</b><span>'+(x.changePct<0?"SHORTENED":"DRIFTED")+' · $'+x.oldPrice.toFixed(2)+' → $'+x.price.toFixed(2)+' · '+(x.changePct>0?"+":"")+x.changePct.toFixed(1)+'%</span><div class="rf-muted">'+esc(x.event._sportTitle||x.event.sport_name||"Sport")+' · '+esc(x.bookName)+' · '+esc(x.marketName)+' · fresh source quote</div></div>').join("");
+ }else if(current.size&&previousSportsPrices.size===current.size)$("sportsTrends").innerHTML='<div class="empty compact-empty">No fresh favourite-price movements detected in the latest comparison.</div>';
+ else if(current.size)$("sportsTrends").innerHTML='<div class="empty compact-empty">First fresh sports-price snapshot saved. Movements will appear after a later comparison.</div>';
+ else $("sportsTrends").innerHTML='<div class="empty compact-empty">No fresh timestamped sports prices are available to compare right now.</div>';
+}
+async function loadFeedStatus(){
+ try{
+  const response=await apiFetch("/api/feed-status",{cache:"no-store"});
+  if(!response.ok)throw new Error("Feed status HTTP "+response.status);
+  const data=await response.json(),racing=data.racing||{},byCode=racing.byCode||{};
+  const sports=Object.values(data.sports||{}),sportsActive=sports.some(x=>x.status==="active"||Number(x.eventCount)>0);
+  const rows=["horse","greyhound","harness"].map(code=>{
+   const item=byCode[code]||{},n=Number(item.races||0);
+   return {label:code==="horse"?"HORSE RACING":code==="greyhound"?"GREYHOUND RACING":"HARNESS RACING",detail:n+" returned race cards",state:n?"connected":racing.status==="active"?"checking":"offline"};
+  });
+  rows.push({label:"ALL SPORTS",detail:sportsActive?"Connected sports fixtures available":"Catalogue connected · no active fixtures confirmed",state:sportsActive?"connected":"checking"});
+  if($("entryFeedStatuses"))$("entryFeedStatuses").innerHTML=rows.map(x=>'<div class="feed-status-item"><span class="feed-dot '+x.state+'"></span><span><b>'+esc(x.label)+'</b><small>'+esc(x.detail)+'</small></span></div>').join("");
+  if($("entryHorseStatus")){
+   const n=Number(byCode.horse?.races||0);
+   $("entryHorseStatus").className="entry-horse-status "+(n?"connected":"checking");
+   $("entryHorseStatus").innerHTML='<span class="entry-horse-light"></span><span class="entry-horse-copy"><b>🐎 HORSE RACING</b><small>'+n+' returned race cards · '+esc(racing.status||"checking")+'</small></span>';
+  }
+ }catch(error){if($("entryFeedStatuses"))$("entryFeedStatuses").innerHTML='<div class="feed-status-item"><span class="feed-dot offline"></span><span><b>FEED STATUS UNAVAILABLE</b><small>'+esc(error.message)+'</small></span></div>';}
+}
+async function loadMarketHistory(){
+ try{
+  const response=await apiFetch("/api/market-history",{cache:"no-store"});
+  if(!response.ok)throw new Error("Market archive HTTP "+response.status);
+  const data=await response.json(),snapshots=data.snapshots||[];
+  const set=(id,value)=>{if($(id))$(id).textContent=String(value);};
+  set("marketRaces",data.racesTracked??0);set("marketSnapshots",data.total??snapshots.length);
+  set("marketCaptured",data.capturedAt?fmtTime(data.capturedAt):"No captures yet");
+  if($("marketHistoryRows"))$("marketHistoryRows").innerHTML=snapshots.length?snapshots.slice(0,20).map(x=>{
+   const fav=x.favourite||{},price=Number(fav.price)>1?"$"+Number(fav.price).toFixed(2):"price unavailable";
+   return '<div class="rf-sports-row"><b>'+esc(String(x.category||"racing").toUpperCase())+' · '+esc(x.venue||"Track")+' R'+esc(x.raceNumber??"?")+' · '+esc(fav.name||"Favourite")+'</b><span>'+esc(price)+'</span><div class="rf-muted">'+esc(fav.priceSource||"Source not supplied")+' · '+Number(fav.quoteCount||0)+' quote(s) · '+esc(fmtTime(x.capturedAt))+'</div></div>';
+  }).join(""):'<div class="empty">No market snapshots recorded yet. The archive will fill as the server captures verified pre-jump market changes.</div>';
+ }catch(error){if($("marketHistoryRows"))$("marketHistoryRows").innerHTML='<div class="empty">Market archive unavailable: '+esc(error.message)+'</div>';}
+}
+async function loadLiveSports(){
+ const notice=$("liveSportsNotice"),list=$("liveSportsEvents");
+ try{
+  if(notice)notice.textContent="Checking free public live-sports snapshots…";
+  const response=await apiFetch("/api/live-sports",{cache:"no-store",signal:AbortSignal.timeout(40000)});
+  const data=await response.json();if(!response.ok)throw new Error(data.error||"Live sports HTTP "+response.status);
+  const events=Array.isArray(data.events)?data.events:[];
+  if(notice)notice.textContent=events.length?events.length+" fixtures explicitly marked in-play · "+esc(data.provider||"Public snapshot")+" · snapshot age "+Number(data.ageSeconds||0)+"s. Scores and prices appear only when supplied.":"No fixtures are currently marked in-play by the connected free public snapshots.";
+  if(list)list.innerHTML=events.length?events.map(e=>{
+   const books=(e.bookmakers||[]).map(b=>renderSportsBookmaker(e,b)).filter(Boolean).join("");
+   return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(e.home||e.home_team||e.name||"Live event")+(e.away||e.away_team?" v "+esc(e.away||e.away_team):"")+'</div><div class="rf-muted">'+esc(e.sport||"Sport")+' · LIVE'+(e.score?" · SCORE "+esc(e.score):"")+' · '+esc(fmtTime(e.commenceTime||e.commence_time))+'</div></div></div>'+(books?'<div class="rf-price-groups">'+books+'</div>':'<div class="rf-empty">Live fixture confirmed; no prices supplied in this snapshot.</div>')+'</article>';
+  }).join(""):'<div class="empty">No confirmed in-play events in the latest free public snapshot.</div>';
+ }catch(error){if(notice)notice.textContent="Live sports snapshot unavailable: "+error.message;if(list)list.innerHTML='<div class="empty">'+esc(error.message)+'</div>';}
+}
+function renderSportsResultsNotice(){
+ if($("sportResultsNotice"))$("sportResultsNotice").textContent="Completed sports results are not included in the current no-key live/upcoming snapshot. Racing results are loaded separately from MoviOdds.";
+ if($("sportResults"))$("sportResults").innerHTML='<div class="empty compact-empty">No completed sports results were returned by the free public snapshot source. Sports scores are shown only when a connected source supplies them.</div>';
+}
 function start(){
  if(started)return;
  started=true;
@@ -413,10 +506,18 @@ function start(){
  loadLucasFox();
  loadSportsFixtures();
  loadBetfairSports();
+ loadFeedStatus();
+ loadMarketHistory();
+ loadLiveSports();
+ renderSportsResultsNotice();
  setInterval(()=>loadRaces().finally(()=>loadHistory()),2*60*1000);
  setInterval(loadHistory,5*60*1000);
- setInterval(loadSportsFixtures,30*1000);
+ setInterval(loadLucasFox,15*60*1000);
+ setInterval(loadSportsFixtures,10*60*1000);
  setInterval(loadBetfairSports,60*1000);
+ setInterval(loadFeedStatus,60*1000);
+ setInterval(loadMarketHistory,2*60*1000);
+ setInterval(loadLiveSports,90*1000);
 }
 window.startFullDashboardFeeds=start;
 document.addEventListener("DOMContentLoaded",()=>{
@@ -426,13 +527,15 @@ document.addEventListener("DOMContentLoaded",()=>{
  const enter=$("enterWebsiteBtn");
  if(enter)enter.addEventListener("click",()=>start(),{once:true});
  const refresh=$("refreshBtn");
- if(refresh)refresh.addEventListener("click",()=>loadRaces());
+ if(refresh)refresh.addEventListener("click",()=>{loadRaces();loadFeedStatus();});
+ const syncHistory=$("syncHistoryBtn");
+ if(syncHistory)syncHistory.addEventListener("click",()=>loadHistory());
  const refreshBetfairSports=$("refreshBetfairSportsBtn");
  if(refreshBetfairSports)refreshBetfairSports.addEventListener("click",()=>loadBetfairSports());
  const loadAllSportsButton=$("loadAllSportsBtn");
  if(loadAllSportsButton)loadAllSportsButton.addEventListener("click",()=>{lastSportsAt=0;loadSportsFixtures();});
  const refreshLiveSportsButton=$("refreshLiveSportsBtn");
- if(refreshLiveSportsButton)refreshLiveSportsButton.addEventListener("click",()=>{loadLucasFox();loadBetfairSports();lastSportsAt=0;loadSportsFixtures();});
+ if(refreshLiveSportsButton)refreshLiveSportsButton.addEventListener("click",()=>{loadLiveSports();loadBetfairSports();lastSportsAt=0;loadSportsFixtures();});
  document.querySelectorAll(".tab[data-filter]").forEach(button=>button.addEventListener("click",()=>{
   filter=button.dataset.filter;
   document.querySelectorAll(".tab[data-filter]").forEach(b=>b.classList.toggle("active",b===button));
