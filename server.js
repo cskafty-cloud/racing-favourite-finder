@@ -1377,7 +1377,7 @@ app.get("/api/health", async (_req,res) => {
   let betfairAdapter={configured:!!BETFAIR_FEED_URL,reachable:false,betfairApiAuthenticated:null,authentication:"not-checked",error:null};
   if(BETFAIR_FEED_URL){
     try{
-      const healthUrl=BETFAIR_FEED_URL.replace(/\\/api\\/races\\/?$/i,"/health");
+      const healthUrl=BETFAIR_FEED_URL.endsWith("/api/races")?BETFAIR_FEED_URL.slice(0,-10)+"/health":BETFAIR_FEED_URL.replace("/api/races","/health");
       const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(6000)});
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{throw new Error("Adapter health returned invalid JSON (HTTP "+response.status+").");}
