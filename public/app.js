@@ -419,7 +419,7 @@ async function loadSportsFixtures(){
 }
 
 function updateSportsTrends(events){
- const now=Date.now(),current=new Map(),changes=[];
+ const now=Date.now(),hadPrevious=previousSportsPrices.size>0,current=new Map(),changes=[];
  for(const event of events)for(const book of event.bookmakers||[]){
   if(book.stale===true)continue;
   const bookName=String(book.name||book.title||book.key||"Bookmaker");
@@ -439,7 +439,7 @@ function updateSportsTrends(events){
  if(changes.length){
   changes.sort((a,b)=>Math.abs(b.changePct)-Math.abs(a.changePct));
   $("sportsTrends").innerHTML=changes.slice(0,12).map(x=>'<div class="rf-sports-row"><b>'+esc(x.event.home_team||x.event.home||x.event.event||"Fixture")+' v '+esc(x.event.away_team||x.event.away||"")+' · '+esc(x.outcomeName)+'</b><span>'+(x.changePct<0?"SHORTENED":"DRIFTED")+' · $'+x.oldPrice.toFixed(2)+' → $'+x.price.toFixed(2)+' · '+(x.changePct>0?"+":"")+x.changePct.toFixed(1)+'%</span><div class="rf-muted">'+esc(x.event._sportTitle||x.event.sport_name||"Sport")+' · '+esc(x.bookName)+' · '+esc(x.marketName)+' · fresh source quote</div></div>').join("");
- }else if(current.size&&previousSportsPrices.size===current.size)$("sportsTrends").innerHTML='<div class="empty compact-empty">No fresh favourite-price movements detected in the latest comparison.</div>';
+ }else if(current.size&&hadPrevious)$("sportsTrends").innerHTML='<div class="empty compact-empty">No fresh favourite-price movements detected in the latest comparison.</div>';
  else if(current.size)$("sportsTrends").innerHTML='<div class="empty compact-empty">First fresh sports-price snapshot saved. Movements will appear after a later comparison.</div>';
  else $("sportsTrends").innerHTML='<div class="empty compact-empty">No fresh timestamped sports prices are available to compare right now.</div>';
 }
