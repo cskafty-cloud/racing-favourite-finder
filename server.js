@@ -925,12 +925,17 @@ function resultContainsPickedRunner(pick, result) {
   const lists = [result?.runners, result?.placings, result?.finishers,
     resultObject.runners, resultObject.placings, resultObject.results].filter(Array.isArray);
   const wantedName = normalizeName(pick.runnerName);
-  if (!wantedName) return false;
+  const wantedNumber = pick.runnerNumber == null ? null : String(pick.runnerNumber).trim();
+  if (!wantedName && !wantedNumber) return false;
   return lists.flat().some(row => {
     if (!row || typeof row !== "object") return false;
     const rawName=String(valueOf(row,["name","runner_name","horse_name","greyhound_name","selection_name"])||"");
     const names=[rawName,rawName.match(/\\(([^)]+)\\)/)?.[1]].map(normalizeName).filter(Boolean);
-    return names.includes(wantedName);
+    if (wantedName && names.includes(wantedName)) return true;
+    // Cross-provider runner names can differ; a runner number/box is a safe
+    // fallback only after the race itself has already matched by identity.
+    const resultNumber=valueOf(row,["number","runner_number","box","saddlecloth","cloth_number"]);
+    return wantedNumber!=null && resultNumber!=null && String(resultNumber).trim()===wantedNumber;
   });
 }
 function findMatchingPick(picks, result) {
@@ -2966,7 +2971,10 @@ async function loadMoviOddsFinalResults(extraDates=[]){
  const dates=[...new Set([...baseDates,...extraDates.filter(x=>/^\\d{8}$/.test(String(x)))])];
  const cacheCoversDates=dates.every(date=>(moviOddsResultsCache.dates||[]).includes(date));
  if(moviOddsResultsCache.at&&Date.now()-moviOddsResultsCache.at<10*60*1000&&cacheCoversDates)return moviOddsResultsCache;
- if(moviOddsResultsRefresh)return moviOddsResultsRefresh;
+ if(moviOddsResultsRefresh){
+  await moviOddsResultsRefresh;
+  if(dates.every(date=>(moviOddsResultsCache.dates||[]).includes(date)))return moviOddsResultsCache;
+ }
  moviOddsResultsRefresh=(async()=>{
   async function readDate(date){
    const url="https://moviodds.com/racing/results?code=all&date="+date;
