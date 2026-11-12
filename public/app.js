@@ -230,19 +230,10 @@ async function loadRaces(){
  }
 }
 async function loadLucasFox(){
- try{
-  const response=await apiFetch("/api/lucasfox/sports",{cache:"no-store",signal:AbortSignal.timeout(18000)});
-  const data=await response.json();if(!response.ok)throw new Error(data.error||"LucasFox unavailable");
-  const events=data.events||[],quotes=events.flatMap(e=>(e.bookmakers||[]).flatMap(b=>(b.markets||[]).flatMap(m=>(m.outcomes||[]).map(o=>({e,b,m,o})))));
-  const fresh=quotes.filter(x=>Number(x.o.age_seconds)<900);
-  if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent=quotes.length?"SPORTSBET QUOTES FOUND":"NO QUOTES RETURNED";
-  if($("lucasFoxSportsStats"))$("lucasFoxSportsStats").innerHTML=[[events.length,"Sports fixtures"],[quotes.length,"Sportsbet quotes"],[fresh.length,"Fresh under 15m"],[data.dailyLimit||100,"Free requests/day"]].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
-  if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML=quotes.length?quotes.slice(0,60).map(x=>'<div class="rf-sports-row"><b>'+esc(x.e.home_team)+' v '+esc(x.e.away_team)+' · '+esc(x.m.name||x.m.key)+'</b>'+esc(x.o.name)+' · $'+Number(x.o.price).toFixed(2)+' · '+(Number(x.o.age_seconds)<900?'FRESH':'STALE / NOT RANKED')+'<div class="rf-muted">Sportsbet · captured '+esc(fmtTime(x.o.captured_at||x.o.last_update))+' · '+esc(fmtAge(x.o.age_seconds))+'</div></div>').join(""):'<div class="rf-empty">No current LucasFox Sportsbet sports quotes were returned. Racing WIN/PLACE is not covered by this feed.</div>';
-  if($("lucasFoxSportsDetail"))$("lucasFoxSportsDetail").textContent=data.note||"LucasFox sports markets only; not horse-racing odds.";
- }catch(error){
-  if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent="FEED UNAVAILABLE";
-  if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML='<div class="rf-empty">'+esc(error.message)+' · LucasFox is sports-only.</div>';
- }
+  if($("lucasFoxSportsState"))$("lucasFoxSportsState").textContent="NOT PUBLISHED · PROVIDER TERMS";
+  if($("lucasFoxSportsStats"))$("lucasFoxSportsStats").innerHTML="";
+  if($("lucasFoxSportsMarkets"))$("lucasFoxSportsMarkets").innerHTML='<div class="rf-empty">This provider's published terms do not permit republishing its odds to other people, so its free Sportsbet quotes are not shown on this public website. The public sports board uses permitted MoviOdds Bet365 data and separately labelled delayed Betfair Exchange markets.</div>';
+  if($("lucasFoxSportsDetail"))$("lucasFoxSportsDetail").textContent="No unauthorised third-party odds redistribution.";
 }
 async function loadBetfairSports(){
  const state=$("betfairSportsNotice"),list=$("betfairSportsEvents");
@@ -320,7 +311,7 @@ function renderSportsBookmaker(event,book) {
     (favourite?'<div class="rf-fav"><strong>'+esc(bookmaker)+' MARKET FAVOURITE</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">'+esc(freshness)+' · shortest price in '+esc(main.name||main.key||"market")+'</div></div>':'')+lines+'</div>';
 }
 async function loadSportsFixtures(){
- if(Date.now()-lastSportsAt<10*60*1000)return;
+ if(Date.now()-lastSportsAt<85*1000)return;
  lastSportsAt=Date.now();
  try{
   const res=await apiFetch("/api/sports",{cache:"no-store"});
@@ -421,8 +412,7 @@ function start(){
  loadBetfairSports();
  setInterval(()=>loadRaces().finally(()=>loadHistory()),2*60*1000);
  setInterval(loadHistory,5*60*1000);
- setInterval(loadLucasFox,15*60*1000);
- setInterval(loadSportsFixtures,10*60*1000);
+ setInterval(loadSportsFixtures,90*1000);
  setInterval(loadBetfairSports,60*1000);
 }
 window.startFullDashboardFeeds=start;
