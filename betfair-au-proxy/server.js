@@ -141,7 +141,7 @@ async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS"
       filter,
       marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
       sort:"FIRST_TO_START",
-      maxResults:"1000"
+      maxResults:"200"
     });
     return {markets:markets||[],errors:[]};
   } catch (error) {
@@ -193,10 +193,17 @@ async function loadSports() {
   const eventTypes=await rpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
     .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name));
-  const groups=await Promise.all(types.map(async type=>{
-    const result=await fetchSportCatalogue(type,from,to);
-    return {type,markets:result.markets,error:result.errors.length?result.errors.join("; "):null};
-  }));
+  const groups=[];
+  // Do not launch every sport catalogue simultaneously. Dense Soccer
+  // catalogues recursively split into smaller requests; batching five sports
+  // at a time prevents those retries from overwhelming the Australian proxy.
+  for(let i=0;i<types.length;i+=5){
+    const batch=await Promise.all(types.slice(i,i+5).map(async type=>{
+      const result=await fetchSportCatalogue(type,from,to);
+      return {type,markets:result.markets,error:result.errors.length?result.errors.join("; "):null};
+    }));
+    groups.push(...batch);
+  }
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_sport:g.type.name})));
   const books=[],bookErrors=[];
   for(let i=0;i<all.length;i+=40){
@@ -227,8 +234,17 @@ async function loadSports() {
     ...bookErrors.map(e=>({sport:e.sports.join(", "),message:"Market-book batch: "+e.message}))
   ];
   const pricedMarkets=events.filter(e=>e.runners.some(r=>r.back||r.lay)).length;
+  const marketCountsBySport=types.map(type=>({
+    sport:type.name,catalogueMarkets:groups.find(g=>g.type.id===type.id)?.markets.length||0,
+    openMarkets:events.filter(e=>e.sport===type.name).length,
+    pricedMarkets:events.filter(e=>e.sport===type.name&&e.runners.some(r=>r.back||r.lay)).length,
+    error:groups.find(g=>g.type.id===type.id)?.error||null
+  }));
+  const soccer=marketCountsBySport.find(x=>/soccer|football/i.test(x.sport))||{catalogueMarkets:0,openMarkets:0,pricedMarkets:0,error:"Soccer event type was not returned by Betfair."};
   return {events,eventTypes:types,capturedAt,from:from.toISOString(),to:to.toISOString(),
     status:pricedMarkets?"connected-delayed":errors.length?"partial":"configured-no-quotes",
+    marketCount:events.length,marketCountsBySport,
+    soccerMarketCount:soccer.openMarkets,soccerPricedMarkets:soccer.pricedMarkets,
     pricedMarkets,
     backOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.back).length,0),
     layOffers:events.reduce((n,e)=>n+e.runners.filter(r=>r.lay).length,0),
