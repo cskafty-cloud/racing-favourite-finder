@@ -1960,7 +1960,7 @@ async function getGlobalRacesUncached() {
   // both racing endpoints are inside their cooldown; use the free feeds below.
   const puntersEdgeQuotaPaused = API_KEY && (PUNTERS_EDGE_RACING_QUOTA_PAUSED || Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
   if (puntersEdgeQuotaPaused) {
-    console.info("PUNTERS_EDGE_RACING_QUOTA_PAUSED",JSON.stringify({retryAt:new Date(RACING_PROVIDER_QUOTA_RECHECK_AT).toISOString(),action:"skip exhausted authenticated racing endpoints and use independent feeds"}));
+    // Quota pause is exposed through provider status; avoid repeating it in runtime logs.
   }
   // Primary licensed schedule/odds source. If its free quota is exhausted, fall
   // through to the already-configured alternate providers rather than stopping.
