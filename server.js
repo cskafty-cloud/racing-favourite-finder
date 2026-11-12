@@ -1229,7 +1229,7 @@ async function loadOddsDataSport(sport, options={}) {
  return result;
 }
 
-app.get("/api/health", (_req,res) => res.json({ok:true, bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"configured-delayed-exchange":"credentials-missing", betfairMarkets:["WIN","PLACE"], betfairBackLaySeparate:true, storage:DATA_DIR}));
+app.get("/api/health", (_req,res) => { res.set("Cache-Control","no-store"); res.json({ok:true, serverTime:new Date().toISOString(), uptimeSeconds:Math.floor(process.uptime()), bettingEnabled:false, mode:"read-only", liveFeedConfigured:!!API_KEY, liveSportsConfigured:!!ODDS_API_TOKEN, betfairConfigured:!!(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN), betfairMode:(BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)?"configured-delayed-exchange":"credentials-missing", betfairMarkets:["WIN","PLACE"], betfairBackLaySeparate:true, storage:DATA_DIR}); });
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
 // on every visitor refresh.
