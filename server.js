@@ -518,7 +518,7 @@ function applyMoviOddsStreamMessage(message){
   let index=moviWsFindFixture(fixture);
   if(type==="remove"&&!Array.isArray(message.quotes)){
    if(index>=0)items.splice(index,1);
-   publicDemoCache.clear();
+   // Keep the short-lived rendered cache warm during quote bursts; entries expire after 85 seconds.
    return;
   }
   if(index<0){
@@ -553,7 +553,7 @@ function applyMoviOddsStreamMessage(message){
    item.group_status={...(item.group_status||{}),...(message.group_status||{})};
   }
   trimMoviOddsFixtures(items);
-  publicDemoCache.clear();
+  // Keep the short-lived rendered cache warm during quote bursts; entries expire after 85 seconds.
  }else if(type==="polled"){
   for(const [id,stamp] of Object.entries(message.fixtures||{})){
    const index=moviWsFindFixture(id);if(index>=0)items[index].polled_at=stamp;
@@ -565,10 +565,10 @@ function applyMoviOddsStreamMessage(message){
     item.group_status[groupId]={...(item.group_status[groupId]||{}),polled_at:stamp};
    }
   }
-  publicDemoCache.clear();
+  // Keep the short-lived rendered cache warm during quote bursts; entries expire after 85 seconds.
  }else if(type==="resync"||type==="lagged"){
   moviOddsAllSportsCache.at=0;
-  publicDemoCache.clear();
+  // Keep the short-lived rendered cache warm during quote bursts; entries expire after 85 seconds.
  }
  moviOddsStreamState.lastMessageAt=new Date().toISOString();
 }
@@ -1011,6 +1011,7 @@ async function loadPublicDemoSport(sport) {
   }).sort((a,b)=>Number(b.in_play)-Number(a.in_play)||Date.parse(a.commence_time||0)-Date.parse(b.commence_time||0));
   const result={at:Date.now(),rows,errors,provider:"MoviOdds Bet365 public sports feed"};
   publicDemoCache.set(sport.key,result);
+  trimInsertionOrderedMap(publicDemoCache,20,16);
   console.info("PUBLIC_DEMO_SPORT",JSON.stringify({sport:sport.title,events:rows.length,live:rows.filter(x=>x.in_play).length,
     bet365:rows.filter(x=>x.bookmakers.some(b=>String(b.key).startsWith("bet365"))).length,errors:errors.length}));
   return result;
@@ -3464,12 +3465,60 @@ const httpServer = app.listen(PORT,"0.0.0.0",()=>{
  * before exiting. The attached /data volume still prevents overlapping deploys;
  * this handler protects in-flight requests and history writes, not zero downtime.
  */
+// Sample actual Node memory (RSS includes native buffers, TLS and WebSocket allocations).
+// If RSS approaches the 1 GB container ceiling, discard rebuildable caches before Railway OOM-kills the process.
+const MEMORY_SOFT_LIMIT_BYTES = 700 * 1024 * 1024;
+let lastMemoryPressureCleanupAt = 0;
+function monitorAndTrimMemory() {
+  const before = process.memoryUsage();
+  const pressure = before.rss >= MEMORY_SOFT_LIMIT_BYTES;
+  let cleanup = null;
+  if (pressure && Date.now() - lastMemoryPressureCleanupAt >= 180000) {
+    lastMemoryPressureCleanupAt = Date.now();
+    const cacheCounts = {
+      publicSports: publicDemoCache.size,
+      oddsSports: oddsDataSportCache.size,
+      resultsSports: bet365ResultsCache.size,
+      liveFixtures: moviOddsAllSportsCache.items.length,
+      settledRows: moviOddsResultsCache.rows.length
+    };
+    publicDemoCache.clear();
+    oddsDataSportCache.clear();
+    bet365ResultsCache.clear();
+    if (moviOddsResultsCache.rows.length > 350) {
+      moviOddsResultsCache = { ...moviOddsResultsCache, rows: moviOddsResultsCache.rows.slice(-350) };
+    }
+    trimMoviOddsFixtures(moviOddsAllSportsCache.items, { limit: 450, staleMs: 3 * 60 * 60 * 1000 });
+    if (typeof global.gc === "function") global.gc();
+    cleanup = { cacheCounts, liveFixturesAfter: moviOddsAllSportsCache.items.length };
+  }
+  const after = process.memoryUsage();
+  console.info("RACING_MEMORY_SAMPLE", JSON.stringify({
+    rssMB: Math.round(after.rss / 1048576),
+    heapUsedMB: Math.round(after.heapUsed / 1048576),
+    heapTotalMB: Math.round(after.heapTotal / 1048576),
+    externalMB: Math.round(after.external / 1048576),
+    arrayBuffersMB: Math.round(after.arrayBuffers / 1048576),
+    cacheSizes: {
+      publicSports: publicDemoCache.size,
+      oddsSports: oddsDataSportCache.size,
+      resultsSports: bet365ResultsCache.size,
+      liveFixtures: moviOddsAllSportsCache.items.length,
+      settledRows: moviOddsResultsCache.rows.length
+    },
+    pressureCleanup: cleanup
+  }));
+}
+const memoryMonitorTimer = setInterval(monitorAndTrimMemory, 60000);
+if (typeof memoryMonitorTimer.unref === "function") memoryMonitorTimer.unref();
+
 let gracefulShutdownStarted = false;
 function beginGracefulShutdown(signal) {
   if (gracefulShutdownStarted) return;
   gracefulShutdownStarted = true;
   console.info("RACING_GRACEFUL_SHUTDOWN_START", JSON.stringify({ signal, at: new Date().toISOString() }));
   clearInterval(moviResultsPollTimer);
+  clearInterval(memoryMonitorTimer);
   clearTimeout(moviResultsStartupTimer);
   clearTimeout(moviStreamStartupTimer);
   clearInterval(backgroundRacingRefreshTimer);
