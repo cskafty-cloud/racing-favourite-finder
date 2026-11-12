@@ -92,9 +92,15 @@ function quote(level,observedAt=null,isMarketDataDelayed=null) {
     delayMaximumSeconds:180};
 }
 function cached(key, loader) {
+  const now=Date.now();
+  for(const [cacheKey,entry] of cache)if(now-entry.at>CACHE_MS*10)cache.delete(cacheKey);
   const old=cache.get(key);
-  if(old && Date.now()-old.at<CACHE_MS) return Promise.resolve(old.value);
-  if(!inflight.has(key)) inflight.set(key, loader().then(value=>{cache.set(key,{at:Date.now(),value});return value;}).finally(()=>inflight.delete(key)));
+  if(old && now-old.at<CACHE_MS) return Promise.resolve(old.value);
+  if(!inflight.has(key)) inflight.set(key, loader().then(value=>{
+    cache.set(key,{at:Date.now(),value});
+    if(cache.size>200)for(const cacheKey of cache.keys()){cache.delete(cacheKey);if(cache.size<=150)break;}
+    return value;
+  }).finally(()=>inflight.delete(key)));
   return inflight.get(key);
 }
 function raceCategory(name) {
@@ -123,12 +129,18 @@ async function loadRaces() {
   // scoping is applied safely to each subsequent market-catalogue request.
   const eventTypes=await rpc("listEventTypes",{filter:{}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"")}))
-    .filter(x=>/horse racing|greyhound racing|harness racing/i.test(x.name));
+    .filter(x=>/horse racing|thoroughbred|greyhound|harness|trotting|trot|pacing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
     const result=await fetchRaceCatalogue(type,from,to);
     return {type,markets:result.markets,errors:result.errors};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_type:g.type.name})));
+  console.info("BETFAIR_AU_RACING_EVENT_TYPES",JSON.stringify({
+    discovered:(eventTypes||[]).map(x=>String(x.eventType?.name||"")).filter(Boolean),
+    selected:types.map(x=>x.name),
+    catalogueMarkets:all.length,
+    marketsByType:Object.fromEntries(groups.map(g=>[g.type.name,g.markets.length]))
+  }));
   // Betfair can return HTTP 200 with TOO_MUCH_DATA for a batch of
   // market books. Split oversized batches recursively so one dense race
   // does not discard every other Australian market in the refresh.
