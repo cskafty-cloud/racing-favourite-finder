@@ -183,6 +183,38 @@ async function checkDashboardConnection(){
  })();
  return healthCheckInFlight;
 }
+async function loadHistory(){
+ try{
+  // Sync final race placings first, then render the persistent pick ledger.
+  const sync=await fetch("/api/history/sync",{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"}});
+  if(!sync.ok){const err=await sync.json().catch(()=>({}));throw new Error(err.error||"Results sync HTTP "+sync.status);}
+  const syncData=await sync.json();
+  const response=await fetch("/api/history",{cache:"no-store"});
+  if(!response.ok)throw new Error("History HTTP "+response.status);
+  const data=await response.json(),summary=data.summary||{};
+  const set=(id,value)=>{if($(id))$(id).textContent=value;};
+  set("histRaces",String(summary.races??0));
+  set("histWins",String(summary.wins??0));
+  set("histRate",summary.strikeRate==null?"—":Number(summary.strikeRate).toFixed(1)+"%");
+  set("histPending",String(summary.pending??0));
+  const record=(value)=>value&&Number(value.races)>0?
+   Number(value.races)+" settled · "+Number(value.wins||0)+" wins · "+Number(value.losses||0)+" losses · "+(value.strikeRate==null?"—":Number(value.strikeRate).toFixed(1)+"%"):
+   "0 settled · awaiting final results";
+  set("horseRecord",record(summary.horse));
+  set("dogRecord",record(summary.greyhound));
+  set("harnessRecord",record(summary.harness));
+  const rows=(data.picks||[]).slice(0,30);
+  if($("historyRows"))$("historyRows").innerHTML=rows.length?rows.map(p=>{
+   const state=p.status==="final"?(p.favouriteWon?"FAVOURITE WON":"FAVOURITE LOST"):"AWAITING RESULT";
+   const price=Number(p.selectedOdds)>1?"$"+Number(p.selectedOdds).toFixed(2):"price unavailable";
+   return '<div class="rf-sports-row"><b>'+esc(String(p.category||"racing").toUpperCase())+' · '+esc(p.venue||"Track")+' R'+esc(p.raceNumber??"?")+' · '+esc(p.runnerName||"Favourite")+'</b><span>'+esc(state)+' · '+esc(price)+'</span><div class="rf-muted">'+esc(p.priceSource||"Recorded market snapshot")+' · '+esc(fmtTime(p.startTime||p.selectedAt))+(p.winnerName?" · Winner: "+esc(p.winnerName):"")+(p.backfilledFromPreJumpSnapshot?" · recovered from pre-jump snapshot":"")+'</div></div>';
+  }).join(""):'<div class="empty">No pre-jump selections have been recorded yet. The app records verified favourites before the jump and settles them when MoviOdds confirms final results.</div>';
+  if($("historyRows"))$("historyRows").title="MoviOdds results checked: "+Number(syncData.checked||0)+" · newly settled: "+Number(syncData.settled||0)+" · pending: "+Number(syncData.pending||0);
+ }catch(error){
+  if($("historyRows")&&!$("historyRows").textContent.trim())$("historyRows").textContent="Results/history sync unavailable: "+error.message;
+  console.warn("RACING_HISTORY_SYNC_FAILED",error.message);
+ }
+}
 async function loadRaces(){
  // The health heartbeat is independent of the slower upstream race-feed request.
  void checkDashboardConnection();
@@ -347,8 +379,8 @@ function start(){
  void checkDashboardConnection();
  setInterval(checkDashboardConnection,30000);
  setInterval(()=>{if(lastServerCheckAt&&Date.now()-lastServerCheckAt>75000)setHeaderConnection("CONNECTION STALE");},10000);
- loadRaces();loadLucasFox();loadSportsFixtures();
- setInterval(loadRaces,2*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);loadBetfairSports();setInterval(loadBetfairSports,60*1000);
+ loadRaces().finally(()=>loadHistory());loadLucasFox();loadSportsFixtures();
+ setInterval(()=>loadRaces().finally(()=>loadHistory()),2*60*1000);setInterval(loadHistory,5*60*1000);setInterval(loadLucasFox,15*60*1000);setInterval(loadSportsFixtures,10*60*1000);loadBetfairSports();setInterval(loadBetfairSports,60*1000);
 }
 window.startFullDashboardFeeds=start;
 document.addEventListener("DOMContentLoaded",()=>{
