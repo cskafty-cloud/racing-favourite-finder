@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isEstimatedQuote, quoteAgeSeconds } = require("../market-quality");
+const { isEstimatedQuote, quoteAgeSeconds, quoteMarketAge } = require("../market-quality");
 
 test("ordinary timestamped bookmaker quote is not classified as estimated", () => {
   assert.equal(isEstimatedQuote({
@@ -72,4 +72,24 @@ test("missing and invalid runner quote timestamps cannot become fresh prices", (
     const stamp = q.last_update || q.updated_at || q.captured_at || q.timestamp;
     assert.equal(stamp ? quoteAgeSeconds(stamp, now) : null, null);
   }
+});
+
+test("market verification requires an individual quote timestamp", () => {
+  const now = Date.parse("2026-11-13T04:00:00.000Z");
+  assert.equal(quoteMarketAge({ updated_at: "2026-11-13T03:59:00.000Z" }, "win", now), 60);
+  assert.equal(quoteMarketAge({ feed_observed_at: "2026-11-13T03:59:00.000Z" }, "win", now), null);
+  assert.equal(quoteMarketAge({ age_seconds: 10 }, "win", now), null);
+  assert.equal(quoteMarketAge({ last_update: "not-a-date" }, "win", now), null);
+  assert.equal(quoteMarketAge({ last_update: "2026-11-13T04:02:00.000Z" }, "win", now), null);
+});
+
+test("WIN and PLACE timestamps are verified independently", () => {
+  const now = Date.parse("2026-11-13T04:00:00.000Z");
+  const q = {
+    last_update: "2026-11-13T03:59:00.000Z",
+    place_last_update: "2026-11-13T03:58:00.000Z"
+  };
+  assert.equal(quoteMarketAge(q, "win", now), 60);
+  assert.equal(quoteMarketAge(q, "place", now), 120);
+  assert.equal(quoteMarketAge({ last_update: q.last_update }, "place", now), null);
 });
