@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.13"
+$RffLauncherVersion = "2026-11-13.14"
 Set-Location $PSScriptRoot
 
 # Local credentials are encrypted with Windows DPAPI and bound to this user and PC.
@@ -70,7 +70,7 @@ function Get-ClipboardFeedToken {
   } catch {
     $candidate = ""
   }
-  if ($candidate -cmatch '^[A-Fa-f0-9]{64}$') { return $candidate }
+  if ($candidate.Length -ge 16 -and $candidate.Length -le 512 -and $candidate -notmatch '\s') { return $candidate }
   return $null
 }
 
@@ -101,8 +101,8 @@ function Load-EncryptedCredentials {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
       }
     }
-    if ([string]$values.BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
-      throw "Saved shared token is not valid."
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_FEED_TOKEN) -or [string]$values.BETFAIR_FEED_TOKEN -match '\s') {
+      throw "Saved shared token is empty or contains whitespace."
     }
     return $values
   } catch {
@@ -165,7 +165,7 @@ if ($railwayPresent.Count -gt 0) {
   }
   if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
       [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN) -or
-      ([string]$values.BETFAIR_FEED_TOKEN) -cnotmatch '^[A-Fa-f0-9]{64}$') {
+      ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_FEED_TOKEN) -or [string]$values.BETFAIR_FEED_TOKEN -match '\s')) {
     throw "Railway Betfair variables are incomplete or the shared token is not 64 hexadecimal characters. No credentials were saved."
   }
   Save-EncryptedCredentials $values
@@ -211,8 +211,8 @@ $env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
 $env:PORT = "8080"
 $values = $null
 
-if ($env:BETFAIR_FEED_TOKEN -cnotmatch '^[A-Fa-f0-9]{64}$') {
-  throw "The shared token is invalid. Adapter was not started."
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
 }
 Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
 
@@ -220,9 +220,9 @@ Write-Host "Credentials loaded into this process; secret values remain hidden." 
 $listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
   Select-Object -First 1
 if ($listener) {
-  $listenerPid = [int]$listener.OwningProcess
-  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $listenerPid" -ErrorAction SilentlyContinue
-  Write-Warning "Port 8080 is already occupied by PID $listenerPid."
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
   try {
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
     Write-Host "An adapter is already answering its health endpoint." -ForegroundColor Yellow
@@ -237,9 +237,9 @@ if ($listener) {
   if ($owner) {
     Write-Host "Process: $($owner.Name) | PID: $listenerPid" -ForegroundColor DarkGray
     if ($owner.Name -ieq "node.exe" -and $owner.CommandLine -match 'server\.js' -and $owner.CommandLine -match 'betfair-au-proxy') {
-      $stopChoice = Read-Host "This appears to be the existing Betfair adapter. Stop PID $listenerPid so the refreshed credentials can be used? [y/N]"
+      $stopChoice = Read-Host "This appears to be the existing Betfair adapter. Stop PID $portOwnerPid so the refreshed credentials can be used? [y/N]"
       if ($stopChoice -match '^(y|yes)$') {
-        Stop-Process -Id $listenerPid -Force
+        Stop-Process -Id $portOwnerPid -Force
         Start-Sleep -Seconds 2
         $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
         if ($stillListening) {
