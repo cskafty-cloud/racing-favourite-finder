@@ -1206,10 +1206,10 @@ function bookmakerKey(q) {
 function quoteAgeSecondsServer(q) {
   const direct=q?.age_seconds!=null&&Number.isFinite(Number(q.age_seconds))?Math.max(0,Number(q.age_seconds)):null;
   const stamp=q?.last_update||q?.updated_at||q?.captured_at||q?.timestamp;
-  const numeric=Number(stamp),ms=stamp==null?NaN:(Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp));
-  const stamped=Number.isFinite(ms)?Math.max(0,(Date.now()-ms)/1000):null;
-  const observed=q?.observed_at?Date.parse(q.observed_at):NaN;
-  const elapsed=Number.isFinite(observed)?Math.max(0,(Date.now()-observed)/1000):0;
+  const stamped=stamp==null?null:quoteAgeSeconds(stamp);
+  if(stamp!=null&&stamped==null)return null;
+  const elapsed=q?.observed_at?quoteAgeSeconds(q.observed_at):0;
+  if(q?.observed_at&&elapsed==null)return null;
   const agedDirect=direct==null?null:direct+elapsed;
   if(agedDirect!=null&&stamped!=null)return Math.max(agedDirect,stamped);
   if(agedDirect!=null)return agedDirect;
@@ -1217,8 +1217,8 @@ function quoteAgeSecondsServer(q) {
   // Public preview receipt time is a freshness window for the snapshot only,
   // not proof of when Sportsbet last changed the underlying price.
   if(q?.public_demo===true&&q?.feed_observed_at){
-    const received=Date.parse(q.feed_observed_at);
-    if(Number.isFinite(received))return Math.max(0,(Date.now()-received)/1000);
+    const received=quoteAgeSeconds(q.feed_observed_at);
+    if(received!=null)return received;
   }
   return null;
 }
@@ -1244,8 +1244,7 @@ function racingQuoteMaxAge(){return 180;}
 function strictMarketQuoteAge(q,stampFields,ageField){
   const stamp=stampFields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
   if(!stamp)return null;
-  const ms=Date.parse(stamp);if(!Number.isFinite(ms))return null;
-  const stamped=Math.max(0,(Date.now()-ms)/1000);
+  const stamped=quoteAgeSeconds(stamp);if(stamped==null)return null;
   const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
   return direct==null?stamped:Math.max(stamped,direct);
 }
@@ -1254,10 +1253,7 @@ function racingMarketAge(q,market){
   const ageField=market==="place"?"place_age_seconds":"age_seconds";
   const stamp=fields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
   if(stamp==null)return null;
-  const numeric=Number(stamp);
-  const ms=Number.isFinite(numeric)&&numeric>1000000000?(numeric>1000000000000?numeric:numeric*1000):Date.parse(stamp);
-  if(!Number.isFinite(ms))return null;
-  const stamped=Math.max(0,(Date.now()-ms)/1000);
+  const stamped=quoteAgeSeconds(stamp);if(stamped==null)return null;
   const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
   return direct==null?stamped:Math.max(stamped,direct);
 }
