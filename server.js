@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
-const { isEstimatedQuote, quoteAgeSeconds } = require("./market-quality");
+const { isEstimatedQuote, quoteAgeSeconds, quoteMarketAge } = require("./market-quality");
 const { trimInsertionOrderedMap, trimMoviOddsFixtures, trimQuoteList,
   isMemoryPressure, getNodeRssSoftLimitMB, getCgroupMemorySoftLimitMB,
   MEMORY_CLEANUP_INTERVAL_MS, MOVI_WS_QUOTES_PER_FIXTURE_LIMIT } = require("./memory-guards");
@@ -1249,18 +1249,9 @@ function strictMarketQuoteAge(q,stampFields,ageField){
   return direct==null?stamped:Math.max(stamped,direct);
 }
 function racingMarketAge(q,market){
-  // Verified prices require an actual market/runner quote timestamp.
-  // Adapter receipt time and race-card updated_at are deliberately not accepted.
-  const fields=market==="place"
-    ?["place_last_update","place_updated_at","place_captured_at"]
-    :["last_update","updated_at","captured_at","timestamp"];
-  const ageField=market==="place"?"place_age_seconds":"age_seconds";
-  const stamp=fields.map(k=>q?.[k]).find(v=>v!=null&&v!=="");
-  if(stamp==null)return null;
-  const stamped=quoteAgeSeconds(stamp);
-  if(stamped==null)return null;
-  const direct=q?.[ageField]!=null&&Number.isFinite(Number(q[ageField]))?Math.max(0,Number(q[ageField])):null;
-  return direct==null?stamped:Math.max(stamped,direct);
+  // Strictly require the quote's own market timestamp; board refresh and
+  // adapter receipt times cannot make an untimestamped price verified.
+  return quoteMarketAge(q,market);
 }
 function runnerMarketQuotes(runner,market="win"){
   const runnerName=runner?.name||runner?.runner_name||runner?.horse_name||runner?.greyhound_name||"";
