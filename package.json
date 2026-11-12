@@ -47,5 +47,13 @@
     "portable": {
       "artifactName": "Racing-Favourite-Finder-${version}-Windows.${ext}"
     }
+  },
+  "overrides": {
+    "app-builder-lib": {
+      "minimatch": "^11.0.1"
+    },
+    "@electron/universal": {
+      "minimatch": "^11.0.1"
+    }
   }
 }
