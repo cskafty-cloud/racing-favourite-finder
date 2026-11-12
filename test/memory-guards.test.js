@@ -7,6 +7,7 @@ const {
   MOVI_WS_QUOTES_PER_FIXTURE_LIMIT,
   MEMORY_SOFT_LIMIT_BYTES,
   CGROUP_MEMORY_SOFT_LIMIT_MB,
+  getNodeRssSoftLimitMB,
   getCgroupMemorySoftLimitMB,
   MEMORY_CLEANUP_INTERVAL_MS,
   isMemoryPressure,
@@ -56,16 +57,19 @@ test("quote arrays are bounded while preserving the newest entries",()=>{
   assert.deepEqual(trimQuoteList([1,2,3],5),[1,2,3]);
 });
 
-test("memory pressure cleanup starts well below the Railway container limit",()=>{
+test("memory thresholds scale safely to a 560 MB Railway allocation",()=>{
  assert.equal(MEMORY_SOFT_LIMIT_BYTES,384*1024*1024);
  assert.equal(CGROUP_MEMORY_SOFT_LIMIT_MB,600);
  assert.equal(MEMORY_CLEANUP_INTERVAL_MS,30000);
- assert.equal(isMemoryPressure({rssBytes:383*1024*1024,cgroupCurrentMB:599}),false);
- assert.equal(isMemoryPressure({rssBytes:384*1024*1024,cgroupCurrentMB:100}),true);
- assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:600}),true);
+ assert.equal(getNodeRssSoftLimitMB(534),213);
+ assert.equal(getCgroupMemorySoftLimitMB(534),333);
+ assert.equal(isMemoryPressure({rssBytes:212*1024*1024,cgroupCurrentMB:332,cgroupLimitMB:534}),false);
+ assert.equal(isMemoryPressure({rssBytes:213*1024*1024,cgroupCurrentMB:100,cgroupLimitMB:534}),true);
+ assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:333,cgroupLimitMB:534}),true);
+ assert.equal(getNodeRssSoftLimitMB(954),381);
  assert.equal(getCgroupMemorySoftLimitMB(954),596);
- assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:595,cgroupLimitMB:954}),false);
- assert.equal(isMemoryPressure({rssBytes:100*1024*1024,cgroupCurrentMB:596,cgroupLimitMB:954}),true);
+ assert.equal(getNodeRssSoftLimitMB(2048),384);
  assert.equal(getCgroupMemorySoftLimitMB(2048),600);
+ assert.equal(getNodeRssSoftLimitMB(null),384);
  assert.equal(getCgroupMemorySoftLimitMB(null),600);
 });
