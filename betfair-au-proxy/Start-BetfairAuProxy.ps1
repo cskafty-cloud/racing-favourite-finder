@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.15"
+$RffLauncherVersion = "2026-11-13.16"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -63,6 +63,17 @@ function Offer-CopySessionToken([string]$SessionToken) {
       Write-Host "Session token copied to clipboard. Paste it only into Railway Production BETFAIR_SESSION_TOKEN; do not send it in chat." -ForegroundColor Yellow
     } catch {
       Write-Warning "Could not access the clipboard. The new session is saved locally; update Railway BETFAIR_SESSION_TOKEN using a secure method."
+    }
+  }
+}
+function Offer-CopyFeedToken([string]$FeedToken) {
+  $choice = Read-Host "Copy the saved shared feed token to the Windows clipboard so you can restore Railway BETFAIR_FEED_TOKEN? [y/N]"
+  if ($choice -match "^(y|yes)$") {
+    try {
+      Set-Clipboard -Value $FeedToken -ErrorAction Stop
+      Write-Host "Saved shared feed token copied to clipboard. Paste it only into Railway Production BETFAIR_FEED_TOKEN; do not send it in chat." -ForegroundColor Yellow
+    } catch {
+      Write-Warning "Could not access the clipboard. The encrypted saved token remains unchanged."
     }
   }
 }
@@ -206,6 +217,8 @@ if ($railwayPresent.Count -gt 0) {
   Write-Host "No saved credential file found. Enter credentials once to create it."
   $values = Read-NewCredentials
 }
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
 
 $env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
 $env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
