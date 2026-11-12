@@ -342,9 +342,11 @@ const lastSnapshotAt = new Map();
 
 // Snapshots were growing past 20k entries (every race, every ~20s), which pushed the
 // Node heap over its limit and crash-looped the service. Keep the archive small.
-const MARKET_HISTORY_LIMIT = 3000;
+const MARKET_HISTORY_LIMIT = 1200;
 const MARKET_HISTORY_DAYS = 3;
-const SNAPSHOT_MIN_INTERVAL_MS = 60000;
+const MARKET_HISTORY_RUNNER_LIMIT = 40;
+const MARKET_HISTORY_QUOTES_PER_RUNNER_LIMIT = 6;
+const SNAPSHOT_MIN_INTERVAL_MS = 120000;
 const SNAPSHOT_WINDOW_MS = 90 * 60000;
 let historyCache = null;
 
@@ -379,7 +381,7 @@ async function readLocalHistory() {
 async function writeLocalHistory(history) {
   await fs.mkdir(DATA_DIR, { recursive: true });
   const tmp = HISTORY_FILE + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(history, null, 2));
+  await fs.writeFile(tmp, JSON.stringify(history));
   await fs.rename(tmp, HISTORY_FILE);
 }
 async function readHistory() {
@@ -401,7 +403,7 @@ async function readHistory() {
       if (Number.isFinite(localUpdated) && (!Number.isFinite(remoteUpdated) || localUpdated > remoteUpdated)) {
         historyCache = local;
         try {
-          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
+          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local), ContentType: "application/json" }));
           console.info("R2_HISTORY_REPAIR_WRITE_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
         } catch (repairError) {
           console.warn("R2_HISTORY_REPAIR_WRITE_FAILED", String(repairError.message || repairError).slice(0,240));
@@ -420,7 +422,7 @@ async function readHistory() {
         local.updatedAt = local.updatedAt || new Date().toISOString();
         await writeLocalHistory(local);
         try {
-          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
+          await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local), ContentType: "application/json" }));
           console.info("R2_HISTORY_INITIAL_MIGRATION_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
         } catch (migrationError) {
           console.warn("R2_HISTORY_INITIAL_MIGRATION_FAILED", String(migrationError.message || migrationError).slice(0,240));
@@ -452,7 +454,7 @@ async function saveHistory(history) {
       try {
         const { PutObjectCommand } = require("@aws-sdk/client-s3");
         const client = await getR2Client();
-        await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(normalized, null, 2), ContentType: "application/json" }));
+        await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(normalized), ContentType: "application/json" }));
         console.info("R2_HISTORY_WRITE_OK", JSON.stringify({ picks: normalized.picks.length, marketSnapshots: normalized.marketSnapshots.length }));
       } catch (error) {
         console.warn("R2_HISTORY_WRITE_FAILED", JSON.stringify({ localBackupSaved:true, message:String(error.message||error).slice(0,240) }));
@@ -1126,10 +1128,10 @@ async function recordMarketSnapshots(races, capturedAt) {
   history.marketSnapshots = history.marketSnapshots.filter(x => Date.parse(x.capturedAt) >= cutoff);
   let added = 0;
   for (const race of races) {
-    const runners = (race.runners || []).map(r => ({
+    const runners = (race.runners || []).slice(0,MARKET_HISTORY_RUNNER_LIMIT).map(r => ({
       name:r.name || r.runner_name || r.horse_name || r.greyhound_name || "Runner",
       number:r.number ?? r.runner_number ?? null,
-      quotes:runnerQuotes(r).map(q => ({
+      quotes:runnerQuotes(r).slice(0,MARKET_HISTORY_QUOTES_PER_RUNNER_LIMIT).map(q => ({
         bookmaker:q.bookmaker || q.name || q.key || "Bookmaker",
         price:Number(q.win_price ?? q.win ?? q.price),
         ageSeconds:q.age_seconds ?? null
@@ -1525,7 +1527,9 @@ async function loadOddsDataSport(sport, options={}) {
    }
  });
  const result={at:Date.now(),rows:events,errors,provider:"Odds Data API / Bet365"};
+ oddsDataSportCache.delete(cacheKey);
  oddsDataSportCache.set(cacheKey,result);
+ trimInsertionOrderedMap(oddsDataSportCache,40,32);
  console.info("ODDS_DATA_SPORT",JSON.stringify({sport:sport.title,id:sport.id,events:events.length,live:events.filter(x=>x.in_play).length,priced:events.filter(x=>x.bookmakers.length).length,errors:errors.length,errorSamples:errors.slice(0,3),bulk:!!options.bulk}));
  return result;
 }
@@ -3008,7 +3012,9 @@ app.get("/api/sports/results", async (req,res) => {
     const payload={sport_id:sportId,results:finished,fetchedAt:new Date().toISOString(),
       provider:"Odds Data API / Bet365",requested:fixtures.length,
       note:"Final scores and match details are returned by the Bet365 results endpoint. Only completed fixtures returned by the provider are shown."};
+    bet365ResultsCache.delete(sportId);
     bet365ResultsCache.set(sportId,{at:Date.now(),payload});
+    trimInsertionOrderedMap(bet365ResultsCache,40,32);
     res.set("Cache-Control","no-store"); return res.json(payload);
   } catch(err) {
     return res.status(503).json({error:err.message,provider:"Odds Data API / Bet365",sport_id:sportId});
