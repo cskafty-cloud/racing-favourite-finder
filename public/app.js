@@ -337,7 +337,7 @@ function renderSportsBookmaker(event,book) {
     if(!rows.length)return "";
     return '<div class="rf-market-title">'+esc(m.name||m.key||"Market")+'</div>'+rows.map(o=>{
       const a=sportQuoteAge(o,book);
-      return '<div class="rf-price-line"><span>'+esc(o.name||o.label||"Selection")+(o.line!=null?' · '+esc(o.line):'')+(favourite&&m===main&&o===favourite?' · FAVOURITE':'')+'</span><b>$'+Number(o.price).toFixed(2)+'</b><span class="rf-muted">'+esc(a==null?"age unknown":a>=180?"STALE "+Math.round(a)+"s":Math.round(a)+"s old")+'</span></div>';
+      return '<div class="rf-price-line"><span>'+esc(o.name||o.label||"Selection")+(o.line!=null?' · '+esc(o.line):'')+(favourite&&m===main&&o===favourite?' · FAVOURITE':'')+'</span><b>$'+Number(o.price).toFixed(2)+'</b><span class="rf-muted">'+esc((o.last_update||o.updated_at||o.timestamp||book.last_update)?"source "+fmtTime(o.last_update||o.updated_at||o.timestamp||book.last_update)+" · ":"")+(a==null?"age unknown":a>=180?"STALE "+Math.round(a)+"s":Math.round(a)+"s old")+'</span></div>';
     }).join("");
   }).join("");
   const source=String(book.source||book.provider||event._provider||"Source not supplied");
