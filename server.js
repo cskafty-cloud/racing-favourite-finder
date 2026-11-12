@@ -308,23 +308,75 @@ let historyCache = null;
 
 app.use(express.static(path.join(__dirname, "public")));
 
+const R2_CONFIGURED = ["R2_ACCOUNT_ID","R2_BUCKET_NAME","R2_ACCESS_KEY_ID","R2_SECRET_ACCESS_KEY"].every(key => Boolean(process.env[key]));
+let r2ClientPromise = null;
+async function getR2Client() {
+  if (!R2_CONFIGURED) return null;
+  if (!r2ClientPromise) r2ClientPromise = (async () => {
+    const { S3Client } = require("@aws-sdk/client-s3");
+    return new S3Client({
+      region: "auto",
+      endpoint: "https://" + process.env.R2_ACCOUNT_ID + ".r2.cloudflarestorage.com",
+      credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY }
+    });
+  })();
+  return r2ClientPromise;
+}
+function normalizeHistory(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("History storage contains invalid JSON structure.");
+  if (!Array.isArray(value.picks)) value.picks = [];
+  if (!Array.isArray(value.marketSnapshots)) value.marketSnapshots = [];
+  value.marketSnapshots = value.marketSnapshots.slice(-MARKET_HISTORY_LIMIT);
+  return value;
+}
+async function readLocalHistory() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try { return normalizeHistory(JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"))); }
+  catch (error) { if (error.code === "ENOENT") return { picks: [], marketSnapshots: [] }; throw error; }
+}
+async function writeLocalHistory(history) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tmp = HISTORY_FILE + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(history, null, 2));
+  await fs.rename(tmp, HISTORY_FILE);
+}
 async function readHistory() {
   if (historyCache) return historyCache;
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    const value = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
-    if (!Array.isArray(value.picks)) value.picks = [];
-    if (!Array.isArray(value.marketSnapshots)) value.marketSnapshots = [];
-    value.marketSnapshots = value.marketSnapshots.slice(-MARKET_HISTORY_LIMIT);
-    return (historyCache = value);
-  } catch (e) { if (e.code === "ENOENT") return (historyCache = { picks: [], marketSnapshots: [] }); throw e; }
+  if (R2_CONFIGURED) {
+    const { GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
+    const client = await getR2Client();
+    try {
+      const response = await client.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json" }));
+      const chunks = [];
+      for await (const chunk of response.Body) chunks.push(Buffer.from(chunk));
+      const remote = normalizeHistory(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      historyCache = remote;
+      // Keep the mounted volume as a recoverable local backup while R2 is being validated.
+      await writeLocalHistory(remote);
+      console.info("R2_HISTORY_READ_OK", JSON.stringify({ picks: remote.picks.length, marketSnapshots: remote.marketSnapshots.length }));
+      return historyCache;
+    } catch (error) {
+      const missing = error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404;
+      if (!missing) throw new Error("Cloudflare R2 history read failed; local history was not substituted: " + error.message);
+      const local = await readLocalHistory();
+      await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(local, null, 2), ContentType: "application/json" }));
+      console.info("R2_HISTORY_INITIAL_MIGRATION_OK", JSON.stringify({ picks: local.picks.length, marketSnapshots: local.marketSnapshots.length }));
+      return (historyCache = local);
+    }
+  }
+  return (historyCache = await readLocalHistory());
 }
 async function saveHistory(history) {
   writeQueue = writeQueue.then(async () => {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const tmp = HISTORY_FILE + ".tmp";
-    await fs.writeFile(tmp, JSON.stringify(history, null, 2));
-    await fs.rename(tmp, HISTORY_FILE);
+    const normalized = normalizeHistory(history);
+    if (R2_CONFIGURED) {
+      const { PutObjectCommand } = require("@aws-sdk/client-s3");
+      const client = await getR2Client();
+      await client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: "history.json", Body: JSON.stringify(normalized, null, 2), ContentType: "application/json" }));
+      console.info("R2_HISTORY_WRITE_OK", JSON.stringify({ picks: normalized.picks.length, marketSnapshots: normalized.marketSnapshots.length }));
+    }
+    await writeLocalHistory(normalized);
+    historyCache = normalized;
   });
   return writeQueue;
 }
