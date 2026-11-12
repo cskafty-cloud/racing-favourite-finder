@@ -108,8 +108,28 @@ if ($env:BETFAIR_FEED_TOKEN -notmatch '^[a-fA-F0-9]{64}$') {
 }
 
 Write-Host "Configuration loaded into this PowerShell process (secret values hidden)." -ForegroundColor Green
+Write-Host "Starting Tailscale Funnel with the installed executable (avoids the blocked tailscale.ps1 shim)..."
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $programFilesTailscale = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $programFilesTailscale) { $tailscaleExe = $programFilesTailscale }
+}
+if ($tailscaleExe) {
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. In another PowerShell window, run: & \"$env:ProgramFiles\Tailscale\tailscale.exe\" funnel --bg 8080"
+  }
+} else {
+  Write-Warning "tailscale.exe was not found. Install/sign in to Tailscale, then run: & \"$env:ProgramFiles\Tailscale\tailscale.exe\" funnel --bg 8080"
+}
+Write-Host ""
 Write-Host "Starting local adapter on 127.0.0.1:8080. Keep this window open."
 Write-Host "Health check: http://127.0.0.1:8080/health"
 Write-Host "Protected routes: /api/races and /api/sports"
+Write-Host "Credential file: $CredentialFile (encrypted; do not upload or share)"
 Write-Host ""
 node server.js
