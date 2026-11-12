@@ -105,3 +105,11 @@ Tailscale Funnel is a third-party service and requires a Tailscale login and ena
 ## Betfair adapter credential setup
 
 See [`betfair-au-proxy/CONFIGURATION-TEMPLATE.md`](betfair-au-proxy/CONFIGURATION-TEMPLATE.md) for the exact three-value setup, where each value comes from, and how to test the protected adapter endpoints. The Windows launcher prompts for these values securely; do not put real secrets in source code or commit them to GitHub.
+
+
+## Data-quality safeguards
+
+- Estimated, indicative, projected, modelled, consensus, synthetic and predicted prices are excluded from verified bookmaker favourites and top-tip rankings.
+- Exchange BACK/LAY offers remain separate from fixed bookmaker WIN/PLACE prices.
+- A bookmaker quote is eligible for verified racing rankings only when its market is supported, its source timestamp is known, and it is younger than 180 seconds.
+- Run `npm test` to execute the market-quality regression tests. The GitHub Actions workflows run these tests and JavaScript syntax checks before release builds.
