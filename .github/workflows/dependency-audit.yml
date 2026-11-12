@@ -1,4 +1,5 @@
 name: Dependency security audit
+# Maintains a complete lockfile and reports vulnerabilities in the resolved tree.
 
 on:
   push:
