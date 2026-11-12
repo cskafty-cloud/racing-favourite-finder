@@ -15,6 +15,7 @@ function addStyles(){
  .rf-race-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
  .rf-race-title{font-size:17px;font-weight:800}.rf-muted{color:var(--muted,#9aa8b9);font-size:12px}
  .rf-fav{margin:12px 0;padding:10px 12px;border-radius:10px;background:rgba(90,140,190,.09);border:1px solid var(--line,#293342)}
+ .rf-exchange-fav{border-color:rgba(233,189,101,.55);background:rgba(233,189,101,.07)}
  .rf-fav strong{display:block;margin-bottom:3px}.rf-price-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
  .rf-price-box{border:1px solid var(--line,#293342);border-radius:10px;padding:10px}
  .rf-price-box h4{margin:0 0 8px;font-size:13px}.rf-price-line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid rgba(130,145,165,.16);font-size:12px}
@@ -43,18 +44,7 @@ function sourceDetails(q){
   if(safeUrl){try{host=new URL(safeUrl).hostname.replace(/^www\./,"")}catch{}}
   return {source,host,url:safeUrl};
  }
- function exchangeEstimate(rows,market){
- const qs=rows.filter(q=>q.exchange===true&&q.market===market&&Number(q.price)>1);
- const back=qs.find(q=>String(q.price_side||'').toUpperCase()==='BACK');
- const lay=qs.find(q=>String(q.price_side||'').toUpperCase()==='LAY');
- const b=Number(back?.price),l=Number(lay?.price),reference=b>1&&l>1?(b+l)/2:b>1?b:null;
- if(!(reference>1))return null;
- const stamp=back?.captured_at||lay?.captured_at||back?.observed_at||lay?.observed_at||null;
- const age=stamp?Math.max(0,(Date.now()-Date.parse(stamp))/1000):null;
- if(age!=null&&(!Number.isFinite(age)||age>180))return null;
- return {price:reference/1.05,low:reference/1.08,high:reference/1.03,stamp,age};
-}
-function renderRunnerMarkets(r){
+ function renderRunnerMarkets(r){
   const rows=auditRows(r);if(!rows.length)return "";
   // Same bookmaker from different providers remains a separate, attributable quote group.
   const groups=new Map();
@@ -77,27 +67,27 @@ function renderRunnerMarkets(r){
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange WIN · BACK / LAY":"Fixed WIN")+'</div>'+(line("WIN","verified")||'<div class="rf-muted">No verified WIN quote from this source</div>')+line("WIN","unverified")+'</div>'+
     '<div class="rf-market-section"><div class="rf-market-title">'+(isExchange?"Exchange PLACE · BACK / LAY":"Fixed PLACE")+'</div>'+(line("PLACE","verified")||'<div class="rf-muted">No verified PLACE quote from this source</div>')+line("PLACE","unverified")+'</div></div>';
   }).join("")+
-  ["WIN","PLACE"].map(m=>{
-   const q=exchangeEstimate(rows,m);if(!q)return "";
-   return '<div class="rf-price-box"><h4>'+m+' estimated bookmaker-equivalent · $' +q.price.toFixed(2)+' <b>ESTIMATE</b></h4><div class="rf-muted">Range $' +q.low.toFixed(2)+'–$' +q.high.toFixed(2)+' · assumed 5% margin · Betfair Exchange delayed source · '+esc(fmtTime(q.stamp))+' · '+esc(fmtAge(q.age))+' · NOT Sportsbet/Bet365 odds</div></div>';
-  }).join("");
+  
  }
 function renderRace(r){
- const originalFav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
- const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
- const estimatedFav=runners.map(runner=>({runner,q:exchangeEstimate(auditRows(runner),"WIN")})).filter(x=>x.q).sort((a,b)=>a.q.price-b.q.price)[0]||null;
- const fav=originalFav.status==="unpriced"&&estimatedFav?{status:"unverified",label:"ESTIMATED EXCHANGE FAVOURITE",name:estimatedFav.runner.name||"Runner",number:estimatedFav.runner.number??null,price:estimatedFav.q.price,priceSource:"Betfair Exchange-derived estimate",estimateRange:[estimatedFav.q.low,estimatedFav.q.high],estimateCapturedAt:estimatedFav.q.stamp}:originalFav;
- const marketHtml=runners.map(x=>renderRunnerMarkets(x)).filter(Boolean).join("");
- const favPrice=fav.price!=null?" · $"+Number(fav.price).toFixed(2):"";
- const favSource=fav.priceSource?" · "+esc(fav.priceSource):"";
- const favName=fav.name?esc(fav.name)+(fav.number!=null?" (#"+esc(fav.number)+")":""):"No named favourite supplied by feed";
- const favClass=fav.status==="verified"?"verified":fav.status==="unverified"?"unverified":"";
- return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(r.venue||r.track||"Race meeting")+' · R'+esc(r.race_number??"?")+'</div><div class="rf-muted">'+esc(String(r.category||r.code||"Racing").toUpperCase())+' · '+esc(fmtTime(r.start_time||r.commence_time))+' · '+esc(r.status||"Scheduled")+'</div></div><span class="rf-muted">'+runners.length+' active runners</span></div>'+
-  '<div class="rf-fav"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
-  (fav.status==="unverified"?(fav.estimateRange?'<div class="rf-muted">Estimated from Betfair Exchange · range $'+fav.estimateRange[0].toFixed(2)+'–$'+fav.estimateRange[1].toFixed(2)+' · '+esc(fmtTime(fav.estimateCapturedAt))+' · NOT Sportsbet/Bet365 odds.</div>':'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>'):fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
-  (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
-  '<div class="rf-b337-crosscheck"><b>B337 · FREE PUBLIC REFERENCE</b><div class="rf-muted">Use B337 as a separate reference for publicly accessible racing information. Compare Sportsbet and TAB prices manually where B337 displays them. B337 prices are imported only if an authorised machine-readable public source becomes available. No login bypass or protected-data scraping is used.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
-  '</article>';
+  const fav=r.favourite||{status:"unpriced",label:"FAVOURITE NOT IDENTIFIED · UNPRICED"};
+  const runners=(r.runners||[]).filter(x=>!x.scratched&&!x.suspended&&!/scratched|removed|suspended/i.test(String(x.status||"")));
+  const exchangeFav=runners.flatMap(runner=>auditRows(runner).filter(q=>q.exchange===true&&q.market==="WIN"&&
+    String(q.price_side||"").toUpperCase()==="BACK"&&Number(q.price)>1&&
+    Number.isFinite(Number(q.age_seconds))&&Number(q.age_seconds)>=0&&Number(q.age_seconds)<=180).map(q=>({runner,q})))
+    .sort((x,y)=>Number(x.q.price)-Number(y.q.price))[0]||null;
+  const marketHtml=runners.map(x=>renderRunnerMarkets(x)).filter(Boolean).join("");
+  const favPrice=fav.price!=null?" · $"+Number(fav.price).toFixed(2):"";
+  const favSource=fav.priceSource?" · "+esc(fav.priceSource):"";
+  const favName=fav.name?esc(fav.name)+(fav.number!=null?" (#"+esc(fav.number)+")":""):"No named favourite supplied by feed";
+  const favClass=fav.status==="verified"?"verified":fav.status==="unverified"?"unverified":"";
+  return '<article class="rf-race"><div class="rf-race-head"><div><div class="rf-race-title">'+esc(r.venue||r.track||"Race meeting")+' · R'+esc(r.race_number??"?")+'</div><div class="rf-muted">'+esc(String(r.category||r.code||"Racing").toUpperCase())+' · '+esc(fmtTime(r.start_time||r.commence_time))+' · '+esc(r.status||"Scheduled")+'</div></div><span class="rf-muted">'+runners.length+' active runners</span></div>'+
+   '<div class="rf-fav"><strong class="'+favClass+'">'+esc(fav.label||"FAVOURITE")+'</strong>'+favName+favPrice+favSource+
+   (fav.status==="unverified"?'<div class="rf-muted">Candidate only — excluded from verified bookmaker rankings.</div>':fav.status==="unpriced"?'<div class="rf-muted">No verified fixed WIN quote is available for this favourite.</div>':'<div class="rf-muted">Selected from fresh fixed WIN quotes only.</div>')+'</div>'+
+   (exchangeFav?'<div class="rf-fav rf-exchange-fav"><strong>BETFAIR EXCHANGE MARKET FAVOURITE · WIN BACK</strong>'+esc(exchangeFav.runner.name||"Runner")+' · $'+Number(exchangeFav.q.price).toFixed(2)+'<div class="rf-muted">Actual available Exchange BACK price · delayed up to '+esc(exchangeFav.q.source_delay_max_seconds||180)+'s · source publish time '+(exchangeFav.q.captured_at?esc(fmtTime(exchangeFav.q.captured_at)):"not supplied")+' · not a fixed bookmaker price.</div></div>':'')+
+   (marketHtml?'<div class="rf-price-groups">'+marketHtml+'</div>':'<div class="rf-empty">No fixed WIN or PLACE prices returned for active runners. The race remains listed as unpriced.</div>')+
+   '<div class="rf-b337-crosscheck"><b>B337 · FREE PUBLIC REFERENCE</b><div class="rf-muted">Use B337 as a separate reference for publicly accessible racing information. Compare Sportsbet and TAB prices manually where B337 displays them. B337 prices are imported only if an authorised public machine-readable source becomes available. No login bypass or protected-data scraping is used.</div><a href="https://www.b337.bet/pricing" target="_blank" rel="noopener noreferrer">Open B337 free account / pricing information ↗</a></div>'+
+   '</article>';
 }
 function setHeaderConnection(state){
  const label=$("feedStatus"),dot=document.querySelector(".top-right .live-dot");
@@ -152,9 +142,14 @@ function renderRaces(data){
  renderBestTips(active);
 }
 function renderBestTips(list){
- const ranked=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&!x.fav.previewOnly&&Number(x.fav.signalScore||0)>=28).sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)||Number(a.fav.price)-Number(b.fav.price)).slice(0,10);
- const raceHtml=ranked.map((x,i)=>'<div class="rf-sports-row"><b>#'+(i+1)+' · '+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · confidence '+esc(x.fav.signalScore)+'/100</span><div class="rf-muted">'+esc(String(x.race.category||x.race.code||"Racing").toUpperCase())+' · '+esc(x.fav.priceSource||"Verified fixed WIN")+' · '+Number(x.fav.quoteCount||0)+' independent bookmaker source(s) · '+(Number(x.fav.quoteCount||0)>1?Number(x.fav.spreadPct||0).toFixed(1)+"% price spread":"no cross-book spread available")+' · '+esc(fmtTime(x.race.start_time||x.race.commence_time))+'</div></div>').join("");
- if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">FRESH FIXED-WIN SHORTLIST · Timestamped verified bookmaker prices only. Single-source picks are limited confirmation; exchange, estimates and public previews are excluded. Confidence is data quality, not a win probability.</div>'+(raceHtml||'<div class="rf-empty">No fresh verified bookmaker favourites currently qualify.</div>');
+  const ranked=list.map(r=>({race:r,fav:r.favourite})).filter(x=>x.fav?.status==="verified"&&!x.fav.previewOnly&&Number(x.fav.signalScore||0)>=28).sort((a,b)=>(b.fav.signalScore||0)-(a.fav.signalScore||0)||Number(a.fav.price)-Number(b.fav.price)).slice(0,10);
+  const raceHtml=ranked.map((x,i)=>'<div class="rf-sports-row"><b>#'+(i+1)+' · '+esc(x.race.venue||"Race")+' R'+esc(x.race.race_number??"?")+' · '+esc(x.fav.name)+'</b><span>$'+Number(x.fav.price).toFixed(2)+' · '+esc(x.fav.signalLabel||"Verified")+' · confidence '+esc(x.fav.signalScore)+'/100</span><div class="rf-muted">'+esc(String(x.race.category||x.race.code||"Racing").toUpperCase())+' · '+esc(x.fav.priceSource||"Verified fixed WIN")+' · '+Number(x.fav.quoteCount||0)+' independent bookmaker source(s) · '+(Number(x.fav.quoteCount||0)>1?Number(x.fav.spreadPct||0).toFixed(1)+"% price spread":"no cross-book spread available")+' · '+esc(fmtTime(x.race.start_time||x.race.commence_time))+'</div></div>').join("");
+  const now=Date.now();
+  const exchangeSports=betfairSportsEvents.filter(e=>e.favourite&&Number(e.favourite.price)>1&&
+    Number.isFinite(Date.parse(e.capturedAt||""))&&now-Date.parse(e.capturedAt)<=180000&&now-Date.parse(e.capturedAt)>=-60000)
+    .sort((a,b)=>Date.parse(a.startTime||0)-Date.parse(b.startTime||0)).slice(0,10);
+  const sportsHtml=exchangeSports.map((e,i)=>'<div class="rf-sports-row"><b>EXCHANGE #'+(i+1)+' · '+esc(e.event||"Event")+' · '+esc(e.favourite.name)+'</b><span>$'+Number(e.favourite.price).toFixed(2)+' · BACK · '+(e.inPlay?"IN-PLAY":"UPCOMING")+'</span><div class="rf-muted">'+esc(e.sport||"Sport")+' · '+esc(e.marketName||"Market")+' · Betfair Exchange delayed up to 180s · '+esc(fmtTime(e.capturedAt))+'</div></div>').join("");
+  if($("bestTipsList"))$("bestTipsList").innerHTML='<div class="rf-muted">RACING SHORTLIST · Fresh, timestamped verified fixed-WIN bookmaker quotes only. Confidence measures data quality, not a win probability. Exchange prices are kept separate.</div>'+(raceHtml||'<div class="rf-empty">No fresh verified bookmaker racing favourites currently qualify.</div>')+'<div class="rf-market-title">SPORTS MARKET FAVOURITES · BETFAIR EXCHANGE BACK (DELAYED)</div><div class="rf-muted">These are actual available Exchange BACK prices, not bookmaker odds or predictions.</div>'+(sportsHtml||'<div class="rf-empty">No fresh priced Exchange sports favourites currently qualify.</div>');
 }
 async function checkDashboardConnection(){
  if(healthCheckInFlight)return healthCheckInFlight;
@@ -257,9 +252,7 @@ async function loadBetfairSports(){
    const runnerRows=runners.map(r=>{
     const back=r.back?"$"+Number(r.back.price).toFixed(2)+" · size "+(r.back.availableSize==null?"—":Number(r.back.availableSize).toFixed(2)):"—";
     const lay=r.lay?"$"+Number(r.lay.price).toFixed(2)+" · size "+(r.lay.availableSize==null?"—":Number(r.lay.availableSize).toFixed(2)):"—";
-    const b=Number(r.back?.price),l=Number(r.lay?.price),ref=b>1?(l>1?(b+l)/2:b):null;
-    const est=ref&&Number.isFinite(ref)?' · EST. $' +(ref/1.05).toFixed(2)+' (range $' +(ref/1.08).toFixed(2)+'–$' +(ref/1.03).toFixed(2)+')':"";
-    return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+est+'</span></div>';
+    return '<div class="rf-price-line"><span>'+esc(r.name)+(favourite&&favourite.name===r.name?" · MARKET FAVOURITE":"")+'</span><span>BACK '+back+' &nbsp; LAY '+lay+'</span></div>';
    }).join("");
    const favHtml=favourite?'<div class="rf-fav"><strong>EXCHANGE MARKET FAVOURITE · BACK</strong>'+esc(favourite.name)+' · $'+Number(favourite.price).toFixed(2)+'<div class="rf-muted">Lowest available BACK price in this market; not a prediction or guaranteed winner.</div></div>':'<div class="rf-muted">No available BACK offer; no favourite calculated.</div>';
    const pricesHtml=runnerRows?'<div class="rf-market-section">'+runnerRows+'</div>':'<div class="rf-empty">No available BACK/LAY offers returned for this market.</div>';
