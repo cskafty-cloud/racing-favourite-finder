@@ -1568,46 +1568,27 @@ async function probeBetfairAdapterFeed(url, kind) {
   }
 }
 let betfairHealthCache={at:0,data:null};
-app.get("/api/health", async (_req,res) => {
-  if (betfairHealthCache.data && Date.now()-betfairHealthCache.at<60000) {
-    return res.set("Cache-Control","no-store").json({...betfairHealthCache.data,
-      serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime())});
-  }
-  let adapterHealth={configured:!!BETFAIR_FEED_URL,reachable:false,betfairApiAuthenticated:null,
-    authentication:"not-checked",error:null};
-  if(BETFAIR_FEED_URL){
-    try{
-      const healthUrl=BETFAIR_FEED_URL.endsWith("/api/races")
-        ? BETFAIR_FEED_URL.slice(0,-10)+"/health"
-        : BETFAIR_FEED_URL.replace("/api/races","/health");
-      const response=await fetch(healthUrl,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(1500)});
-      const body=await response.text();let data;
-      try{data=JSON.parse(body);}catch{throw new Error("Adapter health returned invalid JSON (HTTP "+response.status+").");}
-      if(!response.ok)throw new Error("Adapter health HTTP "+response.status);
-      adapterHealth={configured:true,reachable:true,betfairApiAuthenticated:data.betfairApiAuthenticated===true,
-        authentication:data.authentication||"unknown",lastBetfairApiCheck:data.lastBetfairApiCheck||null,
-        racingMarketRows:Number(data.racingMarketRows)||0,sportsMarketRows:Number(data.sportsMarketRows)||0,
-        racingCacheAt:data.racingCacheAt||null,sportsCacheAt:data.sportsCacheAt||null,error:data.lastBetfairApiCheck?.error||null};
-    }catch(error){adapterHealth={...adapterHealth,error:String(error.message||error).slice(0,220)};}
-  }
-  const [racingFeed,sportsFeed]=await Promise.all([
-    probeBetfairAdapterFeed(BETFAIR_FEED_URL,"racing"),
-    probeBetfairAdapterFeed(process.env.BETFAIR_SPORTS_FEED_URL||"","sports")
-  ]);
-  const configuredFeeds=[racingFeed,sportsFeed].filter(feed=>feed.configured);
-  const tokenAuthorized=configuredFeeds.length>0&&configuredFeeds.every(feed=>feed.authorized===true);
-  const betfairAdapter={...adapterHealth,racingFeed,sportsFeed,tokenAuthorized,
-    feedAuthentication:tokenAuthorized?"accepted":configuredFeeds.some(feed=>feed.status==="token-rejected")?"rejected":"unconfirmed"};
-  const result={ok:true,serverTime:new Date().toISOString(),uptimeSeconds:Math.floor(process.uptime()),
-    bettingEnabled:false,mode:"read-only",liveFeedConfigured:!!API_KEY,liveSportsConfigured:!!ODDS_API_TOKEN,
-    betfairConfigured:!!(BETFAIR_FEED_URL||BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN),
-    betfairMode:tokenAuthorized&&betfairAdapter.betfairApiAuthenticated?"authenticated-delayed-exchange":
-      configuredFeeds.some(feed=>feed.status==="token-rejected")?"adapter-token-mismatch":
-      betfairAdapter.reachable?"adapter-reachable-auth-unconfirmed":BETFAIR_FEED_URL?"adapter-unreachable":"credentials-missing",
-    betfairAdapter,moviOddsStream:{...moviOddsStreamState},betfairMarkets:["WIN","PLACE"],betfairBackLaySeparate:true,storage:DATA_DIR};
-  betfairHealthCache={at:Date.now(),data:result};
-  res.set("Cache-Control","no-store");
-  res.json(result);
+app.get("/api/health", (_req,res) => {
+  // This is an application liveness endpoint, not an upstream-provider audit.
+  // Never make the browser heartbeat wait on a local Betfair adapter, a provider,
+  // or a network probe: the dashboard must report that the website is reachable
+  // even when an individual feed is unavailable.
+  const result={
+    ok:true,
+    serverTime:new Date().toISOString(),
+    uptimeSeconds:Math.floor(process.uptime()),
+    bettingEnabled:false,
+    mode:"read-only",
+    racing:{status:racingFeedHealth.status||"checking",fetchedAt:racingFeedHealth.fetchedAt||null,
+      races:Number(racingFeedHealth.totalRaces)||0},
+    sports:{sports:Object.keys(sportsFeedHealth).length,
+      statuses:Object.fromEntries(Object.entries(sportsFeedHealth).map(([key,value])=>[key,value?.status||"checking"]))},
+    liveSports:{status:liveSportsFeedHealth.status||"checking",fetchedAt:liveSportsFeedHealth.fetchedAt||null,
+      events:Number(liveSportsFeedHealth.eventCount)||0},
+    moviOddsStream:{...moviOddsStreamState},
+    betfairConfigured:!!(BETFAIR_FEED_URL||BETFAIR_APP_KEY&&BETFAIR_SESSION_TOKEN)
+  };
+  res.set("Cache-Control","no-store").status(200).json(result);
 });
 // Keep the priced feed and full schedule on separate cache windows. The browser
 // can refresh its display every 5 seconds without forcing a paid provider request
