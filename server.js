@@ -2881,17 +2881,23 @@ app.get("/api/history", async (_req,res) => {
   try {
     const history = await readHistory();
     const final = history.picks.filter(p=>p.status==="final");
-    const wins = final.filter(p=>p.favouriteWon).length;
+    // Count only resolved binary outcomes. A record marked final without a
+    // comparable favourite/winner is unknown, not a loss.
+    const decided = final.filter(p=>typeof p.favouriteWon==="boolean");
+    const wins = decided.filter(p=>p.favouriteWon===true).length;
+    const losses = decided.filter(p=>p.favouriteWon===false).length;
     const byCode = code => {
-      const rows = final.filter(p=>p.category===code);
-      const won = rows.filter(p=>p.favouriteWon).length;
-      return {races:rows.length,wins:won,losses:rows.length-won,
-        strikeRate:rows.length ? +(100*won/rows.length).toFixed(1) : null};
+      const rows = decided.filter(p=>p.category===code);
+      const won = rows.filter(p=>p.favouriteWon===true).length;
+      const lost = rows.filter(p=>p.favouriteWon===false).length;
+      const total=won+lost;
+      return {races:total,wins:won,losses:lost,unknown:final.filter(p=>p.category===code).length-total,
+        strikeRate:total ? +(100*won/total).toFixed(1) : null};
     };
     res.json({
       picks:history.picks.slice().sort((a,b)=>new Date(b.startTime||b.selectedAt)-new Date(a.startTime||a.selectedAt)),
-      summary:{races:final.length,wins,losses:final.length-wins,
-        strikeRate:final.length ? +(100*wins/final.length).toFixed(1) : null,
+      summary:{races:decided.length,wins,losses,unknownResults:final.length-decided.length,
+        strikeRate:decided.length ? +(100*wins/decided.length).toFixed(1) : null,
         pending:history.picks.filter(p=>p.status==="pending").length,
         horse:byCode("horse"),greyhound:byCode("greyhound"),harness:byCode("harness")}
     });
