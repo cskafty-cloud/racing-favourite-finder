@@ -90,11 +90,12 @@ If no Australian cloud host is available, the proxy can run on an Australian Win
    - `BETFAIR_FEED_URL` = `https://YOUR-TAILSCALE-FUNNEL-HOST/api/races`
    - `BETFAIR_SPORTS_FEED_URL` = `https://YOUR-TAILSCALE-FUNNEL-HOST/api/sports`
    - `BETFAIR_FEED_TOKEN` = the same secret entered in the Windows launcher.
-5. Download the repository ZIP from GitHub and extract it. Open PowerShell in `betfair-au-proxy`, then run:
+5. Download a fresh ZIP from the repository **main** branch after the latest launcher update and extract it. In PowerShell, use the actual extracted folder (the `(2)` suffix may differ):
+   `Set-Location "$HOME\\Downloads\\racing-favourite-finder-main\\betfair-au-proxy"`
    `Set-ExecutionPolicy -Scope Process Bypass`
    `./Start-BetfairAuProxy.ps1`
 6. The Windows launcher securely prompts for the Betfair delayed app key, session token and shared token. It saves them encrypted with Windows DPAPI outside the downloaded repository at `%LOCALAPPDATA%\\RacingFavouriteFinder\\BetfairAdapter\\credentials.dpapi`. This stable location survives ZIP re-downloads, extraction to a new folder and repository updates. On the first launch after this update, the launcher automatically migrates the previous repo-local encrypted file if it finds one. The secrets are never written in plaintext or committed to GitHub. The file is decryptable only by the same Windows user on the same PC. On later starts, answer `Y` to **Use the saved encrypted credentials?** to reuse them. Answer `N` only when deliberately replacing the saved values. Keep the adapter PowerShell window open while the feed is in use.
-7. In a second PowerShell window, run `tailscale funnel --bg 8080`, approve Funnel in the Tailscale admin flow if prompted, and run `tailscale funnel status`. Copy the HTTPS hostname into the two Railway URL variables above.
+7. The updated launcher starts Funnel using `tailscale.exe` (not the PowerShell `tailscale.ps1` shim), then prints Funnel status. If Funnel is not enabled, approve it in the Tailscale admin flow. If you need to start/check it manually, use `& "$env:ProgramFiles\\Tailscale\\tailscale.exe" funnel --bg 8080` and `& "$env:ProgramFiles\\Tailscale\\tailscale.exe" funnel status`. Copy the HTTPS hostname into the two Railway URL variables above.
 8. Restart/redeploy the Railway service after setting its variables. Test `/health`, then the protected `/api/races` and `/api/sports` routes. The latter two require the bearer token and should return real timestamped quotes before the feed is considered connected.
 
 The Windows adapter binds only to `127.0.0.1`; Funnel supplies HTTPS from outside. The shared bearer token protects the API routes. Keep the PC awake and online. If you stop the Node process, turn off Funnel with `tailscale funnel reset`. Funnel makes the endpoint publicly reachable, so keep the token secret and do not share its URL unnecessarily.
@@ -104,7 +105,7 @@ Tailscale Funnel is a third-party service and requires a Tailscale login and ena
 
 ## Betfair adapter credential setup
 
-See [`betfair-au-proxy/CONFIGURATION-TEMPLATE.md`](betfair-au-proxy/CONFIGURATION-TEMPLATE.md) for the exact three-value setup, where each value comes from, and how to test the protected adapter endpoints. The Windows launcher prompts for these values securely; do not put real secrets in source code or commit them to GitHub.
+See [`betfair-au-proxy/CONFIGURATION-TEMPLATE.md`](betfair-au-proxy/CONFIGURATION-TEMPLATE.md) for the exact three-value setup, where each value comes from, and how to test the protected adapter endpoints. The current Windows launcher saves these values encrypted with DPAPI outside the repository. Older ZIP copies may still prompt every time and do not save them; download a fresh ZIP from the main branch before starting the adapter. Do not put real secrets in source code or commit them to GitHub.
 
 
 ## Data-quality safeguards
