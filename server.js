@@ -1318,25 +1318,63 @@ function runnerQuoteAudit(runner){
  return rows;
 }
 function selectDelayedExchangeFavourite(race,market="win"){
- const priceField=market==="place"?"place_price":"win_price";
- const marketType=market==="place"?"exchange_place":"exchange_win";
- const candidates=(race.runners||[]).flatMap(r=>(r.bookmakers||r.odds||[]).map(q=>({runner:r,quote:q})))
-  .filter(({runner,quote})=>quote.exchange===true&&bookmakerKey(quote)==="betfair"&&
-    String(quote.market_type||quote.place_market_type||"").toLowerCase()===marketType&&
-    String(quote.price_side||"").toUpperCase()==="BACK"&&quote.fresh===true&&
-    Number.isFinite(Number(quote[priceField]))&&Number(quote[priceField])>1&&
-    runner.scratched!==true&&runner.suspended!==true&&
-    !/scratched|removed|suspended/i.test(String(runner.status||"")))
-  .sort((a,b)=>Number(a.quote[priceField])-Number(b.quote[priceField]));
- const best=candidates[0];if(!best)return null;
- const q=best.quote,r=best.runner;
- return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name||"Favourite",
-  number:r.number??r.runner_number??null,price:Number(q[priceField]),
-  priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
-  status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
-  market:market.toUpperCase(),side:"BACK",ageSeconds:q.age_seconds??null,observedAt:q.observed_at||null,
-  availableSize:q.available_size??null,isMarketDataDelayed:typeof q.is_market_data_delayed==="boolean"?q.is_market_data_delayed:null,
-  sourceTimestampAvailable:false,freshnessBasis:q.freshness_basis||"adapter_retrieval_time"};
+  const key=market==="place"?"exchangePlaceFavourite":"exchangeFavourite";
+  const marketLabel=market==="place"?"PLACE":"WIN";
+  const direct=race?.[key];
+  const eligible=(runner)=>runner&&runner.scratched!==true&&runner.suspended!==true&&
+    !/scratched|removed|suspended/i.test(String(runner.status||""));
+  // The Australian adapter's canonical schema stores exchange prices under
+  // runner.exchange.win/place and also publishes a pre-validated favourite.
+  // Prefer that explicit favourite; the previous implementation only searched
+  // bookmaker quote arrays and therefore missed the adapter's nested schema.
+  if(direct&&String(direct.side||"").toUpperCase()==="BACK"&&
+     Number.isFinite(Number(direct.price))&&Number(direct.price)>1&&
+     (!direct.market||String(direct.market).toUpperCase()===marketLabel)){
+    const matched=(race.runners||[]).find(r=>String(r.selectionId??"")===String(direct.selectionId??""));
+    if((direct.selectionId==null||eligible(matched))&&(!matched||eligible(matched))){
+      return {name:direct.name||matched?.name||"Favourite",number:matched?.number??null,
+        selectionId:direct.selectionId??null,price:Number(direct.price),
+        priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
+        status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
+        market:marketLabel,side:"BACK",ageSeconds:direct.observedAt?Math.max(0,Math.floor((Date.now()-Date.parse(direct.observedAt))/1000)):null,
+        observedAt:direct.observedAt||null,availableSize:direct.availableSize??null,
+        isMarketDataDelayed:typeof direct.isMarketDataDelayed==="boolean"?direct.isMarketDataDelayed:null,
+        sourceTimestampAvailable:false,freshnessBasis:direct.freshnessBasis||"adapter_retrieval_time"};
+    }
+  }
+  const candidates=(race.runners||[]).flatMap(r=>{
+    const q=r.exchange?.[market]?.back;
+    return q?.fresh===true&&Number.isFinite(Number(q.price))&&Number(q.price)>1&&eligible(r)
+      ?[{runner:r,quote:q}]:[];
+  }).sort((a,b)=>Number(a.quote.price)-Number(b.quote.price));
+  const best=candidates[0];
+  if(best){
+    const q=best.quote,r=best.runner;
+    return {name:r.name||"Favourite",number:r.number??null,selectionId:r.selectionId??null,
+      price:Number(q.price),priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
+      status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
+      market:marketLabel,side:"BACK",ageSeconds:q.ageSeconds??null,observedAt:q.observedAt||null,
+      availableSize:q.size??null,isMarketDataDelayed:typeof q.isMarketDataDelayed==="boolean"?q.isMarketDataDelayed:null,
+      sourceTimestampAvailable:false,freshnessBasis:q.freshnessBasis||"adapter_retrieval_time"};
+  }
+  // Compatibility path for older normalized bookmaker-quote payloads.
+  const priceField=market==="place"?"place_price":"win_price";
+  const marketType=market==="place"?"exchange_place":"exchange_win";
+  const legacy=(race.runners||[]).flatMap(r=>(r.bookmakers||r.odds||[]).map(q=>({runner:r,quote:q})))
+    .filter(({runner,quote})=>quote.exchange===true&&bookmakerKey(quote)==="betfair"&&
+      String(quote.market_type||quote.place_market_type||"").toLowerCase()===marketType&&
+      String(quote.price_side||"").toUpperCase()==="BACK"&&quote.fresh===true&&
+      Number.isFinite(Number(quote[priceField]))&&Number(quote[priceField])>1&&eligible(runner))
+    .sort((a,b)=>Number(a.quote[priceField])-Number(b.quote[priceField]))[0];
+  if(!legacy)return null;
+  const q=legacy.quote,r=legacy.runner;
+  return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name||"Favourite",
+    number:r.number??r.runner_number??null,price:Number(q[priceField]),
+    priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
+    status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
+    market:marketLabel,side:"BACK",ageSeconds:q.age_seconds??null,observedAt:q.observed_at||null,
+    availableSize:q.available_size??null,isMarketDataDelayed:typeof q.is_market_data_delayed==="boolean"?q.is_market_data_delayed:null,
+    sourceTimestampAvailable:false,freshnessBasis:q.freshness_basis||"adapter_retrieval_time"};
 }
 function raceFavouriteDisplay(race){
  const verified=selectFavourite(race);
