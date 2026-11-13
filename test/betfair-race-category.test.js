@@ -16,6 +16,9 @@ test("classifies greyhound and thoroughbred separately", () => {
   assert.equal(raceCategory("Horse Racing", { raceType: "FLAT" }), "horse");
 });
 
-test("does not infer harness from venue name without race-type metadata", () => {
-  assert.equal(raceCategory("Harness Park", { raceType: "FLAT" }), "horse");
+test("uses strong harness venue aliases but does not guess shared venues", () => {
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Gloucester Park R1" }), "harness");
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Menangle Park R5" }), "harness");
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Albion Park R1" }), "horse");
+  assert.equal(raceCategory("Horse Racing", { raceType: "FLAT" }, { name: "Bendigo R2" }), "horse");
 });
