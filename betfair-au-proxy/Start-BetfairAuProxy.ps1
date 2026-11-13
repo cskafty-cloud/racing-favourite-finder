@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.24"
+$RffLauncherVersion = "2026-11-13.25"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -88,11 +88,11 @@ function Get-NewBetfairSessionToken([string]$AppKey) {
   try {
     $body = "username=$([System.Uri]::EscapeDataString($username))&password=$([System.Uri]::EscapeDataString($password))"
     $response = Invoke-RestMethod -Method Post -Uri "https://identitysso.betfair.com.au/api/login" -Headers @{ "X-Application" = $AppKey; "Accept" = "application/json" } -ContentType "application/x-www-form-urlencoded" -Body $body -TimeoutSec 30
-    if ($response.status -notin @("SUCCESS", "LIMITED_ACCESS") -or [string]::IsNullOrWhiteSpace([string]$response.token)) {
-      $reason = if ($response.error) { [string]$response.error } else { [string]$response.status }
+    if ($response.loginStatus -notin @("SUCCESS", "LIMITED_ACCESS") -or [string]::IsNullOrWhiteSpace([string]$response.sessionToken)) {
+      $reason = if ($response.error) { [string]$response.error } elseif ($response.loginStatus) { [string]$response.loginStatus } else { "No loginStatus returned by Betfair" }
       throw "Betfair login was not successful ($reason). Check the account login, 2FA code and any pending Betfair website terms/security prompts."
     }
-    return [string]$response.token
+    return [string]$response.sessionToken
   } catch {
     if ($_.Exception.Message -like "Betfair login was not successful*") { throw }
     throw "Could not complete the official Betfair Australia API login. Check network access and account requirements; no password or token was displayed. $($_.Exception.Message)"
