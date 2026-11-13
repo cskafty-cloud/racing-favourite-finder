@@ -1,35 +1,27 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.20"
+$RffLauncherVersion = "2026-11-13.21"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
 
 # Keep the local read-only adapter in sync with the tested GitHub source.
-# Download both the entry point and its race-type helper before replacing either.
+# Download the entry point and race-type helper; token validation is inline so no third file is required.
 # The encrypted DPAPI credential file is separate and is never downloaded or overwritten.
 $AdapterServerPath = Join-Path $PSScriptRoot "server.js"
 $AdapterCategoryPath = Join-Path $PSScriptRoot "race-category.js"
-$AdapterTokenPath = Join-Path $PSScriptRoot "token-auth.js"
 $AdapterUpdateBase = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy"
 $AdapterServerTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
 $AdapterCategoryTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-category-" + $PID + ".tmp")
-$AdapterTokenTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-token-auth-" + $PID + ".tmp")
 try {
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/server.js") -OutFile $AdapterServerTemp -TimeoutSec 20
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/race-category.js") -OutFile $AdapterCategoryTemp -TimeoutSec 20
-  Invoke-WebRequest -Uri ($AdapterUpdateBase + "/token-auth.js") -OutFile $AdapterTokenTemp -TimeoutSec 20
   $AdapterCandidate = Get-Content -LiteralPath $AdapterServerTemp -Raw
   $CategoryCandidate = Get-Content -LiteralPath $AdapterCategoryTemp -Raw
-  $TokenCandidate = Get-Content -LiteralPath $AdapterTokenTemp -Raw
   if ($AdapterCandidate.Length -lt 5000 -or
       -not $AdapterCandidate.Contains("accessTokenMatches") -or
       -not $AdapterCandidate.Contains('require("./race-category")') -or
-      -not $AdapterCandidate.Contains('require("./token-auth")') -or
       -not $AdapterCandidate.Contains("BETFAIR_AU_RACING_EVENT_TYPES")) {
     throw "Downloaded adapter entry point did not pass the expected source checks."
-  }
-  if ($TokenCandidate.Length -lt 300 -or -not $TokenCandidate.Contains("function accessTokenMatches")) {
-    throw "Downloaded exact-token helper did not pass the expected source checks."
   }
   if ($CategoryCandidate.Length -lt 300 -or
       -not $CategoryCandidate.Contains("function raceCategory") -or
@@ -39,16 +31,20 @@ try {
   if (Test-Path -LiteralPath $AdapterServerPath) {
     Copy-Item -LiteralPath $AdapterServerPath -Destination ($AdapterServerPath + ".previous") -Force
   }
+  & node --check $AdapterServerTemp
+  if ($LASTEXITCODE -ne 0) { throw "Downloaded adapter server.js failed Node syntax validation." }
+  & node --check $AdapterCategoryTemp
+  if ($LASTEXITCODE -ne 0) { throw "Downloaded race-category.js failed Node syntax validation." }
   if (Test-Path -LiteralPath $AdapterCategoryPath) {
     Copy-Item -LiteralPath $AdapterCategoryPath -Destination ($AdapterCategoryPath + ".previous") -Force
   }
   Move-Item -LiteralPath $AdapterCategoryTemp -Destination $AdapterCategoryPath -Force
   Move-Item -LiteralPath $AdapterServerTemp -Destination $AdapterServerPath -Force
-  Write-Host "Updated the local adapter entry point and race-type helper from the tested GitHub source." -ForegroundColor Green
+  Write-Host "Updated the self-contained adapter entry point and race-type helper from GitHub; Node syntax checks passed." -ForegroundColor Green
 } catch {
-  Write-Warning ("Could not fully update adapter source; keeping existing local copies where possible. " + $_.Exception.Message)
+  throw ("Adapter source update/validation failed; refusing to start a possibly broken local proxy. " + $_.Exception.Message)
 } finally {
-  foreach ($temporaryPath in @($AdapterServerTemp, $AdapterCategoryTemp, $AdapterTokenTemp)) {
+  foreach ($temporaryPath in @($AdapterServerTemp, $AdapterCategoryTemp)) {
     if (Test-Path -LiteralPath $temporaryPath) {
       Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
     }
