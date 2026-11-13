@@ -378,7 +378,9 @@ const server=http.createServer(async(req,res)=>{
     if(!Number.isFinite(checkedAt)||Date.now()-checkedAt>60000){
       try{await rpc("listEventTypes",{filter:{}});}catch{}
     }
-    return res.end(JSON.stringify({ok:true,region:"Australia",provider:"Betfair delayed read-only",
+    return res.end(JSON.stringify({ok:true,ready:lastBetfairApiCheck.status==="accepted",
+      status:lastBetfairApiCheck.status==="accepted"?"authenticated":"authentication-required",
+      region:"Australia",provider:"Betfair delayed read-only",
       credentialsConfigured:!!(APP_KEY&&SESSION_TOKEN),
       betfairApiAuthenticated:lastBetfairApiCheck.status==="accepted",
       authentication:lastBetfairApiCheck.status,
