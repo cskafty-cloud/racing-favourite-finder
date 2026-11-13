@@ -455,6 +455,19 @@ const server=http.createServer(async(req,res)=>{
   const bearer = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7) : "";
   if(!accessTokenMatches(bearer)){res.writeHead(401);return res.end(JSON.stringify({error:"Shared adapter token mismatch. Tokens must match exactly, including letter case; whitespace is not removed."}));}
   try{
+    if(path==="/api/status"){
+      const kind=new URL(req.url,"http://127.0.0.1").searchParams.get("kind");
+      if(kind!=="racing"&&kind!=="sports"){res.writeHead(400);return res.end(JSON.stringify({error:"kind must be racing or sports"}));}
+      const key=kind==="racing"?"races":"sports",entry=cache.get(key),value=entry?.value;
+      const rows=kind==="racing"?(value?.races||[]):(value?.events||[]);
+      const priced=kind==="racing"
+        ? rows.filter(r=>(r.runners||[]).some(x=>x.exchange?.win?.back||x.exchange?.win?.lay||x.exchange?.place?.back||x.exchange?.place?.lay)).length
+        : Number(value?.pricedMarkets)||rows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
+      const summary={loaded:!!entry,marketCount:rows.length,pricedMarkets:priced,
+        capturedAt:value?.capturedAt||value?.fetchedAt||value?.scheduleFetchedAt||null,
+        cacheAgeSeconds:entry?Math.max(0,Math.round((Date.now()-entry.at)/1000)):null};
+      return res.end(JSON.stringify({ok:true,kind,[kind]:summary}));
+    }
     if(path==="/api/races")return res.end(JSON.stringify(await cached("races",loadRaces)));
     if(path==="/api/sports")return res.end(JSON.stringify(await cached("sports",loadSports,SPORTS_CACHE_MS,true)));
     res.writeHead(404);return res.end(JSON.stringify({error:"Not found"}));
