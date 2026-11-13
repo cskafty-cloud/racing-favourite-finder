@@ -1321,13 +1321,18 @@ function selectDelayedExchangeFavourite(race,market="win"){
   const key=market==="place"?"exchangePlaceFavourite":"exchangeFavourite";
   const marketLabel=market==="place"?"PLACE":"WIN";
   const direct=race?.[key];
+  const directAgeSeconds=direct?.observedAt?Math.max(0,(Date.now()-Date.parse(direct.observedAt))/1000):null;
+  const quoteIsFresh=(quote)=>quote?.fresh===true&&quote.observedAt&&
+    Number.isFinite(Date.parse(quote.observedAt))&&
+    (Date.now()-Date.parse(quote.observedAt))/1000<=180;
   const eligible=(runner)=>runner&&runner.scratched!==true&&runner.suspended!==true&&
     !/scratched|removed|suspended/i.test(String(runner.status||""));
   // The Australian adapter's canonical schema stores exchange prices under
   // runner.exchange.win/place and also publishes a pre-validated favourite.
   // Prefer that explicit favourite; the previous implementation only searched
   // bookmaker quote arrays and therefore missed the adapter's nested schema.
-  if(direct&&String(direct.side||"").toUpperCase()==="BACK"&&
+  if(direct&&directAgeSeconds!=null&&directAgeSeconds<=180&&
+     String(direct.side||"").toUpperCase()==="BACK"&&
      Number.isFinite(Number(direct.price))&&Number(direct.price)>1&&
      (!direct.market||String(direct.market).toUpperCase()===marketLabel)){
     const matched=(race.runners||[]).find(r=>String(r.selectionId??"")===String(direct.selectionId??""));
@@ -1336,7 +1341,7 @@ function selectDelayedExchangeFavourite(race,market="win"){
         selectionId:direct.selectionId??null,price:Number(direct.price),
         priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
         status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
-        market:marketLabel,side:"BACK",ageSeconds:direct.observedAt?Math.max(0,Math.floor((Date.now()-Date.parse(direct.observedAt))/1000)):null,
+        market:marketLabel,side:"BACK",ageSeconds:Math.floor(directAgeSeconds),
         observedAt:direct.observedAt||null,availableSize:direct.availableSize??null,
         isMarketDataDelayed:typeof direct.isMarketDataDelayed==="boolean"?direct.isMarketDataDelayed:null,
         sourceTimestampAvailable:false,freshnessBasis:direct.freshnessBasis||"adapter_retrieval_time"};
@@ -1344,7 +1349,7 @@ function selectDelayedExchangeFavourite(race,market="win"){
   }
   const candidates=(race.runners||[]).flatMap(r=>{
     const q=r.exchange?.[market]?.back;
-    return q?.fresh===true&&Number.isFinite(Number(q.price))&&Number(q.price)>1&&eligible(r)
+    return quoteIsFresh(q)&&Number.isFinite(Number(q.price))&&Number(q.price)>1&&eligible(r)
       ?[{runner:r,quote:q}]:[];
   }).sort((a,b)=>Number(a.quote.price)-Number(b.quote.price));
   const best=candidates[0];
