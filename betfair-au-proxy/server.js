@@ -1,11 +1,20 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const { raceCategory } = require("./race-category");
-const { accessTokenMatches } = require("./token-auth");
 
 const PORT = Number(process.env.PORT || 8080);
 const APP_KEY = process.env.BETFAIR_APP_KEY || "";
 const SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
 const PROXY_ACCESS_TOKEN = String(process.env.BETFAIR_FEED_TOKEN || "");
+
+// Exact byte-for-byte shared-secret comparison. Never trim or case-normalise.
+function accessTokenMatches(expectedToken, suppliedToken) {
+  if (typeof expectedToken !== "string" || typeof suppliedToken !== "string") return false;
+  if (expectedToken.length === 0 || suppliedToken.length === 0) return false;
+  const expected = Buffer.from(expectedToken, "utf8");
+  const supplied = Buffer.from(suppliedToken, "utf8");
+  return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
+}
 const RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1";
 const CACHE_MS = 30000;
 let cache = new Map();
