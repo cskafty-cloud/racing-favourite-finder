@@ -104,18 +104,29 @@ function cached(key, loader) {
   return inflight.get(key);
 }
 
-async function fetchRaceCatalogue(type,from,to){
- const filter={eventTypeIds:[type.id],marketCountries:['AU'],marketTypeCodes:['WIN','PLACE'],marketStartTime:{from:from.toISOString(),to:to.toISOString()}};
+async function fetchRaceCatalogue(type,from,to,inPlayOnly=false,marketTypeCodes=['WIN','PLACE']){
+ const filter={eventTypeIds:[type.id],marketCountries:['AU'],marketTypeCodes};
+ if(inPlayOnly)filter.inPlayOnly=true;
+ else filter.marketStartTime={from:from.toISOString(),to:to.toISOString()};
  try{
   const markets=await rpc('listMarketCatalogue',{filter,marketProjection:['EVENT','MARKET_START_TIME','RUNNER_DESCRIPTION','MARKET_DESCRIPTION'],sort:'FIRST_TO_START',maxResults:'1000'});
   return {markets:markets||[],errors:[]};
  }catch(error){
   if(!/TOO_MUCH_DATA/i.test(error.message))return {markets:[],errors:[error.message]};
+  // Split WIN and PLACE independently for dense in-play catalogues.
+  if(marketTypeCodes.length>1){
+   const middle=Math.ceil(marketTypeCodes.length/2);
+   const left=await fetchRaceCatalogue(type,from,to,inPlayOnly,marketTypeCodes.slice(0,middle));
+   const right=await fetchRaceCatalogue(type,from,to,inPlayOnly,marketTypeCodes.slice(middle));
+   const unique=new Map([...left.markets,...right.markets].map(m=>[String(m.marketId),m]));
+   return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
+  }
+  if(inPlayOnly)return {markets:[],errors:['In-play racing catalogue remained oversized for '+marketTypeCodes[0]+': '+error.message]};
   const span=to.getTime()-from.getTime();
   if(span<=30*60*1000)return {markets:[],errors:['Racing catalogue remained oversized at 30-minute resolution: '+error.message]};
   const mid=new Date(from.getTime()+Math.floor(span/2));
-  const left=await fetchRaceCatalogue(type,from,mid),right=await fetchRaceCatalogue(type,mid,to);
-  const unique=new Map();for(const m of [...left.markets,...right.markets])unique.set(String(m.marketId),m);
+  const left=await fetchRaceCatalogue(type,from,mid,false,marketTypeCodes),right=await fetchRaceCatalogue(type,mid,to,false,marketTypeCodes);
+  const unique=new Map([...left.markets,...right.markets].map(m=>[String(m.marketId),m]));
   return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
  }
 }
@@ -128,15 +139,22 @@ async function loadRaces() {
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"")}))
     .filter(x=>/horse racing|thoroughbred|greyhound|harness|trotting|trot|pacing/i.test(x.name));
   const groups=await Promise.all(types.map(async type=>{
-    const result=await fetchRaceCatalogue(type,from,to);
-    return {type,markets:result.markets,errors:result.errors};
+    const [upcoming,inPlay]=await Promise.all([
+      fetchRaceCatalogue(type,from,to,false),
+      fetchRaceCatalogue(type,from,to,true)
+    ]);
+    const unique=new Map([...upcoming.markets,...inPlay.markets].map(m=>[String(m.marketId),m]));
+    return {type,markets:[...unique.values()],upcomingCount:upcoming.markets.length,
+      inPlayCount:inPlay.markets.length,errors:[...upcoming.errors,...inPlay.errors]};
   }));
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_type:g.type.name})));
   console.info("BETFAIR_AU_RACING_EVENT_TYPES",JSON.stringify({
     discovered:(eventTypes||[]).map(x=>String(x.eventType?.name||"")).filter(Boolean),
     selected:types.map(x=>x.name),
     catalogueMarkets:all.length,
-    marketsByType:Object.fromEntries(groups.map(g=>[g.type.name,g.markets.length])),
+    upcomingCatalogueMarkets:groups.reduce((n,g)=>n+g.upcomingCount,0),
+    inPlayCatalogueMarkets:groups.reduce((n,g)=>n+g.inPlayCount,0),
+    marketsByType:Object.fromEntries(groups.map(g=>[g.type.name,{total:g.markets.length,upcoming:g.upcomingCount,inPlay:g.inPlayCount}])),
     marketsByRaceType:Object.fromEntries([...new Set(all.map(m=>String(m.description?.raceType||"not-supplied")))]
       .map(raceType=>[raceType,all.filter(m=>String(m.description?.raceType||"not-supplied")===raceType).length]))
   }));
@@ -227,8 +245,22 @@ async function loadRaces() {
         delayMaximumSeconds:180}:null
     };
   });
+  const quoteCounts={
+    winBack:races.reduce((n,r)=>n+r.runners.filter(x=>x.exchange?.win?.back?.fresh===true).length,0),
+    winLay:races.reduce((n,r)=>n+r.runners.filter(x=>x.exchange?.win?.lay?.fresh===true).length,0),
+    placeBack:races.reduce((n,r)=>n+r.runners.filter(x=>x.exchange?.place?.back?.fresh===true).length,0),
+    placeLay:races.reduce((n,r)=>n+r.runners.filter(x=>x.exchange?.place?.lay?.fresh===true).length,0)
+  };
+  const favouriteCount=races.filter(r=>r.exchangeFavourite).length;
+  const inPlayRaceCount=races.filter(r=>r.in_play).length;
+  console.info("BETFAIR_AU_RACING_MARKET_QUALITY",JSON.stringify({
+    raceCards:races.length,inPlayRaceCards:inPlayRaceCount,upcomingRaceCards:races.length-inPlayRaceCount,
+    quoteCounts,winFavourites:favouriteCount,placeFavourites:races.filter(r=>r.exchangePlaceFavourite).length,
+    pricedRaces:races.filter(r=>r.runners.some(x=>x.exchange?.win?.back?.fresh===true)).length
+  }));
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
-    scheduleFetchedAt:capturedAt,oddsFetchedAt:capturedAt,horizonHours:168,
+    scheduleFetchedAt:capturedAt,oddsFetchedAt:capturedAt,horizonHours:168,quoteCounts,
+    inPlayRaceCount,upcomingRaceCount:races.length-inPlayRaceCount,
     feedErrors:[...groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
       ...bookErrors.map(message=>({sport:"Australian racing",message}))],
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
@@ -430,7 +462,9 @@ server.listen(PORT,"127.0.0.1",()=>{
   setTimeout(async()=>{
     try{
       const races=await cached("races",loadRaces);
-      console.info("BETFAIR_AU_STARTUP_RACING_CACHE",JSON.stringify({markets:races.races.length,errors:races.feedErrors.length}));
+      console.info("BETFAIR_AU_STARTUP_RACING_CACHE",JSON.stringify({markets:races.races.length,
+        upcoming:races.upcomingRaceCount??null,inPlay:races.inPlayRaceCount??null,
+        quoteCounts:races.quoteCounts||null,errors:races.feedErrors.length}));
     }catch(error){console.warn("BETFAIR_AU_STARTUP_RACING_CACHE_FAILED",error.message);}
     try{
       const sports=await cached("sports",loadSports);
