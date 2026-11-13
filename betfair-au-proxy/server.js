@@ -406,8 +406,18 @@ const server=http.createServer(async(req,res)=>{
     if(path==="/api/sports")return res.end(JSON.stringify(await cached("sports",loadSports)));
     res.writeHead(404);return res.end(JSON.stringify({error:"Not found"}));
   }catch(error){
-    console.error("BETFAIR_AU_PROXY_FAILED",path,error.message);res.writeHead(502);
-    return res.end(JSON.stringify({error:error.message,feedSource:"Betfair AU proxy",races:[],events:[]}));
+    const message=String(error?.message||error||"Unknown Betfair adapter error");
+    const invalidSession=/INVALID_SESSION_INFORMATION|NO_SESSION|session token rejected/i.test(message);
+    const status=invalidSession?401:(/connection failed|timeout|network|fetch failed|HTTP 5\\d\\d/i.test(message)?503:502);
+    console.error(invalidSession?"BETFAIR_AU_REAUTH_REQUIRED":"BETFAIR_AU_PROXY_FAILED",path,message);
+    res.writeHead(status);
+    return res.end(JSON.stringify({
+      ok:false,error:message,feedSource:"Betfair AU proxy",
+      authentication:invalidSession?"rejected":"not-confirmed",
+      reauthenticationRequired:invalidSession,
+      retryable:!invalidSession,
+      races:[],events:[]
+    }));
   }
 });
 server.listen(PORT,"127.0.0.1",()=>{
