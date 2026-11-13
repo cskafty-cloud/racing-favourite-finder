@@ -91,11 +91,30 @@ function quote(level,observedAt=null,isMarketDataDelayed=null) {
     isMarketDataDelayed:typeof isMarketDataDelayed==="boolean"?isMarketDataDelayed:null,
     delayMaximumSeconds:180};
 }
-function cached(key, loader) {
+const SPORTS_CACHE_MS = 90 * 1000;
+const CACHE_RETENTION_MS = 6 * 60 * 60 * 1000;
+function cached(key, loader, ttlMs=CACHE_MS, staleWhileRevalidate=false) {
   const now=Date.now();
-  for(const [cacheKey,entry] of cache)if(now-entry.at>CACHE_MS*10)cache.delete(cacheKey);
+  for(const [cacheKey,entry] of cache)if(now-entry.at>CACHE_RETENTION_MS)cache.delete(cacheKey);
   const old=cache.get(key);
-  if(old && now-old.at<CACHE_MS) return Promise.resolve(old.value);
+  if(old && now-old.at<ttlMs) return Promise.resolve(old.value);
+  // Sports catalogue discovery is intentionally broad (all supported sports,
+  // seven days plus in-play). Never make a dashboard request wait for that
+  // full crawl when a previously verified cache is available. Return the
+  // timestamped stale snapshot and refresh it in the background; quote-age
+  // checks downstream still prevent stale prices being presented as live.
+  if(old && staleWhileRevalidate) {
+    if(!inflight.has(key)) {
+      const refresh=loader().then(value=>{
+        cache.set(key,{at:Date.now(),value});
+        console.info("BETFAIR_ADAPTER_CACHE_REFRESHED",JSON.stringify({key,rows:key==="sports"?(value.events||[]).length:(value.races||[]).length}));
+      }).catch(error=>{
+        console.warn("BETFAIR_ADAPTER_CACHE_REFRESH_FAILED",JSON.stringify({key,error:String(error.message||error).slice(0,180)}));
+      }).finally(()=>inflight.delete(key));
+      inflight.set(key,refresh);
+    }
+    return Promise.resolve(old.value);
+  }
   if(!inflight.has(key)) inflight.set(key, loader().then(value=>{
     cache.set(key,{at:Date.now(),value});
     if(cache.size>200)for(const cacheKey of cache.keys()){cache.delete(cacheKey);if(cache.size<=150)break;}
@@ -437,7 +456,7 @@ const server=http.createServer(async(req,res)=>{
   if(!accessTokenMatches(bearer)){res.writeHead(401);return res.end(JSON.stringify({error:"Shared adapter token mismatch. Tokens must match exactly, including letter case; whitespace is not removed."}));}
   try{
     if(path==="/api/races")return res.end(JSON.stringify(await cached("races",loadRaces)));
-    if(path==="/api/sports")return res.end(JSON.stringify(await cached("sports",loadSports)));
+    if(path==="/api/sports")return res.end(JSON.stringify(await cached("sports",loadSports,SPORTS_CACHE_MS,true)));
     res.writeHead(404);return res.end(JSON.stringify({error:"Not found"}));
   }catch(error){
     const message=String(error?.message||error||"Unknown Betfair adapter error");
