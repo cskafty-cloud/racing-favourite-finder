@@ -280,6 +280,7 @@ async function loadRaces() {
   return {races,feedSource:"Betfair Exchange delayed · Australian region",scope:"Australia",
     scheduleFetchedAt:capturedAt,oddsFetchedAt:capturedAt,horizonHours:168,quoteCounts,
     inPlayRaceCount,upcomingRaceCount:races.length-inPlayRaceCount,
+    winFavouriteCount:favouriteCount,placeFavouriteCount:races.filter(r=>r.exchangePlaceFavourite).length,
     feedErrors:[...groups.flatMap(g=>g.errors.map(message=>({sport:g.type.name,message}))),
       ...bookErrors.map(message=>({sport:"Australian racing",message}))],
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
@@ -463,9 +464,16 @@ const server=http.createServer(async(req,res)=>{
       const priced=kind==="racing"
         ? rows.filter(r=>(r.runners||[]).some(x=>x.exchange?.win?.back||x.exchange?.win?.lay||x.exchange?.place?.back||x.exchange?.place?.lay)).length
         : Number(value?.pricedMarkets)||rows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length;
-      const summary={loaded:!!entry,marketCount:rows.length,pricedMarkets:priced,
-        capturedAt:value?.capturedAt||value?.fetchedAt||value?.scheduleFetchedAt||null,
-        cacheAgeSeconds:entry?Math.max(0,Math.round((Date.now()-entry.at)/1000)):null};
+      const summary=kind==="racing"
+        ? {loaded:!!entry,raceCards:rows.length,pricedRaceCards:priced,
+            winFavourites:Number(value?.winFavouriteCount)||rows.filter(r=>!!r.exchangeFavourite).length,
+            placeFavourites:Number(value?.placeFavouriteCount)||rows.filter(r=>!!r.exchangePlaceFavourite).length,
+            quoteCounts:value?.quoteCounts||null,
+            capturedAt:value?.capturedAt||value?.scheduleFetchedAt||null,
+            cacheAgeSeconds:entry?Math.max(0,Math.round((Date.now()-entry.at)/1000)):null}
+        : {loaded:!!entry,marketCount:rows.length,pricedMarkets:priced,
+            capturedAt:value?.capturedAt||value?.fetchedAt||null,
+            cacheAgeSeconds:entry?Math.max(0,Math.round((Date.now()-entry.at)/1000)):null};
       return res.end(JSON.stringify({ok:true,kind,[kind]:summary}));
     }
     if(path==="/api/races")return res.end(JSON.stringify(await cached("races",loadRaces)));
