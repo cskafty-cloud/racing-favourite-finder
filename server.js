@@ -200,7 +200,7 @@ async function loadBetfairSports(){
   if(sportsAdapterUrl && process.env.PUBLIC_ONLY_FEEDS !== "true"){
     const response=await fetch(sportsAdapterUrl,{
       headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},
-      signal:AbortSignal.timeout(25000)
+      signal:AbortSignal.timeout(120000)
     });
     const body=await response.text();
     let data;
