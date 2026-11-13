@@ -12,7 +12,10 @@ function raceCategory(name, description = {}, event = {}) {
   ].filter(value => value != null && value !== "");
   const text = (String(name || "") + " " + values.join(" ")).toLowerCase();
   if (/greyhound/.test(text)) return "greyhound";
-  if (/harness|trotting|pacing|\btrot\b/.test(text)) return "harness";
+  if (/harness|trotting|pacing|\btrot\b|paceway/.test(text)) return "harness";
+  // Betfair may omit raceType under its generic Horse Racing event type.
+  // Use only strong harness-only venue names; avoid shared tracks.
+  if (/\b(gloucester park|globe derby|menangle(?: park)?)\b/.test(text)) return "harness";
   return "horse";
 }
 
