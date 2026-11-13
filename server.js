@@ -1635,6 +1635,12 @@ async function probeBetfairAdapterFeed(url, kind) {
       status:response.status===401||response.status===403?"token-rejected":"http-error",error:String(data.error||("Adapter HTTP "+response.status)).slice(0,220)};
     const feed=data[kind];
     if(!feed||typeof feed!=="object")return {configured:true,reachable:true,authorized:true,httpStatus:response.status,status:"invalid-payload",error:"Adapter status response is missing its "+kind+" summary."};
+    if(kind==="racing")return {configured:true,reachable:true,authorized:true,httpStatus:response.status,
+      status:feed.loaded?(feed.raceCards>0?"connected":"connected-empty"):"cache-not-loaded",
+      raceCards:Number(feed.raceCards)||0,pricedRaceCards:Number(feed.pricedRaceCards)||0,
+      winFavourites:Number(feed.winFavourites)||0,placeFavourites:Number(feed.placeFavourites)||0,
+      quoteCounts:feed.quoteCounts||null,capturedAt:feed.capturedAt||null,
+      cacheAgeSeconds:Number.isFinite(feed.cacheAgeSeconds)?feed.cacheAgeSeconds:null};
     return {configured:true,reachable:true,authorized:true,httpStatus:response.status,
       status:feed.loaded?(feed.marketCount>0?"connected":"connected-empty"):"cache-not-loaded",
       marketCount:Number(feed.marketCount)||0,pricedMarkets:Number(feed.pricedMarkets)||0,
