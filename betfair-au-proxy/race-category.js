@@ -7,7 +7,7 @@ function raceCategory(name, description = {}, event = {}) {
   const values = [
     typeof description === "string" ? description : "",
     description?.raceType, description?.race_type, description?.type,
-    event?.raceType, event?.race_type, event?.type,
+    event?.raceType, event?.race_type, event?.type, event?.name, event?.venue,
     event?.eventType?.name, event?.eventTypeName
   ].filter(value => value != null && value !== "");
   const text = (String(name || "") + " " + values.join(" ")).toLowerCase();
