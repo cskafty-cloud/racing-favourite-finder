@@ -234,48 +234,29 @@ async function loadRaces() {
     exchangeOnly:true,marketTypes:["WIN","PLACE"],
     note:"Exchange BACK/LAY prices only. Exchange favourites use the lowest available WIN or PLACE BACK price respectively, based on adapter retrieval time rather than a source publication timestamp. Betfair delayed data may be up to 180 seconds old. These are not fixed bookmaker prices and must not be included in Sportsbet or Bet365 favourite calculations."};
 }
-async function fetchSportCatalogue(type, from, to, marketTypeCodes=["MATCH_ODDS","WINNER","TO_WIN","OUTRIGHT_WINNER"]) {
-  const filter = {
-    eventTypeIds:[type.id],
-    marketTypeCodes,
-    marketStartTime:{from:from.toISOString(),to:to.toISOString()}
-  };
-  try {
-    const markets = await rpc("listMarketCatalogue", {
-      filter,
-      marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],
-      sort:"FIRST_TO_START",
-      maxResults:"200"
-    });
+const SPORT_MARKET_TYPES = ["MATCH_ODDS","H2H","MONEYLINE","WINNER","TO_WIN","OUTRIGHT_WINNER","TOTAL_GOALS","BOTH_TEAMS_TO_SCORE","CORRECT_SCORE","ASIAN_HANDICAP","OVER_UNDER_25"];
+async function fetchSportCatalogue(type, from, to, marketTypeCodes=SPORT_MARKET_TYPES, inPlayOnly=false) {
+  const filter={eventTypeIds:[type.id],marketTypeCodes};
+  if(inPlayOnly)filter.inPlayOnly=true;else filter.marketStartTime={from:from.toISOString(),to:to.toISOString()};
+  try{
+    const markets=await rpc("listMarketCatalogue",{filter,marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],sort:"FIRST_TO_START",maxResults:"200"});
     return {markets:markets||[],errors:[]};
-  } catch (error) {
-    if (!/TOO_MUCH_DATA/i.test(error.message)) return {markets:[],errors:[error.message]};
-
-    // Soccer can exceed Betfair's response-size limit even though the API
-    // returns HTTP 200. Reduce query breadth first by splitting market types;
-    // then split the requested time range. This avoids repeatedly asking for
-    // the same oversized all-market Soccer response.
-    if (marketTypeCodes.length > 1) {
-      const middle = Math.ceil(marketTypeCodes.length / 2);
-      const left = await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(0,middle));
-      const right = await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(middle));
-      const unique = new Map();
-      for (const market of [...left.markets,...right.markets]) unique.set(String(market.marketId),market);
+  }catch(error){
+    if(!/TOO_MUCH_DATA/i.test(error.message))return {markets:[],errors:[error.message]};
+    if(marketTypeCodes.length>1){
+      const middle=Math.ceil(marketTypeCodes.length/2);
+      const left=await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(0,middle),inPlayOnly);
+      const right=await fetchSportCatalogue(type,from,to,marketTypeCodes.slice(middle),inPlayOnly);
+      const unique=new Map([...left.markets,...right.markets].map(m=>[String(m.marketId),m]));
       return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
     }
-
-    const span = to.getTime() - from.getTime();
-    // Narrow a single market-type query to at most five-minute windows.
-    // The recursion is bounded by the minimum window and always retains any
-    // successful sibling results if one dense interval still fails.
-    if (span <= 5 * 60 * 1000) {
-      return {markets:[],errors:["Soccer/sport catalogue remained oversized at five-minute resolution ("+marketTypeCodes[0]+"): "+error.message]};
-    }
-    const midpoint = new Date(from.getTime() + Math.floor(span / 2));
-    const left = await fetchSportCatalogue(type,from,midpoint,marketTypeCodes);
-    const right = await fetchSportCatalogue(type,midpoint,to,marketTypeCodes);
-    const unique = new Map();
-    for (const market of [...left.markets,...right.markets]) unique.set(String(market.marketId),market);
+    if(inPlayOnly)return {markets:[],errors:["In-play catalogue remained oversized ("+marketTypeCodes[0]+"): "+error.message]};
+    const span=to.getTime()-from.getTime();
+    if(span<=5*60*1000)return {markets:[],errors:["Sport catalogue remained oversized at five-minute resolution ("+marketTypeCodes[0]+"): "+error.message]};
+    const midpoint=new Date(from.getTime()+Math.floor(span/2));
+    const left=await fetchSportCatalogue(type,from,midpoint,marketTypeCodes,false);
+    const right=await fetchSportCatalogue(type,midpoint,to,marketTypeCodes,false);
+    const unique=new Map([...left.markets,...right.markets].map(m=>[String(m.marketId),m]));
     return {markets:[...unique.values()],errors:[...left.errors,...right.errors]};
   }
 }
@@ -316,27 +297,35 @@ async function fetchSportBooks(marketIds) {
 }
 async function loadSports() {
   const from=new Date(),to=new Date(Date.now()+7*24*60*60*1000);
-  const eventTypes=await rpc("listEventTypes",{filter:{marketStartTime:{from:from.toISOString(),to:to.toISOString()}}});
+  const eventTypes=await rpc("listEventTypes",{filter:{}});
   const types=(eventTypes||[]).map(x=>({id:String(x.eventType.id),name:String(x.eventType.name||"Sport")}))
     .filter(x=>!/horse racing|greyhound racing|harness racing/i.test(x.name));
-  const groups=[];
-  // Do not launch every sport catalogue simultaneously. Dense Soccer
-  // catalogues recursively split into smaller requests; batching five sports
-  // at a time prevents those retries from overwhelming the Australian proxy.
+  const groups=types.map(type=>({type,markets:[],errors:[]}));
+  const groupById=new Map(groups.map(group=>[group.type.id,group]));
+  // Daily catalogue slices avoid the 200-market cap hiding later fixtures.
+  for(let day=0;day<7;day++){
+    const windowFrom=new Date(from.getTime()+day*24*60*60*1000);
+    const windowTo=new Date(Math.min(to.getTime(),windowFrom.getTime()+24*60*60*1000));
+    for(let i=0;i<types.length;i+=5){
+      const batch=await Promise.all(types.slice(i,i+5).map(async type=>({type,result:await fetchSportCatalogue(type,windowFrom,windowTo)})));
+      for(const item of batch){const group=groupById.get(item.type.id);group.markets.push(...item.result.markets);group.errors.push(...item.result.errors);}
+    }
+  }
+  // In-play markets have already-started market times, so query them separately.
   for(let i=0;i<types.length;i+=5){
-    const batch=await Promise.all(types.slice(i,i+5).map(async type=>{
-      const result=await fetchSportCatalogue(type,from,to);
-      return {type,markets:result.markets,error:result.errors.length?result.errors.join("; "):null};
-    }));
-    groups.push(...batch);
+    const batch=await Promise.all(types.slice(i,i+5).map(async type=>({type,result:await fetchSportCatalogue(type,from,to,SPORT_MARKET_TYPES,true)})));
+    for(const item of batch){const group=groupById.get(item.type.id);group.markets.push(...item.result.markets);group.errors.push(...item.result.errors);}
+  }
+  for(const group of groups){
+    group.markets=[...new Map(group.markets.map(m=>[String(m.marketId),m])).values()];
+    group.error=group.errors.length?[...new Set(group.errors)].join("; "):null;
   }
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_sport:g.type.name})));
   const books=[],bookErrors=[];
   for(let i=0;i<all.length;i+=40){
-    const batch=all.slice(i,i+40);
-    const result=await fetchSportBooks(batch.map(m=>m.marketId));
+    const batch=all.slice(i,i+40),result=await fetchSportBooks(batch.map(m=>m.marketId));
     books.push(...result.books);
-    if(result.errors.length) bookErrors.push({sports:[...new Set(batch.map(m=>m._sport))],message:result.errors.join("; ")});
+    if(result.errors.length)bookErrors.push({sports:[...new Set(batch.map(m=>m._sport))],message:result.errors.join("; ")});
   }
   const byId=new Map(books.map(b=>[b.marketId,b])),capturedAt=new Date().toISOString();
   const events=all.map(m=>{
