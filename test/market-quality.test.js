@@ -106,3 +106,14 @@ test("Betfair racing codes remain distinct", () => {
   assert.equal(raceCategory("Greyhound Racing", {}), "greyhound");
   assert.equal(raceCategory("Horse Racing", { raceType: "FLAT" }), "horse");
 });
+
+test("Betfair harness venues are classified when raceType metadata is omitted", () => {
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Gloucester Park R1" }), "harness");
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Globe Derby R3" }), "harness");
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Menangle Park R5" }), "harness");
+});
+
+test("ambiguous shared Australian venues are not guessed to be harness", () => {
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Albion Park R1" }), "horse");
+  assert.equal(raceCategory("Horse Racing", {}, { name: "Bendigo R2" }), "horse");
+});
