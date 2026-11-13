@@ -239,7 +239,7 @@ async function fetchSportCatalogue(type, from, to, marketTypeCodes=SPORT_MARKET_
   const filter={eventTypeIds:[type.id],marketTypeCodes};
   if(inPlayOnly)filter.inPlayOnly=true;else filter.marketStartTime={from:from.toISOString(),to:to.toISOString()};
   try{
-    const markets=await rpc("listMarketCatalogue",{filter,marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],sort:"FIRST_TO_START",maxResults:"200"});
+    const markets=await rpc("listMarketCatalogue",{filter,marketProjection:["EVENT","MARKET_START_TIME","RUNNER_DESCRIPTION","MARKET_DESCRIPTION"],sort:"FIRST_TO_START",maxResults:"100"});
     return {markets:markets||[],errors:[]};
   }catch(error){
     if(!/TOO_MUCH_DATA/i.test(error.message))return {markets:[],errors:[error.message]};
@@ -317,7 +317,9 @@ async function loadSports() {
     for(const item of batch){const group=groupById.get(item.type.id);group.markets.push(...item.result.markets);group.errors.push(...item.result.errors);}
   }
   for(const group of groups){
-    group.markets=[...new Map(group.markets.map(m=>[String(m.marketId),m])).values()];
+    group.markets=[...new Map(group.markets.map(m=>[String(m.marketId),m])).values()]
+      .sort((left,right)=>Number(!!right.inPlay)-Number(!!left.inPlay)||Date.parse(left.marketStartTime)-Date.parse(right.marketStartTime))
+      .slice(0,100);
     group.error=group.errors.length?[...new Set(group.errors)].join("; "):null;
   }
   const all=groups.flatMap(g=>g.markets.map(m=>({...m,_sport:g.type.name})));
