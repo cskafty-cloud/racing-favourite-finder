@@ -1580,34 +1580,23 @@ async function loadOddsDataSport(sport, options={}) {
 async function probeBetfairAdapterFeed(url, kind) {
   if (!url) return { configured:false, reachable:false, authorized:false, status:"url-missing" };
   try {
-    const response = await fetch(url, {
-      headers: {
-        Accept:"application/json",
-        ...(process.env.BETFAIR_FEED_TOKEN ? {Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN} : {})
-      },
-      signal:AbortSignal.timeout(10000)
-    });
-    const body = await response.text();
-    let data;
-    try { data=JSON.parse(body); }
-    catch { return {configured:true,reachable:true,authorized:false,httpStatus:response.status,
-      status:"invalid-json",error:"Adapter returned invalid JSON."}; }
-    if (!response.ok) return {configured:true,reachable:true,authorized:false,httpStatus:response.status,
-      status:response.status===401||response.status===403?"token-rejected":"http-error",
-      error:String(data.error||("Adapter HTTP "+response.status)).slice(0,220)};
-    const rows = kind==="racing" ? data.races : data.events;
-    if (!Array.isArray(rows)) return {configured:true,reachable:true,authorized:true,httpStatus:response.status,
-      status:"invalid-payload",error:"Adapter response is missing its "+(kind==="racing"?"races":"events")+" array."};
-    return {configured:true,reachable:true,authorized:true,httpStatus:response.status,status:"connected",
-      marketCount:rows.length,
-      pricedMarkets:kind==="racing"
-        ? rows.filter(r=>(r.runners||[]).some(x=>x.exchange?.win?.back||x.exchange?.win?.lay||x.exchange?.place?.back||x.exchange?.place?.lay)).length
-        : Number(data.pricedMarkets)||rows.filter(e=>(e.runners||[]).some(r=>r.back||r.lay)).length,
-      capturedAt:data.capturedAt||data.fetchedAt||data.scheduleFetchedAt||null};
-  } catch(error) {
-    return {configured:true,reachable:false,authorized:false,status:"unreachable",
-      error:String(error.message||error).slice(0,220)};
-  }
+    const statusUrl=new URL(url);
+    statusUrl.pathname=statusUrl.pathname.replace(/\\/api\\/(?:races|sports)\\/?$/,"/api/status");
+    statusUrl.search=""; statusUrl.searchParams.set("kind",kind);
+    const response=await fetch(statusUrl,{headers:{Accept:"application/json",
+      ...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},
+      signal:AbortSignal.timeout(15000)});
+    const body=await response.text();let data;
+    try{data=JSON.parse(body)}catch{return {configured:true,reachable:true,authorized:false,httpStatus:response.status,status:"invalid-json",error:"Adapter returned invalid JSON."};}
+    if(!response.ok)return {configured:true,reachable:true,authorized:false,httpStatus:response.status,
+      status:response.status===401||response.status===403?"token-rejected":"http-error",error:String(data.error||("Adapter HTTP "+response.status)).slice(0,220)};
+    const feed=data[kind];
+    if(!feed||typeof feed!=="object")return {configured:true,reachable:true,authorized:true,httpStatus:response.status,status:"invalid-payload",error:"Adapter status response is missing its "+kind+" summary."};
+    return {configured:true,reachable:true,authorized:true,httpStatus:response.status,
+      status:feed.loaded?(feed.marketCount>0?"connected":"connected-empty"):"cache-not-loaded",
+      marketCount:Number(feed.marketCount)||0,pricedMarkets:Number(feed.pricedMarkets)||0,
+      capturedAt:feed.capturedAt||null,cacheAgeSeconds:Number.isFinite(feed.cacheAgeSeconds)?feed.cacheAgeSeconds:null};
+  }catch(error){return {configured:true,reachable:false,authorized:false,status:"unreachable",error:String(error.message||error).slice(0,220)};}
 }
 
 // Manual diagnostic for the Australian adapter. This is deliberately separate
