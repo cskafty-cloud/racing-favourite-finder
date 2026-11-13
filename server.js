@@ -2457,12 +2457,11 @@ async function getGlobalRacesUncached() {
         const explicitNestedBook=nestedBook==="bet365";
         const hasRunnerWinPrice=x.win_odds!=null||x.fixed_win_odds!=null||x.fixed_win!=null||x.win_price!=null||x.win_frac!=null||x.fixed_win_frac!=null;
         const hasRunnerPlacePrice=x.place_odds!=null||x.fixed_place_odds!=null||x.place_price!=null||x.place_frac!=null;
-        // The documented /racing endpoint is Bet365-only and serves fixed WIN/PLACE.
-        // pm/ws are MoviOdds feed channels, not bookmaker names.
+        // MoviOdds documents /racing as Bet365-only. Accept its runner-level
+        // WIN/PLACE fields only when no conflicting explicit bookmaker is named.
         const quoteBook=priceRow?"bet365":nestedBet365!=null?"bet365":
           explicitRunnerBook||explicitNestedBook?"bet365":
-          (hasRunnerWinPrice||hasRunnerPlacePrice)&&!runnerBook?"bet365":
-          (hasRunnerWinPrice||hasRunnerPlacePrice)&&["pm","ws"].includes(runnerBook)?"bet365":null;
+          (hasRunnerWinPrice||hasRunnerPlacePrice)&&!runnerBook?"bet365":null;
         const quoteIsBet365=quoteBook==="bet365";
         const quoteIsSportsbet=false;
         const quoteIsSupportedBook=quoteIsBet365;
