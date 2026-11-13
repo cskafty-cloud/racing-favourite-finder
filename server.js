@@ -2434,6 +2434,7 @@ async function getGlobalRacesUncached() {
       oddsKeys:Object.keys(sampleRunner.odds||{}),identityFields:["bookmaker","bookmaker_key","bookmaker_name","bookmaker_code","site","book","bookie","sportsbook","operator","price_source","price_ts","win_odds","source","source_name","provider_name"]
         .reduce((out,key)=>{if(sampleRunner[key]!=null)out.runner[key]=sampleRunner[key];if(samplePrice[key]!=null)out.price[key]=samplePrice[key];if(sampleRunner.odds?.[key]!=null)out.odds[key]=sampleRunner.odds[key];return out;},{runner:{},price:{},odds:{}})}));
     let verifiedBet365Quotes=0,verifiedBet365PlaceQuotes=0,verifiedSportsbetQuotes=0,unverifiedPriceRows=0;
+    const moviPriceSourceCounts={},moviUnverifiedReasons={missingRunnerTimestamp:0,missingPlaceTimestamp:0,staleRunnerTimestamp:0,stalePlaceTimestamp:0,nonBet365Identity:0,unknownMarketShape:0};
     const races=raw.map(r=>{
       const code=String(r.code||r.race_code||r.category||"horse").toLowerCase();
       const category=(code==="g"||/greyhound|dog/.test(code))?"greyhound":(code==="h"||/harness|trots|pacing/.test(code))?"harness":"horse";
@@ -2450,6 +2451,8 @@ async function getGlobalRacesUncached() {
         const nestedBet365=nested.bet365??fixed.bet365??x.bet365??null;
         const runnerBook=moviQuoteBookmakerKey(x);
         const nestedBook=moviQuoteBookmakerKey(nested)||moviQuoteBookmakerKey(fixed);
+        const providerPriceSource=String(x.price_source??x.priceSource??x.odds_source??x.oddsSource??"missing").trim().toLowerCase()||"missing";
+        moviPriceSourceCounts[providerPriceSource]=(moviPriceSourceCounts[providerPriceSource]||0)+1;
         const explicitRunnerBook=runnerBook==="bet365";
         const explicitNestedBook=nestedBook==="bet365";
         const hasRunnerWinPrice=x.win_odds!=null||x.fixed_win_odds!=null||x.fixed_win!=null||x.win_price!=null||x.win_frac!=null||x.fixed_win_frac!=null;
@@ -2501,6 +2504,12 @@ async function getGlobalRacesUncached() {
         const explicitPlaceAge=x.place_age_seconds??x.place_quote_age_seconds??null;
         const placeAge=explicitPlaceAge!=null&&Number.isFinite(Number(explicitPlaceAge))
           ?Math.max(0,Number(explicitPlaceAge)):(placeUpdated?quoteAgeSecondsServer({last_update:placeUpdated}):null);
+        if(hasRunnerWinPrice&&!updated)moviUnverifiedReasons.missingRunnerTimestamp++;
+        if(hasRunnerPlacePrice&&!placeUpdated)moviUnverifiedReasons.missingPlaceTimestamp++;
+        if(hasRunnerWinPrice&&updated&&age!=null&&age>=180)moviUnverifiedReasons.staleRunnerTimestamp++;
+        if(hasRunnerPlacePrice&&placeUpdated&&placeAge!=null&&placeAge>=180)moviUnverifiedReasons.stalePlaceTimestamp++;
+        if(hasUnverifiedPrice&&!quoteIsBet365)moviUnverifiedReasons.nonBet365Identity++;
+        if((hasRunnerWinPrice||hasRunnerPlacePrice)&&!quoteIsSupportedBook)moviUnverifiedReasons.unknownMarketShape++;
         const verifiedWinAge=updated?quoteMarketAge({last_update:updated,age_seconds:age},"win"):null;
         const verifiedPlaceAge=placeUpdated?quoteMarketAge({place_last_update:placeUpdated,place_age_seconds:placeAge},"place"):null;
         if(quoteIsBet365&&Number.isFinite(price)&&price>1&&verifiedWinAge!=null&&verifiedWinAge<180)verifiedBet365Quotes++;
@@ -2517,7 +2526,8 @@ async function getGlobalRacesUncached() {
             ...(updated?{last_update:updated,updated_at:updated}:{}),age_seconds:age,timestamp_status:freshnessBasis,freshness_basis:freshnessBasis,feed_observed_at:new Date().toISOString(),stale:x.stale===true||(age!=null&&age>=180),
             suspended:x.suspended===true,source:"Bet365 fixed WIN/PLACE public quote · MoviOdds documented Bet365-only /racing endpoint",
             source_url:x.url||x.source_url||("https://moviodds.com/racing/race?id="+encodeURIComponent(raceId)),
-            public_demo:true}]:[]};
+            public_demo:true,provider_price_source:providerPriceSource,
+            bookmaker_identity_basis:"MoviOdds documented /racing endpoint contract (bet365-only)"}]:[]};
       });
       // Collapse repeated selection rows so each runner appears once in rankings and cards.
       const runnerMap=new Map();
@@ -2547,6 +2557,7 @@ async function getGlobalRacesUncached() {
         closed:/abandon|result|closed/.test(status),runners:uniqueRunners};
     }).filter(r=>r.start_time&&!r.closed);
     console.info("MOVIODDS_RACING_BOOKMAKER_VALIDATION",JSON.stringify({races:races.length,verifiedBet365Quotes,verifiedBet365PlaceQuotes,verifiedSportsbetQuotes,unverifiedPriceRows,
+      priceSourceChannels:moviPriceSourceCounts,unverifiedReasons:moviUnverifiedReasons,
       categories:Object.fromEntries(["horse","greyhound","harness"].map(code=>[code,races.filter(r=>r.category===code).length]))}));
     if(races.length||publicRaceRows.length) {
       const supplemental=await loadSupplementalAustralianRaces();
