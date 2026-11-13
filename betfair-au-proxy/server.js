@@ -64,7 +64,7 @@ async function rpc(method, params) {
     if (!response.ok || item?.error || item?.result == null) {
       const detail = item?.error?.data?.APINGException?.errorCode || item?.error?.message || "request failed";
       if (String(detail).toUpperCase().includes("INVALID_SESSION_INFORMATION")) {
-        throw new Error("Betfair session token rejected (INVALID_SESSION_INFORMATION). Betfair explicitly rejected the session token. Obtain a fresh session token through Betfair's official authorised login/API process, then restart the Windows launcher and choose N to replace the saved credentials. A timeout or network error is not proof of an expired session. Keep the app key and Railway shared token separate; do not send either secret in chat.");
+        throw new Error("Betfair session token rejected (INVALID_SESSION_INFORMATION). Betfair explicitly rejected the session token. Obtain a fresh session token through Betfair's official authorised login/API process, then restart the Windows launcher and choose Y at the fresh-session prompt to replace the saved session token. The saved app key and shared feed token are retained. A timeout or network error is not proof of an expired session. Keep the app key and Railway shared token separate; do not send either secret in chat.");
       }
       throw new Error("Betfair HTTP " + response.status + ": " + detail);
     }
