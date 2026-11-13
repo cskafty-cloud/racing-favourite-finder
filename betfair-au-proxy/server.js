@@ -8,7 +8,8 @@ const SESSION_TOKEN = process.env.BETFAIR_SESSION_TOKEN || "";
 const PROXY_ACCESS_TOKEN = String(process.env.BETFAIR_FEED_TOKEN || "");
 
 // Exact byte-for-byte shared-secret comparison. Never trim or case-normalise.
-function accessTokenMatches(expectedToken, suppliedToken) {
+function accessTokenMatches(suppliedToken) {
+  const expectedToken = PROXY_ACCESS_TOKEN;
   if (typeof expectedToken !== "string" || typeof suppliedToken !== "string") return false;
   if (expectedToken.length === 0 || suppliedToken.length === 0) return false;
   const expected = Buffer.from(expectedToken, "utf8");
