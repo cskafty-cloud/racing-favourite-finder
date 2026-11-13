@@ -236,6 +236,893 @@ if ($railwayPresent.Count -gt 0) {
   Write-Host "The saved Betfair session may have expired. To replace it, sign in through Betfair's official Australian API login now." -ForegroundColor Yellow
   $credentialChoice = Read-Host "Sign in again and replace the saved session token? [y/N]"
   if ($credentialChoice -match '^(y|yes)
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Kept the saved encrypted Betfair credentials. If /health reports INVALID_SESSION_INFORMATION, rerun and answer Y to the sign-in prompt." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Kept the saved encrypted Betfair credentials. If /health reports INVALID_SESSION_INFORMATION, rerun and answer Y to the sign-in prompt." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Kept the saved encrypted Betfair credentials. If /health reports INVALID_SESSION_INFORMATION, rerun and answer Y to the sign-in prompt." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Kept the saved encrypted Betfair credentials. If /health reports INVALID_SESSION_INFORMATION, rerun and answer Y to the sign-in prompt." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
+    Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
+    $appKey = [string]$values.BETFAIR_APP_KEY
+    $newSession = Get-NewBetfairSessionToken $appKey
+    $values = @{
+      BETFAIR_APP_KEY = $appKey
+      BETFAIR_SESSION_TOKEN = $newSession
+      BETFAIR_FEED_TOKEN = $savedFeedToken
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$values.BETFAIR_APP_KEY) -or
+        [string]::IsNullOrWhiteSpace([string]$values.BETFAIR_SESSION_TOKEN)) {
+      throw "Missing Betfair app key or session token. Existing encrypted credentials were not replaced."
+    }
+    Save-EncryptedCredentials $values
+    Write-Host "New Betfair credentials saved locally using Windows DPAPI; shared feed token retained." -ForegroundColor Green
+    Offer-CopySessionToken ([string]$values.BETFAIR_SESSION_TOKEN)
+  } else {
+    Write-Host "Automatically loaded saved encrypted Betfair credentials." -ForegroundColor Green
+    $newFeedToken = Get-ClipboardFeedToken
+    if ($newFeedToken -and $newFeedToken -cne [string]$values.BETFAIR_FEED_TOKEN) {
+      $values.BETFAIR_FEED_TOKEN = $newFeedToken
+      Save-EncryptedCredentials $values
+      Write-Host "Updated the encrypted shared token; retained the saved Betfair login." -ForegroundColor Green
+    }
+  }
+} else {
+  Write-Host "No saved credential file found. Enter credentials once to create it."
+  $values = Read-NewCredentials
+}
+
+Offer-CopyFeedToken ([string]$values.BETFAIR_FEED_TOKEN)
+
+$env:BETFAIR_APP_KEY = [string]$values.BETFAIR_APP_KEY
+$env:BETFAIR_SESSION_TOKEN = [string]$values.BETFAIR_SESSION_TOKEN
+$env:BETFAIR_FEED_TOKEN = [string]$values.BETFAIR_FEED_TOKEN
+$env:PORT = "8080"
+$values = $null
+
+if ([string]::IsNullOrWhiteSpace($env:BETFAIR_FEED_TOKEN) -or $env:BETFAIR_FEED_TOKEN -match '\s') {
+  throw "The shared token is empty or contains whitespace. Adapter was not started."
+}
+Write-Host "Credentials loaded into this process; secret values remain hidden." -ForegroundColor Green
+
+# Prevent duplicate Node adapters and safely replace only the known Betfair adapter.
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($listener) {
+  $portOwnerPid = [int]$listener.OwningProcess
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $portOwnerPid" -ErrorAction SilentlyContinue
+  Write-Warning "Port 8080 is already occupied by PID $portOwnerPid."
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 4
+    Write-Host "Existing service health endpoint responded." -ForegroundColor Yellow
+  } catch {
+    Write-Warning "The process on port 8080 did not return a usable adapter health response."
+  }
+
+  if (-not $owner) {
+    throw "Cannot identify the process owning port 8080. Nothing was stopped; no second adapter was started."
+  }
+
+  Write-Host "Process: $($owner.Name) | PID: $portOwnerPid" -ForegroundColor DarkGray
+  $isBetfairAdapter = $owner.Name -ieq "node.exe" -and
+    $owner.CommandLine -match 'server\.js' -and
+    $owner.CommandLine -match 'betfair-au-proxy'
+
+  if (-not $isBetfairAdapter) {
+    throw "Port 8080 belongs to a different application. It was left running; no second adapter was started."
+  }
+
+  Write-Host "Recognised existing Betfair adapter. Restarting it automatically to load the current encrypted credentials..." -ForegroundColor Cyan
+  Stop-Process -Id $portOwnerPid -Force
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 400
+    $stillListening = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+  } while ($stillListening -and (Get-Date) -lt $deadline)
+
+  if ($stillListening) {
+    throw "Port 8080 is still occupied after stopping the identified adapter. No duplicate was started."
+  }
+  Write-Host "Port 8080 is free. Starting one fresh adapter instance." -ForegroundColor Green
+}
+
+$tailscaleExe = $null
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+if ($tailscaleCommand) { $tailscaleExe = $tailscaleCommand.Source }
+if (-not $tailscaleExe) {
+  $candidate = Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"
+  if (Test-Path -LiteralPath $candidate) { $tailscaleExe = $candidate }
+}
+if ($tailscaleExe) {
+  Write-Host "Starting Tailscale Funnel..."
+  & $tailscaleExe funnel --bg 8080
+  if ($LASTEXITCODE -eq 0) {
+    & $tailscaleExe funnel status
+  } else {
+    Write-Warning "Tailscale Funnel did not start. Adapter will still start locally."
+  }
+} else {
+  Write-Warning "tailscale.exe not found. Adapter will start locally without Funnel."
+}
+
+Write-Host ""
+Write-Host "Starting adapter. Keep this PowerShell window open."
+Write-Host "Health: http://127.0.0.1:8080/health"
+Write-Host "Protected endpoints: /api/races and /api/sports"
+Write-Host "Saved credential file is encrypted; never upload or share it."
+Write-Host ""
+node server.js
+) {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
     Write-Host "Sign in to Betfair through its official Australian API login. The saved shared feed token will be retained." -ForegroundColor Cyan
     $appKey = [string]$values.BETFAIR_APP_KEY
     $newSession = Get-NewBetfairSessionToken $appKey
