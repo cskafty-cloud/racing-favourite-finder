@@ -2357,7 +2357,29 @@ async function getGlobalRacesUncached() {
   // by Betfair, so do not waste requests on the direct API when the adapter is set.
   if (BETFAIR_FEED_URL && process.env.PUBLIC_ONLY_FEEDS !== "true" && Date.now()>=betfairFeedRetryAt) {
     try {
-      const response=await fetch(BETFAIR_FEED_URL,{headers:{Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},signal:AbortSignal.timeout(25000)});
+      const adapterHeaders={Accept:"application/json",...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})};
+      let response=null,lastAdapterError=null;
+      // Tailscale Funnel can briefly return an edge 502 while the local
+      // read-only adapter is healthy. Retry one transient response before
+      // opening the feed circuit; authentication and other 4xx errors are
+      // never retried or disguised.
+      for(let attempt=1;attempt<=2;attempt++){
+        try{
+          response=await fetch(BETFAIR_FEED_URL,{headers:adapterHeaders,signal:AbortSignal.timeout(12000)});
+          if([502,503,504].includes(response.status)&&attempt<2){
+            await response.arrayBuffer().catch(()=>{});
+            await new Promise(resolve=>setTimeout(resolve,800));
+            response=null;
+            continue;
+          }
+          break;
+        }catch(fetchError){
+          lastAdapterError=fetchError;
+          if(attempt===2)throw fetchError;
+          await new Promise(resolve=>setTimeout(resolve,800));
+        }
+      }
+      if(!response)throw lastAdapterError||new Error("Australian Betfair adapter returned no response after retry.");
       const body=await response.text();let data;
       try{data=JSON.parse(body);}catch{const contentType=response.headers.get("content-type")||"unknown content type";const excerpt=String(body||"").replace(/\s+/g," ").slice(0,180);throw new Error("Australian Betfair adapter returned non-JSON HTTP "+response.status+" ("+contentType+")"+(excerpt?": "+excerpt:"."));}
       if(!response.ok)throw new Error(data.error||"Australian Betfair adapter HTTP "+response.status);
@@ -2402,7 +2424,9 @@ async function getGlobalRacesUncached() {
   // both racing endpoints are inside their cooldown; use the free feeds below.
   const puntersEdgeQuotaPaused = API_KEY && (PUNTERS_EDGE_RACING_QUOTA_PAUSED || Date.now() < providerRetryAt.schedule || Date.now() < providerRetryAt.odds);
   if(API_KEY && !PUNTERS_EDGE_PUBLIC_DISPLAY_ALLOWED){
-    failures.push({feed:"PuntersEdge",message:"Not queried for the public board: this key/plan is not authorised for public display. Free, Hobby and Standard are personal-use only; public display requires the applicable licence and attribution."});
+    console.info("PUNTERS_EDGE_PUBLIC_DISPLAY_DISABLED",JSON.stringify({
+      reason:"This key/plan is not authorised for public display; provider was intentionally not queried."
+    }));
   }
   if (puntersEdgeQuotaPaused) {
     // Quota pause is exposed through provider status; avoid repeating it in runtime logs.
@@ -2439,7 +2463,9 @@ async function getGlobalRacesUncached() {
   // Krok Odds is used on this public comparison board only when an explicit
   // public-display licence is configured. Its free API key alone is not enough.
   if(KROKODDS_API_KEY && !KROK_PUBLIC_DISPLAY_ALLOWED){
-    failures.push({feed:"Krok Odds",message:"Not queried for the public comparison board: explicit public-display licensing is not configured."});
+    console.info("KROK_PUBLIC_DISPLAY_DISABLED",JSON.stringify({
+      reason:"Public-display licensing is not configured; provider was intentionally not queried."
+    }));
   }
   // When licensed, Krok is queried only after the primary feed fails and is cached.
   if (KROKODDS_API_KEY && KROK_PUBLIC_DISPLAY_ALLOWED && !KROK_RACING_QUOTA_PAUSED) {
