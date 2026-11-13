@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.25"
+$RffLauncherVersion = "2026-11-13.26"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -88,11 +88,17 @@ function Get-NewBetfairSessionToken([string]$AppKey) {
   try {
     $body = "username=$([System.Uri]::EscapeDataString($username))&password=$([System.Uri]::EscapeDataString($password))"
     $response = Invoke-RestMethod -Method Post -Uri "https://identitysso.betfair.com.au/api/login" -Headers @{ "X-Application" = $AppKey; "Accept" = "application/json" } -ContentType "application/x-www-form-urlencoded" -Body $body -TimeoutSec 30
-    if ($response.loginStatus -notin @("SUCCESS", "LIMITED_ACCESS") -or [string]::IsNullOrWhiteSpace([string]$response.sessionToken)) {
-      $reason = if ($response.error) { [string]$response.error } elseif ($response.loginStatus) { [string]$response.loginStatus } else { "No loginStatus returned by Betfair" }
+    # Betfair's Australian interactive API login returns { status, token }.
+    # The certificate/non-interactive flow returns { loginStatus, sessionToken }.
+    # Accept both documented response shapes, preferring the interactive fields
+    # because this launcher does not submit a client certificate.
+    $loginStatus = if ($response.status) { [string]$response.status } else { [string]$response.loginStatus }
+    $sessionToken = if ($response.token) { [string]$response.token } else { [string]$response.sessionToken }
+    if ($loginStatus -notin @("SUCCESS", "LIMITED_ACCESS") -or [string]::IsNullOrWhiteSpace($sessionToken)) {
+      $reason = if ($response.error) { [string]$response.error } elseif ($loginStatus) { $loginStatus } else { "Betfair returned an unrecognised login response (HTTP request completed, but no status field was present)" }
       throw "Betfair login was not successful ($reason). Check the account login, 2FA code and any pending Betfair website terms/security prompts."
     }
-    return [string]$response.sessionToken
+    return $sessionToken
   } catch {
     if ($_.Exception.Message -like "Betfair login was not successful*") { throw }
     throw "Could not complete the official Betfair Australia API login. Check network access and account requirements; no password or token was displayed. $($_.Exception.Message)"
