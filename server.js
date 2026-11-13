@@ -1317,9 +1317,35 @@ function runnerQuoteAudit(runner){
  }
  return rows;
 }
+function selectDelayedExchangeFavourite(race,market="win"){
+ const priceField=market==="place"?"place_price":"win_price";
+ const marketType=market==="place"?"exchange_place":"exchange_win";
+ const candidates=(race.runners||[]).flatMap(r=>(r.bookmakers||r.odds||[]).map(q=>({runner:r,quote:q})))
+  .filter(({runner,quote})=>quote.exchange===true&&bookmakerKey(quote)==="betfair"&&
+    String(quote.market_type||quote.place_market_type||"").toLowerCase()===marketType&&
+    String(quote.price_side||"").toUpperCase()==="BACK"&&quote.fresh===true&&
+    Number.isFinite(Number(quote[priceField]))&&Number(quote[priceField])>1&&
+    runner.scratched!==true&&runner.suspended!==true&&
+    !/scratched|removed|suspended/i.test(String(runner.status||"")))
+  .sort((a,b)=>Number(a.quote[priceField])-Number(b.quote[priceField]));
+ const best=candidates[0];if(!best)return null;
+ const q=best.quote,r=best.runner;
+ return {name:r.name||r.runner_name||r.horse_name||r.greyhound_name||"Favourite",
+  number:r.number??r.runner_number??null,price:Number(q[priceField]),
+  priceSource:"Betfair Exchange BACK · delayed Australian feed",quoteCount:0,
+  status:"delayed_exchange",label:market==="place"?"DELAYED EXCHANGE PLACE FAVOURITE · NOT FIXED ODDS":"DELAYED EXCHANGE FAVOURITE · NOT FIXED ODDS",
+  market:market.toUpperCase(),side:"BACK",ageSeconds:q.age_seconds??null,observedAt:q.observed_at||null,
+  availableSize:q.available_size??null,isMarketDataDelayed:typeof q.is_market_data_delayed==="boolean"?q.is_market_data_delayed:null,
+  sourceTimestampAvailable:false,freshnessBasis:q.freshness_basis||"adapter_retrieval_time"};
+}
 function raceFavouriteDisplay(race){
  const verified=selectFavourite(race);
  if(verified)return {...verified,status:"verified",label:"VERIFIED MARKET FAVOURITE"};
+ // If no timestamp-verified fixed bookmaker price is available, show the
+ // separately identified Betfair BACK favourite. Never blend exchange odds
+ // into fixed-odds consensus or top-tip scoring.
+ const exchange=selectDelayedExchangeFavourite(race,"win");
+ if(exchange)return exchange;
  const unverified=(race.runners||[]).flatMap(r=>(r.bookmakerPriceAudit||[]).filter(q=>q.market==="WIN"&&q.status==="unverified"&&q.bookmaker_key!=="betfair").map(q=>({runner:r,quote:q}))).sort((a,b)=>a.quote.price-b.quote.price)[0];
  if(unverified)return {name:unverified.runner.name||unverified.runner.runner_name||"Favourite",
    number:unverified.runner.number??unverified.runner.runner_number??null,status:"unverified",
@@ -2721,6 +2747,8 @@ app.get("/api/races", async (_req, res) => {
       const runners=(race.runners||[]).map(r=>({...r,bookmakerPriceAudit:runnerQuoteAudit(r)}));
       const enriched={...race,runners};
       return {...enriched,favourite:raceFavouriteDisplay(enriched),
+        exchangeFavourite:selectDelayedExchangeFavourite(enriched,"win"),
+        exchangePlaceFavourite:selectDelayedExchangeFavourite(enriched,"place"),
         verifiedBookmakerPrices:runners.flatMap(r=>r.bookmakerPriceAudit.filter(q=>q.status==="verified")),
         unverifiedBookmakerPrices:runners.flatMap(r=>r.bookmakerPriceAudit.filter(q=>q.status==="unverified"))};
     });    const fetchedAt=new Date().toISOString();
