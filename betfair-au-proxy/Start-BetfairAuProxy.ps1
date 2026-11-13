@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.19"
+$RffLauncherVersion = "2026-11-13.20"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -9,19 +9,27 @@ Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -Foreground
 # The encrypted DPAPI credential file is separate and is never downloaded or overwritten.
 $AdapterServerPath = Join-Path $PSScriptRoot "server.js"
 $AdapterCategoryPath = Join-Path $PSScriptRoot "race-category.js"
+$AdapterTokenPath = Join-Path $PSScriptRoot "token-auth.js"
 $AdapterUpdateBase = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy"
 $AdapterServerTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
 $AdapterCategoryTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-category-" + $PID + ".tmp")
+$AdapterTokenTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-token-auth-" + $PID + ".tmp")
 try {
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/server.js") -OutFile $AdapterServerTemp -TimeoutSec 20
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/race-category.js") -OutFile $AdapterCategoryTemp -TimeoutSec 20
+  Invoke-WebRequest -Uri ($AdapterUpdateBase + "/token-auth.js") -OutFile $AdapterTokenTemp -TimeoutSec 20
   $AdapterCandidate = Get-Content -LiteralPath $AdapterServerTemp -Raw
   $CategoryCandidate = Get-Content -LiteralPath $AdapterCategoryTemp -Raw
+  $TokenCandidate = Get-Content -LiteralPath $AdapterTokenTemp -Raw
   if ($AdapterCandidate.Length -lt 5000 -or
       -not $AdapterCandidate.Contains("accessTokenMatches") -or
       -not $AdapterCandidate.Contains('require("./race-category")') -or
+      -not $AdapterCandidate.Contains('require("./token-auth")') -or
       -not $AdapterCandidate.Contains("BETFAIR_AU_RACING_EVENT_TYPES")) {
     throw "Downloaded adapter entry point did not pass the expected source checks."
+  }
+  if ($TokenCandidate.Length -lt 300 -or -not $TokenCandidate.Contains("function accessTokenMatches")) {
+    throw "Downloaded exact-token helper did not pass the expected source checks."
   }
   if ($CategoryCandidate.Length -lt 300 -or
       -not $CategoryCandidate.Contains("function raceCategory") -or
@@ -40,7 +48,7 @@ try {
 } catch {
   Write-Warning ("Could not fully update adapter source; keeping existing local copies where possible. " + $_.Exception.Message)
 } finally {
-  foreach ($temporaryPath in @($AdapterServerTemp, $AdapterCategoryTemp)) {
+  foreach ($temporaryPath in @($AdapterServerTemp, $AdapterCategoryTemp, $AdapterTokenTemp)) {
     if (Test-Path -LiteralPath $temporaryPath) {
       Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
     }
@@ -121,7 +129,7 @@ function Offer-CopyFeedToken([string]$FeedToken) {
 }
 function Get-ClipboardFeedToken {
   try {
-    $candidate = ([string](Get-Clipboard -Raw -ErrorAction Stop)).Trim()
+    $candidate = [string](Get-Clipboard -Raw -ErrorAction Stop)
   } catch {
     $candidate = ""
   }
