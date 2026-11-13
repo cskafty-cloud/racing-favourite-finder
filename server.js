@@ -2889,8 +2889,16 @@ app.get("/api/betfair/au/races",async(_req,res)=>{
       pricedMarkets,backOffers,layOffers,provider:"Betfair Exchange Delayed API · Australian adapter",
       note:"Exchange WIN/PLACE BACK/LAY only; separate from fixed bookmaker prices."});
   }catch(error){
-    console.error("BETFAIR_AU_RACING_ADAPTER_FAILED",error.message);
-    return res.status(503).json({status:"configured-but-unavailable",error:error.message,races:[]});
+    const reauthenticationRequired=/INVALID_SESSION_INFORMATION|NO_SESSION|session token rejected/i.test(String(error.message||error));
+    console.error(reauthenticationRequired?"BETFAIR_AU_RACING_REAUTH_REQUIRED":"BETFAIR_AU_RACING_ADAPTER_FAILED",error.message);
+    return res.status(reauthenticationRequired?401:503).json({
+      status:reauthenticationRequired?"reauthentication-required":"configured-but-unavailable",
+      errorCategory:reauthenticationRequired?"authentication":"upstream-unavailable",
+      reauthenticationRequired,error:error.message,races:[],
+      note:reauthenticationRequired
+        ?"Betfair rejected the saved session. Renew it through the official Betfair login in the Windows launcher, then update the production session token."
+        :"The adapter is temporarily unavailable. Retry after the reported backoff; no prices are fabricated."
+    });
   }
 });
 let betfairSportsAdapterCache={at:0,data:null};
@@ -2956,13 +2964,18 @@ app.get("/api/betfair/sports",async(_req,res)=>{
     return res.json(data);
   }catch(error){
     console.error("BETFAIR_SPORTS_API_FAILED",error.message);
-    return res.status(200).json({status:"configured-but-unavailable",provider:"Betfair Exchange Delayed API",
-      events:[],eventTypes:[],pricedMarkets:0,backOffers:0,layOffers:0,soccerMarketCount:0,soccerPricedMarkets:0,
+    const reauthenticationRequired=/INVALID_SESSION_INFORMATION|NO_SESSION|session token rejected/i.test(String(error.message||error));
+    return res.status(reauthenticationRequired?401:503).json({
+      status:reauthenticationRequired?"reauthentication-required":"configured-but-unavailable",
+      errorCategory:reauthenticationRequired?"authentication":"upstream-unavailable",
+      provider:"Betfair Exchange Delayed API",events:[],eventTypes:[],pricedMarkets:0,backOffers:0,layOffers:0,soccerMarketCount:0,soccerPricedMarkets:0,
       retryAt:betfairSportsAdapterRetryAt?new Date(betfairSportsAdapterRetryAt).toISOString():
         (betfairSportsRetryAt?new Date(betfairSportsRetryAt).toISOString():null),
-      reauthenticationRequired:/INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message),
-      error:error.message,
-      note:"Betfair Exchange data is temporarily unavailable. No prices are fabricated; other public sports feeds remain independent."});
+      reauthenticationRequired,error:error.message,
+      note:reauthenticationRequired
+        ?"Betfair rejected the saved session. Renew it through the official Betfair login in the Windows launcher, then update the production session token."
+        :"Betfair Exchange data is temporarily unavailable. Retry after the reported backoff; no prices are fabricated and other public sports feeds remain independent."
+    });
   }
 });
 app.get("/api/sports", async (_req,res) => {
