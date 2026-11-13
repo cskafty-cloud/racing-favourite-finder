@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.26"
+$RffLauncherVersion = "2026-11-13.27"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -21,6 +21,7 @@ try {
       -not $AdapterCandidate.Contains("accessTokenMatches") -or
       -not $AdapterCandidate.Contains('require("./race-category")') -or
       -not $AdapterCandidate.Contains("BETFAIR_AU_RACING_EVENT_TYPES") -or
+      -not $AdapterCandidate.Contains('path==="/api/status"') -or
       $AdapterCandidate.Contains('require("./token-auth")')) {
     throw "Downloaded adapter entry point did not pass the expected source checks."
   }
