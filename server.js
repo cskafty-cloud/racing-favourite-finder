@@ -26,6 +26,7 @@ let betfairRacingCache = { at:0, races:[], eventTypes:[], error:null };
 let betfairRacingRefresh = null;
 let betfairRetryAt = 0;
 let betfairFeedRetryAt = 0;
+let betfairFeedFailureCount = 0;
 let betfairFeedLastError = "";
 let betfairSessionKeepAliveAt = 0;
 let betfairSessionKeepAliveInFlight = null;
@@ -1558,7 +1559,7 @@ async function probeBetfairAdapterFeed(url, kind) {
         Accept:"application/json",
         ...(process.env.BETFAIR_FEED_TOKEN ? {Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN} : {})
       },
-      signal:AbortSignal.timeout(2500)
+      signal:AbortSignal.timeout(10000)
     });
     const body = await response.text();
     let data;
@@ -1582,6 +1583,32 @@ async function probeBetfairAdapterFeed(url, kind) {
       error:String(error.message||error).slice(0,220)};
   }
 }
+
+// Manual diagnostic for the Australian adapter. This is deliberately separate
+// from /api/health so normal website liveness never waits on Tailscale/Betfair.
+app.get("/api/betfair/adapter-health", async (_req,res) => {
+  const racingUrl=BETFAIR_FEED_URL;
+  const sportsUrl=process.env.BETFAIR_SPORTS_FEED_URL||"";
+  const tokenConfigured=!!process.env.BETFAIR_FEED_TOKEN;
+  if(!tokenConfigured){
+    return res.set("Cache-Control","no-store").status(200).json({
+      status:"configuration-incomplete",tokenConfigured:false,
+      racing:{configured:!!racingUrl,reachable:false,authorized:false,status:"token-missing"},
+      sports:{configured:!!sportsUrl,reachable:false,authorized:false,status:"token-missing"},
+      checkedAt:new Date().toISOString()
+    });
+  }
+  const [racing,sports]=await Promise.all([
+    probeBetfairAdapterFeed(racingUrl,"racing"),
+    probeBetfairAdapterFeed(sportsUrl,"sports")
+  ]);
+  const connected=racing.status==="connected"&&sports.status==="connected";
+  const status=connected?"connected":(racing.reachable||sports.reachable?"partial":"unreachable");
+  return res.set("Cache-Control","no-store").status(200).json({
+    status,tokenConfigured:true,racing,sports,checkedAt:new Date().toISOString()
+  });
+});
+
 let betfairHealthCache={at:0,data:null};
 app.get("/api/health", (_req,res) => {
   // This is an application liveness endpoint, not an upstream-provider audit.
@@ -2310,6 +2337,7 @@ async function getGlobalRacesUncached() {
       if(!response.ok)throw new Error(data.error||"Australian Betfair adapter HTTP "+response.status);
       betfairSupplementalRows=normalizeBetfairAdapterRaces(data);
       betfairFeedRetryAt=0;
+      betfairFeedFailureCount=0;
       betfairFeedLastError="";
       if(!betfairSupplementalRows.length)failures.push({feed:"Betfair AU adapter",message:"Connected, but no Australian WIN/PLACE markets were returned."});
       console.info("BETFAIR_AU_ADAPTER_RACING",JSON.stringify({races:betfairSupplementalRows.length,
@@ -2321,7 +2349,9 @@ async function getGlobalRacesUncached() {
       betfairFeedLastError=error.message;
       const authFailure=/401|403|INVALID_SESSION_INFORMATION|NO_SESSION/i.test(error.message);
       const timedOut=/timeout|aborted|ETIMEDOUT/i.test(error.message);
-      betfairFeedRetryAt=Date.now()+(authFailure?6*60*60*1000:(timedOut?15*60*1000:5*60*1000));
+      betfairFeedFailureCount=Math.min(7,betfairFeedFailureCount+1);
+      const transientDelay=Math.min(5*60*1000,30000*Math.pow(2,betfairFeedFailureCount-1));
+      betfairFeedRetryAt=Date.now()+(authFailure?6*60*60*1000:(timedOut?Math.max(60000,transientDelay):transientDelay));
       console.warn("BETFAIR_AU_ADAPTER_CIRCUIT_OPEN",JSON.stringify({retryAt:new Date(betfairFeedRetryAt).toISOString(),reason:error.message.slice(0,180)}));
       failures.push({feed:"Betfair AU adapter",message:error.message});
     }
