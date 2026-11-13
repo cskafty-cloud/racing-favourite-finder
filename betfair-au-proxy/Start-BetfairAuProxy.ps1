@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.21"
+$RffLauncherVersion = "2026-11-13.22"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -10,8 +10,8 @@ Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -Foreground
 $AdapterServerPath = Join-Path $PSScriptRoot "server.js"
 $AdapterCategoryPath = Join-Path $PSScriptRoot "race-category.js"
 $AdapterUpdateBase = "https://raw.githubusercontent.com/cskafty-cloud/racing-favourite-finder/main/betfair-au-proxy"
-$AdapterServerTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".tmp")
-$AdapterCategoryTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-category-" + $PID + ".tmp")
+$AdapterServerTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-server-" + $PID + ".js")
+$AdapterCategoryTemp = Join-Path $env:TEMP ("RFF-BetfairAuProxy-category-" + $PID + ".js")
 try {
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/server.js") -OutFile $AdapterServerTemp -TimeoutSec 20
   Invoke-WebRequest -Uri ($AdapterUpdateBase + "/race-category.js") -OutFile $AdapterCategoryTemp -TimeoutSec 20
