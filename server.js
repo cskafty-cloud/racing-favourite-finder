@@ -1581,7 +1581,7 @@ async function probeBetfairAdapterFeed(url, kind) {
   if (!url) return { configured:false, reachable:false, authorized:false, status:"url-missing" };
   try {
     const statusUrl=new URL(url);
-    statusUrl.pathname=statusUrl.pathname.replace(/\\/api\\/(?:races|sports)\\/?$/,"/api/status");
+    statusUrl.pathname=statusUrl.pathname.replace(/\/api\/(?:races|sports)\/?$/,"/api/status");
     statusUrl.search=""; statusUrl.searchParams.set("kind",kind);
     const response=await fetch(statusUrl,{headers:{Accept:"application/json",
       ...(process.env.BETFAIR_FEED_TOKEN?{Authorization:"Bearer "+process.env.BETFAIR_FEED_TOKEN}:{})},
