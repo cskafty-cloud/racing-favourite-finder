@@ -235,7 +235,8 @@ if ($railwayPresent.Count -gt 0) {
   $values = Load-EncryptedCredentials
   Write-Host "The saved Betfair session may have expired. To replace it, sign in through Betfair's official Australian API login now." -ForegroundColor Yellow
   $credentialChoice = Read-Host "Sign in again and replace the saved session token? [y/N]"
-  if ($credentialChoice -match '^(y|yes)
+  if ($credentialChoice -match '^(y|yes)') {
+    $savedFeedToken = [string]$values.BETFAIR_FEED_TOKEN
     $appKey = [string]$values.BETFAIR_APP_KEY
     $newSession = Get-NewBetfairSessionToken $appKey
     $values = @{
