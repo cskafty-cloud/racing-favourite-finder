@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$RffLauncherVersion = "2026-11-13.18"
+$RffLauncherVersion = "2026-11-13.19"
 Set-Location $PSScriptRoot
 
 Write-Host "Betfair AU adapter launcher version $RffLauncherVersion" -ForegroundColor Cyan
@@ -177,7 +177,7 @@ function Read-NewCredentials {
   }
   $feedToken = Get-ClipboardFeedToken
   if (-not $feedToken) {
-    throw "Clipboard must contain only the Railway shared feed token (16–512 characters, no whitespace). Copy the token itself, not a command or output. No credentials were saved."
+    throw "Clipboard must contain only the Railway shared feed token (16-512 characters, no whitespace). Copy the token itself, not a command or output. No credentials were saved."
   }
   $values.BETFAIR_FEED_TOKEN = $feedToken
   foreach ($name in @("BETFAIR_APP_KEY", "BETFAIR_SESSION_TOKEN")) {
