@@ -672,13 +672,13 @@ function moviSportMatches(item,sport){
  return ids.includes(wanted)||ids.includes(key)||ids.includes(slug)||names.some(n=>wantedNames.includes(n));
 }
 function moviQuoteBookmakerKey(quote){
- // MoviOdds aggregates multiple books. Never infer the bookmaker from the
- // endpoint or event: every accepted price must identify its own bookmaker.
+ // Only explicit bookmaker fields identify a book. MoviOdds price_source and
+ // odds_source values ("card", "pm", "ws") describe transport channels.
+ // The separate /racing endpoint contract is Bet365-only, so channel values
+ // must not be mistaken for a bookmaker name.
  const raw=quote?.bookmaker_key??quote?.bookmakerKey??quote?.bookmaker??
   quote?.bookmaker_name??quote?.bookmakerName??quote?.bookmaker_code??quote?.bookmakerCode??
-  quote?.site??quote?.book??quote?.bookie??quote?.sportsbook??quote?.operator??
-  quote?.price_source??quote?.priceSource??quote?.odds_source??quote?.oddsSource??
-  quote?.source_name??quote?.sourceName??quote?.source??quote?.provider_name??null;
+  quote?.site??quote?.book??quote?.bookie??quote?.sportsbook??quote?.operator??null;
  const value=raw&&typeof raw==="object"?(raw.key||raw.name||raw.slug||raw.title||raw.code||""):raw;
  return canonicalBookmakerKey(value);
 }
